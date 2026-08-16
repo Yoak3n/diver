@@ -7,6 +7,8 @@
 import { createServer } from 'node:http'
 import { readFile, stat } from 'node:fs/promises'
 import { join, extname, normalize, resolve } from 'node:path'
+import type { Context } from '@deepseek-ai/cordis'
+import type { SettingsNamespace } from '@deepseek-ai/dsh-settings'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 
@@ -19,7 +21,6 @@ import {
   userMessage,
 } from './session.ts'
 import { getProviderConfig, listProviderConfigs, registerProviderConfig } from './settings-registry.ts'
-import { cleanupSubagentSessions } from './memory/summarize.ts'
 
 export const name = 'diver-companion-web'
 
@@ -40,17 +41,9 @@ const MIME = {
   '.map': 'application/json',
 }
 
-export function apply(ctx, config) {
+export function apply(ctx: Context, config: { uiDist?: string }) {
   const port = Number(process.env.DIVER_PORT ?? 3620)
   const uiDist = config?.uiDist ?? resolve(process.cwd(), '..', 'dist')
-
-  // 启动兜底：清掉历史遗留的子代理 session（压缩摘要子代理，含全量历史 prompt）
-  try {
-    const removed = cleanupSubagentSessions()
-    if (removed > 0) console.log(`[diver] 已清理 ${removed} 个遗留子代理会话`)
-  } catch (err) {
-    console.warn(`[diver] 清理子代理会话失败: ${err?.message ?? err}`)
-  }
 
   // 一切皆插件：deepseek 适配器由 dsh 框架提供，其配置声明由本 bundle 注册
   // （设置面板据此渲染 API Key 输入，写入 dsh 凭据库）。
@@ -182,7 +175,9 @@ export function apply(ctx, config) {
     const models = []
     // deepseek（官方适配器目录）
     try {
-      const sec = ctx.settings.get('llm-deepseek')
+      const sec = ctx.settings.get('llm-deepseek' as unknown as SettingsNamespace) as
+        | { models?: Array<string | { id?: string }> }
+        | undefined
       const ds = Array.isArray(sec?.models) && sec.models.length > 0
         ? sec.models.map((m) => (typeof m === 'string' ? m : m?.id)).filter(Boolean)
         : DEFAULT_MODELS
@@ -324,7 +319,9 @@ export function apply(ctx, config) {
         break
       }
       case 'tool/result': {
-        const callId = ev.data.callId !== undefined ? String(ev.data.callId) : undefined
+        // callId 在 message.source（tool/result 的 data 无顶层 callId）
+        const source = ev.data.message?.source as { callId?: string } | undefined
+        const callId = source?.callId !== undefined ? String(source.callId) : undefined
         const name = (callId && state.toolNames.get(callId)) || state.toolNames.values().next().value || 'tool'
         if (callId) state.toolNames.delete(callId)
         broadcast({ type: 'tool', name, status: 'result' })
@@ -345,7 +342,7 @@ export function apply(ctx, config) {
 
   ctx.on('agent/error', ({ agent, turn, step, error }) => {
     if (!agent || String(agent.id) !== SESSION_ID) return
-    const message = String(error?.message ?? error)
+    const message = String((error as { message?: unknown } | null)?.message ?? error)
     console.error(`[diver] agent 错误 (turn=${turn}, step=${step}): ${message}`)
     broadcast({ type: 'error', message })
   })

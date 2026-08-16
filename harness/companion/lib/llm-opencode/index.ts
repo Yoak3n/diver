@@ -12,6 +12,7 @@
 // （/v1/models 已验证无需鉴权）。
 
 import { EventSourceParserStream } from 'eventsource-parser/stream'
+import type { Context } from '@deepseek-ai/cordis'
 import {
   attributionHeaders,
   CallId,
@@ -128,12 +129,12 @@ function mapUsage(usage) {
 
 class OpencodeGoAdapter extends LlmAdapter {
   baseUrl: string
-  ctx: any
+  ctx: Context
   modelsCache: Array<{ provider: string; id: string; name: string }> | null
   modelsCacheAt: string | null
   modelsCacheTs: number
 
-  constructor({ baseUrl, ctx }: { baseUrl?: string; ctx: any }) {
+  constructor({ baseUrl, ctx }: { baseUrl?: string; ctx: Context }) {
     super()
     this.baseUrl = baseUrl ?? DEFAULT_BASE_URL
     this.ctx = ctx
@@ -506,7 +507,7 @@ async function* translateChat(payloads: AsyncIterable<string>): AsyncGenerator<S
   throw new LlmError('SSE payload stream ended without [DONE]', 'STREAM_CLOSED')
 }
 
-export function apply(ctx, config) {
+export function apply(ctx: Context, config: { baseUrl?: string }) {
   const baseUrl = config?.baseUrl ?? DEFAULT_BASE_URL
   const handle = ctx.llm.registerAdapter(['opencode-go'], new OpencodeGoAdapter({ baseUrl, ctx }))
 
@@ -533,6 +534,7 @@ export function apply(ctx, config) {
 
   console.log(`[opencode-go] provider 已注册 (${baseUrl})`)
   ctx.on('dispose', () => {
-    handle.dispose?.()
+    // 注册句柄本身是可调用函数：调用即释放全部路由
+    handle()
   })
 }

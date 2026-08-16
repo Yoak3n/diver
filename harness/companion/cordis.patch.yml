@@ -118,25 +118,18 @@
 
 # ── 上下文自动压缩：不能总是全量加入请求 ───────────────────────────────────
 # deepseek-v4 两模型窗口 1M token（adapter resolveModel 声明）。压缩阈值取
-# 20 万 token（≈19% 窗口）：达到即把早期消息压缩为摘要，保留最近 32k token
-# 完整（≈最近三四十轮），请求规模稳定在 ~40k~200k 有界区间。
-# base 的 compaction-basic 引擎禁用（patch 不允许覆盖行 name），改由下方
-# insert 的 compaction-diver 提供实现：@diver/companion/compaction 用一次性
-# 子代理生成摘要（质量优先）；压缩产生的摘要由 memory 插件监听
-# compaction/summary 内化为长期记忆。
+# 40 万 token（≈38% 窗口）：达到即把早期消息压缩为摘要，保留最近 32k token
+# 完整（≈最近三四十轮），请求规模稳定在 ~40k~400k 有界区间。
+# 使用 base 的 compaction-basic 默认引擎（稳定流程，不干预框架 hook）；
+# 压缩产生的 compaction/summary 事件由 memory 插件监听并内化为长期记忆。
 - id: compaction-basic
-  disabled: true
+  config:
+    thresholdRatio: 0.38
+    retainTokens: 32768
+    maxTokens: 4096
 
 # ── 陪伴服务行 ───────────────────────────────────────────────────────────────
 - insert:
-    # 压缩引擎（subagent 摘要，质量优先）——见上方 compaction-basic 注释
-    - id: compaction-diver
-      name: '@diver/companion/compaction'
-      config:
-        thresholdRatio: 0.19
-        retainTokens: 32768
-        maxTokens: 4096
-
     # 本地文件系统（无沙箱，贴近 dsh 极简模式的 dsh-fs-local）
     - id: fs-local
       name: '@deepseek-ai/dsh-fs-local'

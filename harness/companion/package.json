@@ -13,7 +13,6 @@
     "./web": "./lib/web.ts",
     "./presence": "./lib/presence.ts",
     "./memory": "./lib/memory/index.ts",
-    "./compaction": "./lib/compaction.ts",
     "./llm-opencode": "./lib/llm-opencode/index.ts"
   },
   "dsh": {

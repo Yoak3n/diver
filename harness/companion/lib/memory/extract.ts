@@ -7,6 +7,7 @@
 // 所有 LLM 调用直连 ctx.llm（不进会话日志，不污染对话）。
 
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
+import type { Context } from '@deepseek-ai/cordis'
 
 import { readDiverSettings } from '../session.ts'
 
@@ -50,7 +51,7 @@ function parseJson(text: string | null): Record<string, any> | null {
  * @returns 文本或 null（失败静默）
  */
 async function llmText(
-  ctx: any,
+  ctx: Context,
   options: { system: string; prompt: string; maxTokens?: number },
 ): Promise<string | null> {
   const diver = readDiverSettings()
@@ -84,7 +85,7 @@ const DIGEST_SYSTEM = `你是记忆消化器。基于会话摘要和统计，归
 
 /** 会话末 digest：模式/关系/缺口 → 关系卡 diff。 */
 export async function digestSession(
-  ctx: any,
+  ctx: Context,
   card: { profile: string; agent_model: string; relationship: string },
   stats: Record<string, any>,
   transcript: string,

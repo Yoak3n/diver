@@ -9,17 +9,16 @@
 //   4 个工具（remember/recall/inventory/demote）供 agent 自主管理记忆
 
 import { join } from 'node:path'
+import type { Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 
 import { dshHome, SESSION_ID, textOf } from '../session.ts'
 import { MemoryStore } from './store-rpc.ts'
 import { digestSession } from './extract.ts'
-import { summarizeWithSubagent } from './summarize.ts'
 
 export const name = 'diver-companion-memory'
 
-// subagents：压缩摘要子代理的 spawn 在事件监听器里用本插件的 ctx
-export const inject = ['sessions', 'llm', 'tools', 'systemPrompt', 'agentDefaultModel', 'subagents']
+export const inject = ['sessions', 'llm', 'tools', 'systemPrompt', 'agentDefaultModel']
 
 const DEFAULT_DIGEST_INTERVAL_MS = 10 * 60 * 1000
 const DIGEST_MIN_PAIRS = 3
@@ -41,7 +40,7 @@ function timeHm(ts: number) {
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
 
-export function apply(ctx, config) {
+export function apply(ctx: Context, config: { digestIntervalMs?: number }) {
   const store = new MemoryStore(join(dshHome(), 'memory'))
   const digestIntervalMs = Number(config?.digestIntervalMs) || DEFAULT_DIGEST_INTERVAL_MS
 
@@ -75,8 +74,40 @@ export function apply(ctx, config) {
         lastUserPair = null
       }
       void maybeDigest()
+    } else if ((ev as { type: string }).type === 'compaction/summary') {
+      // 压缩完成后的额外步骤：把摘要内化为长期记忆（不干预框架压缩流程）
+      void ingestCompactionSummary(ev as { data?: { summary?: unknown } })
     }
   })
+
+  // ── 压缩摘要内化：被压缩的上下文变成一段有丰富信息的记忆 ──────────────
+  // base compaction-basic 默认引擎压缩完成后产生 compaction/summary 事件；
+  // 这里把摘要原文作为「会话历史回顾」话题的事件持久化，可被 recall/
+  // inventory 检索到，早期关键事实不因压缩而丢失。
+  async function ingestCompactionSummary(ev) {
+    const text = textOf(ev.data?.summary)
+    if (!text || text.trim().length < 20) return
+    try {
+      const topicName = '会话历史回顾'
+      let topicId = null
+      store.decayAll()
+      const cands = await store.blockingCandidates(topicName, 3)
+      topicId = cands.find((c) => c.canonicalName.includes('历史回顾'))?.id ?? null
+      if (!topicId) {
+        topicId = await store.createTopic({
+          canonicalName: topicName,
+          stateSummary: '早期对话的压缩摘要合集（随上下文压缩产生）',
+          tier: 'episodic',
+          uncertain: true,
+        })
+      }
+      await store.appendEvent({ topicId, statement: text, ts: Date.now() })
+      store.markDirty()
+      console.log(`[memory] 压缩摘要已内化（${text.length} 字符）`)
+    } catch (err) {
+      console.error(`[memory] 压缩摘要内化失败: ${err?.message ?? err}`)
+    }
+  }
 
   async function maybeDigest() {
     if (pairsSinceDigest < DIGEST_MIN_PAIRS) return
@@ -134,16 +165,6 @@ export function apply(ctx, config) {
       return parts.join('\n\n')
     },
   })
-
-  // ───────────────────────── 压缩摘要事件监听 ─────────────────────────
-  // compaction 引擎（@diver/companion/compaction）广播 compaction/summarize
-  // 时由本插件执行 subagent 摘要（事件契约，无模块级依赖）；ctx.bail 收集
-  // 第一个非 undefined 返回值作为摘要结果。事件只携带 agent 与取消信号，
-  // 会话数据由本插件自行从 agent.session 读取。
-
-  ctx.bail('compaction/summarize', (agent, signal) =>
-    summarizeWithSubagent(ctx, agent, signal),
-  )
 
   // ───────────────────────── 工具面：agent 自主管理 ─────────────────────────
 

@@ -10,6 +10,7 @@
 
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import type { Context } from '@deepseek-ai/cordis'
 import { SessionId } from '@deepseek-ai/dsh-session'
 
 import { ensureCompanionAgent, readDiverSettings, SESSION_ID, userMessage } from './session.ts'
@@ -47,7 +48,7 @@ function markBootGreeted(dshHome: string) {
   }
 }
 
-export function apply(ctx, config) {
+export function apply(ctx: Context, config: { bootGreeting?: boolean; schedule?: Array<{ hour: number; minute: number; text: string }> }) {
   const schedule = Array.isArray(config?.schedule) ? config.schedule : []
   const bootGreeting = config?.bootGreeting !== false
   const fired = new Set() // 已触发的日期+槽位（定时提醒，内存去重）

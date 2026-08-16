@@ -5,6 +5,7 @@
 
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
+import type { Context } from '@deepseek-ai/cordis'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 
@@ -45,7 +46,7 @@ export function writeDiverSettings(patch) {
  * 确保单例陪伴 agent 存在（不存在则创建；已持久化则 resume）。
  * @returns {Promise<{agent: import('@deepseek-ai/dsh-agent').Agent, handle: any}>}
  */
-export async function ensureCompanionAgent(ctx, model, provider) {
+export async function ensureCompanionAgent(ctx: Context, model?: string, provider?: string) {
   const id = SessionId(SESSION_ID)
   const live = ctx.agents.get(id)
   if (live) return { agent: live, handle: null }

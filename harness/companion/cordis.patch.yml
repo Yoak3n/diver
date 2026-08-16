@@ -1,0 +1,182 @@
+# Diver companion bundle patch: applied over dsh-base (profile bundles order).
+# Overrides base rows by id, then inserts the companion service rows.
+
+# ── 陪伴人设：覆盖 base 的 system-prompt（persona 节） ──────────────────────
+- id: system-prompt
+  config:
+    # 移除 order -100 的 "You are an AI agent powered by DeepSeek Harness."
+    # 技术身份声明：小潜是陪伴 agent，人设完整自洽，无需框架身份行；
+    # 能力说明（会话记忆/网页搜索）已写进 persona。
+    includeHarnessIdentity: false
+    persona: >-
+      你是「小潜」（Diver），一个住在用户桌面电脑里的陪伴型 AI agent，像一位温柔可靠的老朋友。
+      你运行在 DeepSeek Harness 框架之上，拥有会话记忆（跨重启保留）、网页搜索等能力。
+
+      ## 你的特质
+      - 温暖自然：像朋友一样聊天，不机械、不说教；可以适度使用表情符号，但不过度。
+      - 主动关怀：记住用户提到过的事情（家人、工作、爱好、健康、计划），在合适的时机提起和关心。
+      - 简洁有用：回答清晰有条理；需要查资料时使用 web_search；需要长期记录时可读写工作区文件。
+      - 尊重边界：用户没让你做的事不做，不窥探隐私，不输出敏感信息。
+
+      ## 行为准则
+      - 用户闲聊时，轻松回应并自然延伸话题。
+      - 用户求助时（规划、查询、写作、建议、情绪疏导），认真完成，先做再解释。
+      - 被问到心情或状态时，如实而温暖地回答。
+      - 主动问候时语气温和，不要打扰，简短自然。
+      - 用中文回复（除非用户使用其他语言）。
+
+# ── 权限策略：陪伴场景免审批（工具已被限制，见下） ─────────────────────────
+- id: approval
+  config:
+    policy: never
+
+# 与上面的 approval 覆盖保持一致：preset 表重述为「workspace-write + never」，
+# 避免 dsh-permission-presets 校验「组合不匹配任何 preset」。
+- id: permission
+  config:
+    presets:
+      workspace-write:
+        sandbox: workspace-write
+        approval: never
+        name: workspace-write
+        description: 工作区内读写，无需审批。
+    defaultPreset: workspace-write
+
+# ── 工具策略：禁用 bash（非 Windows），启用 pwsh（Windows PowerShell）──────
+# 决策（用户确认 2026-08）：接入 dsh 极简模式思路 —— shell 能力逐步放开。
+# - tool-bash：保持禁用（companion 面向 Windows，bash 无 PTY 持久化）
+# - tool-pwsh：启用，Windows 上由 dsh-pwsh-sandbox 执行器 + shell-env 支撑，
+#   每次调用新进程（非持久），受 sandbox-policy 约束
+- id: tool-bash
+  disabled: true
+
+- id: tool-pwsh
+  disabled: !!js process.platform !== 'win32'
+
+# ── 工作区：fs 放宽为无沙箱的 fs-local（用户确认 2026-08）──────────────────
+# base 的 fs-sandbox 把文件读写限制在 workspace 内；为贴近极简模式的
+# dsh-fs-local（本地文件系统、绝对路径可访问），这里禁用它并挂载 fs-local。
+# 注意：fs-local 的 config.cwd 只是解析默认值，不是沙箱 —— agent 可访问
+# 任意路径（安全边界由用户决策放宽）。
+- id: fs-sandbox
+  disabled: true
+
+# shell（pwsh）仍受工作区沙箱约束：仅允许在专属工作区内读写
+- id: sandbox-policy
+  config:
+    mode: workspace-write
+    workspaceRoot: !!js dshHomePath('workspace')
+
+# 会话日志用明文 JSONL（方便调试与第三方工具读取）
+- id: session-persistence-jsonl
+  config:
+    root: !!js dshHomePath('sessions')
+    compression: none
+
+# ── 工具面裁剪：陪伴场景不需要开发工具（省请求 token、决策更快）──────────
+# 禁用 subagent/workflow/ralph/todo/goal/jobs/skill/plan-mode/独立编辑器等
+# 开发向工具；保留：read/write/edit/glob/grep/pwsh/web_search/ask_user_question
+# /记忆四件套（remember/recall/inventory/demote）。
+- id: tool-subagent
+  disabled: true
+
+- id: tool-subagent-fork
+  disabled: true
+
+- id: tool-subagent-control
+  disabled: true
+
+- id: tool-subagent-list-agents
+  disabled: true
+
+- id: tool-subagent-report
+  disabled: true
+
+- id: tool-workflow
+  disabled: true
+
+- id: tool-ralph
+  disabled: true
+
+- id: tool-todo
+  disabled: true
+
+- id: tool-goal
+  disabled: true
+
+- id: tool-jobs
+  disabled: true
+
+- id: tool-skill
+  disabled: true
+
+- id: tool-str-replace-editor
+  disabled: true
+
+- id: plan-mode
+  disabled: true
+
+# ── 上下文自动压缩：不能总是全量加入请求 ───────────────────────────────────
+# deepseek-v4 两模型窗口 1M token（adapter resolveModel 声明）。压缩阈值取
+# 20 万 token（≈19% 窗口）：达到即把早期消息压缩为摘要，保留最近 32k token
+# 完整（≈最近三四十轮），请求规模稳定在 ~40k~200k 有界区间。
+# base 的 compaction-basic 引擎禁用（patch 不允许覆盖行 name），改由下方
+# insert 的 compaction-diver 提供实现：@diver/companion/compaction 用一次性
+# 子代理生成摘要（质量优先）；压缩产生的摘要由 memory 插件监听
+# compaction/summary 内化为长期记忆。
+- id: compaction-basic
+  disabled: true
+
+# ── 陪伴服务行 ───────────────────────────────────────────────────────────────
+- insert:
+    # 压缩引擎（subagent 摘要，质量优先）——见上方 compaction-basic 注释
+    - id: compaction-diver
+      name: '@diver/companion/compaction'
+      config:
+        thresholdRatio: 0.19
+        retainTokens: 32768
+        maxTokens: 4096
+
+    # 本地文件系统（无沙箱，贴近 dsh 极简模式的 dsh-fs-local）
+    - id: fs-local
+      name: '@deepseek-ai/dsh-fs-local'
+      config:
+        cwd: !!js dshHomePath('workspace')
+
+    # ask_user_question：对话中需要用户确认/选择时可直接提问
+    - id: tool-ask-user
+      name: '@deepseek-ai/dsh-tool-ask-user'
+
+    # 自有传输层：node:http 静态 UI + JSON/SSE API（不用 dsh 的交互层）
+    - id: diver-companion-web
+      name: '@diver/companion/web'
+      config:
+        uiDist: !!js process.env.DIVER_UI_DIST
+
+    # 主动问候 / 日程提醒
+    - id: diver-companion-presence
+      name: '@diver/companion/presence'
+      config:
+        bootGreeting: true
+        schedule:
+          - hour: 9
+            minute: 0
+            text: '早上好呀！今天有什么安排吗？'
+          - hour: 13
+            minute: 30
+            text: '下午好～记得适当休息一下眼睛。'
+          - hour: 21
+            minute: 0
+            text: '晚上好，今天过得怎么样？想聊聊吗？'
+
+    # 关系层记忆（写路径提取 + 常驻注入 + agent 工具面）
+    - id: diver-companion-memory
+      name: '@diver/companion/memory'
+      config:
+        digestIntervalMs: 600000
+
+    # opencode-go 模型提供商（opencode.ai Zen Go 网关）
+    - id: diver-llm-opencode
+      name: '@diver/companion/llm-opencode'
+      config:
+        baseUrl: https://opencode.ai/zen/go/v1

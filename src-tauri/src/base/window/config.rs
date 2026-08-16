@@ -35,12 +35,27 @@ impl WindowConfig {
                 center: true,
                 float: false,
             },
+            // Live2D 桌宠：透明、无边框、置顶、不占任务栏、不抢焦点
+            WindowType::Pet => Self {
+                window_type,
+                inner_size: (360.0, 560.0),
+                min_inner_size: (240.0, 400.0),
+                decorations: false,
+                transparent: true,
+                skip_taskbar: true,
+                shadow: false,
+                always_on_top: true,
+                maximizable: false,
+                focused: false,
+                center: false,
+                float: false,
+            },
         }
     }
     pub fn default_config() -> HashMap<WindowType, WindowConfig> {
-        HashMap::from([(
-            WindowType::Main,
-            WindowConfig::new(WindowType::Main),
-        )])
+        HashMap::from([
+            (WindowType::Main, WindowConfig::new(WindowType::Main)),
+            (WindowType::Pet, WindowConfig::new(WindowType::Pet)),
+        ])
     }
 }

@@ -14,18 +14,26 @@ pub enum WindowState {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum WindowType {
+    /// 主聊天窗口
     Main,
+    /// Live2D 桌宠窗口（透明/置顶/无边框，常驻桌面）
+    Pet,
 }
 
 impl WindowType {
     /// 获取所有窗口类型
-    pub fn all() -> [Self; 1] {
-        [WindowType::Main]
+    pub fn all() -> [Self; 2] {
+        [WindowType::Main, WindowType::Pet]
+    }
+
+    pub fn all_exclude_float() -> [Self; 2] {
+        [WindowType::Main, WindowType::Pet]
     }
 
     pub fn from_label(label: &str) -> Option<Self> {
         match label {
             "main" => Some(WindowType::Main),
+            "pet" => Some(WindowType::Pet),
             _ => None,
         }
     }
@@ -33,18 +41,33 @@ impl WindowType {
     pub fn label(&self) -> &'static str {
         match self {
             WindowType::Main => "main",
+            WindowType::Pet => "pet",
         }
     }
 
-    pub fn url(&self) -> &'static str {
+    /// 窗口加载的 UI 地址：dev 为 Vite 开发服务器，release 为 sidecar 自带的 UI。
+    pub fn url(&self) -> String {
+        let base = crate::base::sidecar::SidecarManager::global().ui_url();
         match self {
-            WindowType::Main => "/",
+            WindowType::Main => base,
+            WindowType::Pet => {
+                // dev：Vite 按源码相对路径提供页面；release：构建产物 dist/pet.html
+                #[cfg(debug_assertions)]
+                {
+                    format!("{}/src/pet/pet.html", base)
+                }
+                #[cfg(not(debug_assertions))]
+                {
+                    format!("{}/pet.html", base)
+                }
+            }
         }
     }
 
     pub fn title(&self) -> &'static str {
         match self {
-            WindowType::Main => "Tauri App",
+            WindowType::Main => "Diver",
+            WindowType::Pet => "Diver 桌宠",
         }
     }
 }

@@ -1,7 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/addons",
+    "crates/diver-memory",
     "src-tauri"
 ]
 

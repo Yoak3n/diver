@@ -23,3 +23,12 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Diver sidecar harness
+harness/node_modules
+harness/.dsh-home
+harness/*/node_modules
+
+
+# Live2D 模型文件（体积大，不入库）
+public/pet/models/

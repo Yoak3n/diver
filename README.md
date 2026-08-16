@@ -1,222 +1,183 @@
-# Tauri + Vue + TypeScript 模板
+# Diver · 桌面陪伴 Agent
 
-基于 Tauri 2.x + Vue 3 + TypeScript 的桌面应用开发模板，内置了窗口管理、系统托盘、轻量模式等常用功能。
+基于 **Tauri 2 + Vue 3 + DeepSeek Harness 框架**的桌面陪伴 agent「小潜」。
+借鉴 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 的架构理念（append-only 会话日志、turn/step agent 循环、工具注册表、persona 组装、事件驱动），**只取其框架、不搬其交互层**：UI 为自研 Vue 单会话陪伴聊天，传输层为自研 HTTP/SSE，agent 常驻于 Node sidecar，Rust 负责壳与原生扩展。
 
-## 技术栈
-
-- **前端**: Vue 3 + Vite + TypeScript
-- **后端**: Tauri 2.x + Rust
-- **包管理**: pnpm (Workspace 模式)
-
-## 自带功能特性
-
-### 窗口管理系统
-
-完整的窗口生命周期管理，支持状态追踪和多窗口扩展。
-
-**窗口状态** (`src-tauri/src/base/window/schema.rs`):
-- `VisibleFocused` - 可见且有焦点
-- `Minimized` - 最小化
-- `Hidden` - 隐藏
-- `NotExist` - 不存在
-
-**核心操作** (`src-tauri/src/base/window/manager.rs`):
-- `show_window()` - 显示窗口（自动处理创建/激活/恢复）
-- `close_window()` - 关闭窗口（实际隐藏到托盘）
-- `toggle_window()` - 切换窗口显示状态
-- `destroy_window()` - 销毁窗口释放资源
-
-**窗口配置** (`src-tauri/src/base/window/config.rs`):
-```rust
-// 可配置项
-inner_size: (800.0, 600.0),      // 窗口大小
-min_inner_size: (400.0, 80.0),   // 最小大小
-decorations: true,                // 是否显示标题栏
-transparent: false,               // 是否透明
-always_on_top: false,             // 是否置顶
-skip_taskbar: false,              // 是否隐藏任务栏图标
-float: false,                     // 是否启用浮动定位
-```
-
-**浮动窗口定位** (`src-tauri/src/base/window/position.rs`):
-- 基于鼠标位置自动定位
-- 多显示器支持
-- 自动边界检测
-
-### 系统托盘
-
-预配置的系统托盘功能 (`src-tauri/src/base/tray.rs`):
-- **Show/Hide** - 显示/隐藏主窗口
-- **AutoStart** - 开机自启开关（仅桌面端）
-- **Quit** - 退出应用
-- 左键点击托盘图标切换窗口显示
-
-### 轻量模式
-
-自动资源管理机制 (`src-tauri/src/base/lightweight.rs`):
-- 所有窗口关闭后启动 10 分钟计时器
-- 超时后自动销毁所有窗口，进入轻量模式
-- 窗口获得焦点时自动取消计时器
-- 最大程度节省系统资源
-
-### 开机自启
-
-集成 `tauri-plugin-autostart` 插件（仅桌面端）:
-- 通过托盘菜单切换
-- macOS 使用 LaunchAgent 方式
-
-### 定时任务系统
-
-基于 `delay_timer` 的任务调度 (`src-tauri/src/base/timer.rs`):
-- 全局单例 Timer
-- 原子操作保证线程安全
-- 每分钟自动刷新任务
-
-### 全局状态管理
-
-- `Handle` - 全局 AppHandle 单例 (`src-tauri/src/base/handle.rs`)
-- `AppState` - 应用状态管理 (`src-tauri/src/base/state.rs`)
-- 使用 `parking_lot::Mutex` 和 `once_cell::OnceCell` 保证线程安全
-
-## 项目结构
+## 架构
 
 ```
-├── crates/
-│   └── addons/          # Rust 扩展 crate
-├── src/                 # Vue 前端代码
-│   ├── App.vue
-│   └── main.ts
-├── src-tauri/           # Tauri 后端代码
-│   ├── capabilities/    # 权限配置
-│   ├── icons/           # 应用图标
-│   └── src/
-│       ├── base/
-│       │   ├── window/  # 窗口管理模块
-│       │   ├── cmd.rs   # Tauri 命令定义
-│       │   ├── handle.rs
-│       │   ├── init.rs  # 初始化配置
-│       │   ├── lightweight.rs
-│       │   ├── state.rs
-│       │   ├── timer.rs
-│       │   └── tray.rs
-│       ├── lib.rs
-│       └── main.rs
-├── Cargo.toml           # Rust Workspace 配置
-├── package.json
-└── vite.config.ts
+┌──────────────────────────────────────────────────┐
+│ Tauri 壳（Rust）                                  │
+│  · sidecar 生命周期管理（spawn/就绪检测/日志/重启） │
+│  · 托盘 / 窗口管理 / 轻量模式 / 开机自启            │
+│  · 本地 TTS（Windows SAPI 语音朗读）               │
+├──────────────────────────────────────────────────┤
+│ WebView：Vue 3 陪伴 UI（单会话连续聊天）            │
+│  · 流式渲染 / 主动问候横幅 / 设置面板               │
+│  · dev: Vite (localhost:1420) 代理 /api           │
+│  · release: sidecar 同源服务静态 UI               │
+├──────────────────────────────────────────────────┤
+│ Node sidecar（agent 大脑，常驻进程）               │
+│  · @deepseek-ai/dsh-base（仅框架：agent loop、    │
+│    会话、LLM 适配器、工具、persona、持久化）        │
+│  · @diver/companion bundle（自研）：               │
+│    - 陪伴人设 patch（system-prompt 覆盖）          │
+│    - companion-web：自有 node:http 传输层          │
+│      （静态 UI + JSON/SSE API，不用 dsh 交互层）    │
+│    - companion-presence：定时主动问候/提醒          │
+│  · 单会话「diver-companion」JSONL 持久化            │
+│    （跨重启陪伴记忆）                              │
+└──────────────────────────────────────────────────┘
 ```
 
-## 需要配置的地方
+**关键设计**（对应 DSH 理念）：
 
-### 1. 应用标识符
+| 理念 | Diver 实现 |
+|---|---|
+| append-only 会话日志 | dsh 的 SessionEvent 日志 + JSONL 持久化，UI/模型历史都从日志派生 |
+| turn/step agent 循环 | dsh agent-loop：流式 chunk、工具调用闭环、max-tokens 粘性等 |
+| 工具注册表 + 执行管线 | dsh-base 的 tools 服务（web_search 等），工具 schema 进请求 |
+| persona 组装 | bundle patch 覆盖 `system-prompt` 行 |
+| 一切皆可 patch | profile = dsh-base + companion 两个 bundle 层 + 用户 cordis.patch.yml |
+| 事件驱动 UI | session/event + agent/* 事件 → 自有 SSE 协议 → Vue |
 
-修改 `src-tauri/tauri.conf.json`:
-```json
-{
-  "identifier": "com.your-company.your-app"
-}
+## 目录结构
+
+```
+diver/
+├─ src/                    # Vue 3 陪伴 UI（聊天、设置、TTS）
+├─ src-tauri/              # Rust 壳（sidecar 管理、托盘、TTS）
+│  ├─ src/base/sidecar.rs  # sidecar 生命周期
+│  ├─ src/base/tts.rs      # Windows SAPI 语音
+│  └─ resources/speak.ps1  # TTS 脚本
+├─ harness/                # Node sidecar workspace（pnpm）
+│  ├─ package.json         # 依赖 @deepseek-ai/dsh
+│  ├─ companion/           # @diver/companion bundle（link: 符号链接进 profile）
+│  │  ├─ cordis.patch.yml  # 人设/权限/工具策略/服务行
+│  │  └─ lib/              # TypeScript 插件（Node ≥22.18 原生 type-stripping 直接运行，
+│  │                       #   零构建）：web.ts（传输层）、presence.ts（主动问候）、
+│  │                       #   session.ts、memory/（关系层记忆）、llm-opencode/（provider）
+│  └─ .dsh-home/           # 仓库本地 DSH_HOME（凭据、会话、设置、记忆；gitignore）
+│     └─ profiles/companion/
+└─ scripts/                # 冒烟测试脚本（smoke/smoke2/presence/readlog/memory-test/opencode-test）
 ```
 
-### 2. 窗口配置
-
-修改 `src-tauri/src/base/window/config.rs` 中的 `WindowConfig::new()`:
-```rust
-WindowType::Main => Self {
-    inner_size: (1024.0, 768.0),  // 调整默认窗口大小
-    decorations: true,             // false 可隐藏标题栏
-    // ... 其他配置
-}
-```
-
-### 3. 添加新窗口类型
-
-在 `src-tauri/src/base/window/schema.rs` 中扩展 `WindowType` 枚举:
-```rust
-pub enum WindowType {
-    Main,
-    Settings,  // 新增
-}
-```
-
-然后在 `config.rs` 中添加对应配置。
-
-### 4. Tauri 命令
-
-在 `src-tauri/src/base/cmd.rs` 中添加新命令:
-```rust
-#[tauri::command]
-pub fn your_command(param: &str) -> String {
-    // 实现
-}
-```
-
-并在 `init.rs` 的 `generate_handlers()` 中注册。
-
-### 5. 轻量模式超时时间
-
-修改 `src-tauri/src/base/lightweight.rs`:
-```rust
-.set_frequency_once_by_minutes(10)  // 修改超时分钟数
-```
-
-### 6. 权限配置
-
-修改 `src-tauri/capabilities/default.json` 添加所需权限:
-```json
-{
-  "permissions": [
-    "core:default",
-    "opener:default",
-    "fs:default"  // 示例：添加文件系统权限
-  ]
-}
-```
-
-### 7. 应用图标
-
-替换 `src-tauri/icons/` 目录下的图标文件。
-
-### 8. 构建优化
-
-`Cargo.toml` 已配置 Release 优化:
-```toml
-[profile.release]
-opt-level = 3
-lto = true
-codegen-units = 1
-strip = true
-```
-
-## 开发指南
-
-### 环境要求
-
-- Node.js >= 18
-- pnpm
-- Rust 工具链
-- Tauri CLI (已包含在 devDependencies)
-
-### 安装依赖
+## 运行
 
 ```bash
+# 1. 安装依赖（pnpm workspace：前端 + harness）
 pnpm install
-```
 
-### 开发运行
-
-```bash
+# 2. 开发运行（自动拉起 sidecar + Vite + 窗口）
 pnpm tauri dev
 ```
 
-### 构建打包
+首次启动后：在设置（⚙）里填入 DeepSeek API Key（或 opencode-go Key，可选）即可开始对话。
+Key 存入本地凭据库（`harness/.dsh-home/.credentials.yaml`），模型默认 `deepseek-v4-flash`（可切换）。
+
+### 独立调试 sidecar
 
 ```bash
-pnpm tauri build
+cd harness
+$env:DSH_HOME = "$PWD\.dsh-home"; $env:DIVER_PORT = "3620"
+node node_modules/@deepseek-ai/dsh/lib/bin.js --profile companion
+# 然后访问 http://127.0.0.1:3620/api/health
 ```
 
-## 推荐 IDE 配置
+### 修改 companion bundle
 
-- [VS Code](https://code.visualstudio.com/)
-- [Vue - Official](https://marketplace.visualstudio.com/items?itemName=Vue.volar)
-- [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode)
-- [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer)
+bundle 以 `link:` 符号链接进 profile（`harness/.dsh-home/profiles/companion/node_modules/@diver/companion`），
+改 `harness/companion/` 下的文件后**重启 sidecar 即生效**，无需重装。
+
+### 冒烟测试
+
+```bash
+node scripts/smoke.mjs    # 基础对话 + 流式
+node scripts/smoke2.mjs   # 工具调用闭环 + 历史
+node scripts/presence.mjs # 观察主动问候
+node scripts/readlog.mjs  # 查看会话日志
+node scripts/memory-test.mjs  # 记忆插件：喂事实 → recall 验证
+```
+
+## Live2D 桌宠
+
+启动后屏幕右下角常驻 **Live2D 桌宠**（透明/置顶/无边框窗口，`src/pet/`）：
+
+- **渲染**：pixi-live2d-display + Cubism 4 官方 Core；模型为 Live2D 官方示例「Hiyori」（`public/pet/models/Hiyori/`，4.7MB，含 10 个动作）
+- **交互**：
+  - 点按桌宠 → 随机播放 TapBody 动作
+  - 底部气泡面板直接对话（轻量 SSE 聊天，最近 8 条）
+  - 助手回复自动 TTS 朗读 + **口型同步**（ParamMouthOpenY 正弦驱动，按文本时长估算）
+  - 顶部手柄拖拽移动（`data-tauri-drag-region`）
+- **常驻**：桌宠窗口与主窗口并存；主窗口关闭（隐藏到托盘）不影响桌宠
+- 与主窗口共用同一会话/记忆：两边同时连 sidecar SSE，消息互通
+
+技术要点：
+- Vite 多页构建（`index.html` 主窗口 + `pet.html` 桌宠），Rust `WindowType::Pet`（transparent/decorations:false/always_on_top/skip_taskbar/不抢焦点，右下角贴靠定位）
+- 依赖已 pin：`pixi.js@7` + `pixi-live2d-display@0.4` + `live2dcubismcore`
+
+## 模型提供商（一切皆插件）
+
+设置面板的配置区由**插件声明驱动**：每个 provider 插件通过
+`registerProviderConfig({provider, name, fields: [...]})`（`lib/settings-registry.ts`）声明自己的配置
+字段（类型/存储位置/必填/提示），UI 动态渲染，**没有硬编码的配置输入框**。字段按 `store` 落位：
+`credentials` → dsh 凭据库（`$DSH_HOME/.credentials.yaml`），`settings` → `diver-settings.json`（带 `provider.` 前缀）。
+
+当前已注册的 provider（`provider/model` 存于 `diver-settings.json`，切换后下次对话生效，会话记忆保留）：
+
+| 提供商 | 声明字段 | 说明 |
+|---|---|---|
+| `deepseek-official` | apiKey（password/credentials，必填） | DeepSeek 官方 API（`deepseek-v4-flash` / `deepseek-v4-pro`） |
+| `opencode-go` | apiKey（password/credentials，可选）、baseUrl（text/settings） | opencode.ai Zen Go 网关（26 个模型，无 key 也可用） |
+
+opencode-go 端点路由（按模型表自动选择，`harness/companion/lib/llm-opencode/`）：
+
+- `/v1/chat/completions`（OpenAI 兼容，**全功能含工具调用**）：`glm-5.3/5.2/5.1`、`kimi-k3/k2.7-code/k2.6`、`deepseek-v4-pro/flash`、`mimo-v2.5/pro`、`hy3`
+- `/v1/responses`（Responses API，第一版文本流）：`grok-4.5`、`gpt-5.6-luna`
+- `/v1/messages`（Anthropic Messages API，第一版文本流）：`minimax-m3/m2.7/m2.5`、`qwen3.8-max/3.7-max/3.7-plus/3.6-plus`
+
+> 文本流端点（responses/messages）暂不支持工具调用；选择这些模型时记忆工具自动不可用，建议聊天用 chat/completions 端点模型。
+> 可选鉴权：凭据库或环境变量 `OPENCODE_API_KEY`（无 key 时网关可裸请求）。
+
+## 关系层记忆插件
+
+按 `docs/` 设计文档（关系层记忆）实现的记忆系统，作为 companion bundle 的第三个插件
+（`harness/companion/lib/memory/`），数据落在 `$DSH_HOME/memory/`（即 `harness/.dsh-home/memory/`）：
+
+```
+memory/
+├─ topics.json           # 主题层：每主题一行（id 不透明稳定、canonical_name 标签、aliases、
+│                        #   state_summary、weight、tier、activation_count、时间锚点）
+├─ events.jsonl          # 事件层：append-only 真相源（陈述原文，永不修改）
+├─ relation-card.json    # 关系卡：profile（关于用户）/ agent_model（关于自己）/ relationship
+├─ promises.json         # 承诺（open/done/expired）
+└─ self-history.jsonl    # 行为史（建议去重等）
+```
+
+| 机制 | 实现 |
+|---|---|
+| 快提取（每轮） | `session/event` 配对 turn pair → LLM 抄字面事实（三类事实 diff + 陈述 + 承诺 + 建议） |
+| 实体消解 resolve_topic | 词法阻塞（别名/规范名命中）→ LLM 仲裁；**保守偏置：不确定 → 新建（uncertain）** |
+| 状态合并 llm_merge | 同主题新陈述合并进旧状态；`correct` 替换 |
+| 常驻注入 | `systemPrompt.section`（order 15）：关系卡 + Mode B（近期经历/未完成承诺/今天事件），永不检索 |
+| 衰减/激活/遗忘 | episodic 0.05/天、trivia 0.15/天线性衰减；用户提起 → activation+1 权重恢复 ≥0.6；低于阈值系统遗忘 |
+| Agent 工具面 | `remember` / `recall` / `inventory` / `demote`（只加强/减弱，不亲手删，可逆） |
+| 会话末 digest | 节流 10 分钟：统计 + 会话摘要 → 模式/关系/缺口 → 关系卡更新 |
+
+验证过的行为：agent 每轮自动 `remember`；跨轮"小本本"记忆一致；recall 型问题（名字/忌口/爱好）
+零工具调用、纯靠注入回答正确；人设自然成长（"记忆压力测试满分"）。
+
+## 环境要求
+
+- Node.js ≥ 22、pnpm ≥ 10
+- Rust 工具链（Tauri 2 依赖）
+- Windows 10/11（TTS 使用系统 SAPI）
+
+## 已知限制 / 后续方向
+
+- [ ] 打包分发：Node 运行时随包（sidecar 打包策略）
+- [ ] 原生通知：agent 主动消息到达时托盘通知
+- [ ] 全局快捷键唤起窗口
+- [ ] 语音输入（麦克风）
+- [ ] 日程提醒的持久化配置界面
+- [ ] 模型供应商扩展（自定义 base URL）

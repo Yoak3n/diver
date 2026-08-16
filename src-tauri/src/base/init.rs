@@ -4,7 +4,16 @@ use crate::base::cmd::*;
 
 
 pub fn generate_handlers() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync + 'static{
-    generate_handler![greet, log_example]
+    generate_handler![
+        get_sidecar_status,
+        restart_sidecar,
+        get_sidecar_url,
+        speak,
+        list_voices,
+        show_main_window,
+        get_window_startup_config,
+        set_window_startup_config,
+    ]
 }
 
 
@@ -20,7 +29,7 @@ pub fn configure(builder: Builder<tauri::Wry>) -> Builder<tauri::Wry> {
                 Target::new(TargetKind::Webview),
                 // 输出到日志文件
                 Target::new(TargetKind::Folder {
-                    path: dirs::data_dir().unwrap_or_default().join("tauri-vue-template").join("logs"),
+                    path: dirs::data_dir().unwrap_or_default().join("diver").join("logs"),
                     file_name: Some("app".into()),
                 }),
             ])
@@ -41,7 +50,31 @@ pub fn configure(builder: Builder<tauri::Wry>) -> Builder<tauri::Wry> {
         app.manage(crate::base::state::AppState::default());
         crate::base::handle::Handle::global().init(app.handle().clone());
         let _ = crate::base::tray::create_tray_icon(app, false);
-        crate::base::lightweight::add_window_listeners(crate::base::window::schema::WindowType::Main);
+
+        // 启动本地服务（SQLite 记忆后端等），端口注入 sidecar。
+        match crate::services::start(app.handle()) {
+            Some(port) => std::env::set_var("DIVER_MEMORY_PORT", port.to_string()),
+            None => log::error!("本地服务启动失败，记忆功能不可用"),
+        }
+
+        // 启动 Node sidecar（dsh 框架 + 陪伴 bundle，agent 常驻）。
+        let sidecar = crate::base::sidecar::SidecarManager::global();
+        if !sidecar.start(app.handle()) {
+            log::error!("sidecar 启动失败，请检查依赖安装状态");
+        }
+
+        // 启动窗口：按用户配置决定是否自动打开（默认全部打开）。
+        let startup = crate::config::window_startup::load_config(app.handle());
+        if startup.auto_open_main {
+            crate::base::window::manager::Manager::global()
+                .show_window(crate::base::window::schema::WindowType::Main, None);
+        }
+
+        // Live2D 桌宠：常驻桌面（透明/置顶）。
+        if startup.auto_open_pet {
+            crate::base::window::manager::Manager::global()
+                .show_window(crate::base::window::schema::WindowType::Pet, None);
+        }
 
         Ok(())
     })
@@ -50,6 +83,10 @@ pub fn configure(builder: Builder<tauri::Wry>) -> Builder<tauri::Wry> {
 pub fn app_event_handle(app_handle: &AppHandle, event: RunEvent) {
     match event {
         tauri::RunEvent::Ready | tauri::RunEvent::Resumed => {}
+        tauri::RunEvent::Exit => {
+            // 应用退出时停止 sidecar（agent 随之结束，记忆保留在磁盘）。
+            crate::base::sidecar::SidecarManager::global().stop();
+        }
         tauri::RunEvent::ExitRequested { api, code, .. } => {
             if code.is_none() {
                 api.prevent_exit();

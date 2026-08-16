@@ -1,0 +1,14 @@
+{
+  "name": "diver-harness",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Diver sidecar: DeepSeek Harness framework (dsh-base only, no web/interaction layer) + companion bundle",
+  "type": "module",
+  "scripts": {
+    "boot": "node node_modules/@deepseek-ai/dsh/lib/bin.js --profile companion",
+    "dump-config": "node node_modules/@deepseek-ai/dsh/lib/bin.js --profile companion --dump-config"
+  },
+  "dependencies": {
+    "@deepseek-ai/dsh": "0.1.0-rc.6"
+  }
+}

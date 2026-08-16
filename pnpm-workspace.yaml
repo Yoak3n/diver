@@ -1,2 +1,13 @@
+packages:
+  - harness
+
+nodeLinker: hoisted
+
 allowBuilds:
   esbuild: true
+  node-addon-require-builtin: true
+  '@deepseek-ai/dsh-subprocess-local': true
+  '@google/genai': true
+  koffi: true
+  node-pty: true
+  protobufjs: true

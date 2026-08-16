@@ -1,26 +1,61 @@
-// Tauri command handlers — define `#[tauri::command]` functions here.
+// Tauri command handlers — Diver 应用命令。
 
-use log::{info, warn, error, debug};
+use tauri::AppHandle;
 
+use crate::base::sidecar::{SidecarManager, SidecarStatus};
+use crate::base::tts;
+
+/// 查询 sidecar 状态。
 #[tauri::command]
-pub fn greet(name: &str) -> String {
-    info!("Greet command called with name: {}", name);
-    let message = format!("Hello, {}! You've been greeted from Rust!", name);
-    debug!("Greet response: {}", message);
-    message
+pub fn get_sidecar_status() -> SidecarStatus {
+    SidecarManager::global().status()
 }
 
+/// 重启 sidecar（停止后重新拉起）。
 #[tauri::command]
-pub fn log_example(level: &str, message: &str) -> String {
-    match level {
-        "info" => info!("{}", message),
-        "warn" => warn!("{}", message),
-        "error" => error!("{}", message),
-        "debug" => debug!("{}", message),
-        _ => {
-            warn!("Unknown log level: {}, defaulting to info", level);
-            info!("{}", message);
-        }
-    }
-    format!("Logged {} message: {}", level, message)
+pub fn restart_sidecar(app: AppHandle) -> bool {
+    SidecarManager::global().restart(&app)
+}
+
+/// 获取 sidecar 的 API 根地址（供前端展示/调试）。
+#[tauri::command]
+pub fn get_sidecar_url() -> String {
+    SidecarManager::global().api_base_url()
+}
+
+/// 本地 TTS 朗读文本。
+#[tauri::command]
+pub fn speak(app: AppHandle, text: String, voice: Option<String>) -> bool {
+    tts::speak(&app, &text, voice.as_deref())
+}
+
+/// 列出系统已安装的 TTS 语音。
+#[tauri::command]
+pub fn list_voices(app: AppHandle) -> Vec<String> {
+    tts::list_voices(&app)
+}
+
+/// 显示主聊天窗口（桌宠交互面板调用）。
+#[tauri::command]
+pub fn show_main_window() -> bool {
+    use crate::base::window::schema::{WindowOperationResult, WindowType};
+    matches!(
+        crate::base::window::manager::Manager::global().show_window(WindowType::Main, None),
+        WindowOperationResult::Shown | WindowOperationResult::Created
+    )
+}
+
+/// 读取启动窗口配置。
+#[tauri::command]
+pub fn get_window_startup_config(app: AppHandle) -> crate::config::window_startup::WindowStartupConfig {
+    crate::config::window_startup::load_config(&app)
+}
+
+/// 保存启动窗口配置。
+#[tauri::command]
+pub fn set_window_startup_config(
+    app: AppHandle,
+    config: crate::config::window_startup::WindowStartupConfig,
+) -> bool {
+    crate::config::window_startup::save_config(&app, &config)
 }

@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "tauri-vue-template",
+  "productName": "Diver",
   "version": "0.1.0",
-  "identifier": "com.yoa.tauri-vue-template",
+  "identifier": "com.diver.companion",
   "build": {
     "beforeDevCommand": "pnpm dev",
     "devUrl": "http://localhost:1420",
@@ -18,6 +18,9 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "resources": {
+      "resources/speak.ps1": "resources/speak.ps1"
+    },
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

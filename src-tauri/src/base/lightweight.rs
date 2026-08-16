@@ -1,15 +1,25 @@
 use std::collections::HashSet;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::OnceLock;
 
-use crate::base::timer::Timer;
+
 use anyhow::{Context, Result};
 use delay_timer::timer::task::TaskBuilder;
 use tauri::{Listener, Manager};
 
-use super::handle;
-use super::state::AppState;
-use super::window::{manager::Manager as WM, schema::WindowType};
+use super::{
+    handle,state::AppState,
+    timer::Timer,
+    window::{
+        manager::Manager as WM, 
+        schema::WindowType
+    }
+};
 const LIGHT_WEIGHT_TASK_ID: u64 = 0;
+
+/// 标记轻量级定时器任务是否已被注册到 delay_timer 中
+/// 避免在未注册时调用 remove_task 触发 delay_timer 内部的 ERROR 日志
+static LIGHTWEIGHT_TIMER_ACTIVE: AtomicBool = AtomicBool::new(false);
 
 
 
@@ -38,11 +48,14 @@ impl Default for LightWeightState {
 }
 
 pub fn setup_window_close_listener() {
-    let window_labels = ["main"];
+    let window_labels = WindowType::all_exclude_float()
+        .iter()
+        .map(|wt| wt.label().to_string())
+        .collect::<Vec<String>>();
 
     // 使用动态监听机制为所有已存在的窗口添加监听器
     for window_label in &window_labels {
-        if let Some(wt) = WindowType::from_label(*window_label) {
+        if let Some(wt) = WindowType::from_label(window_label) {
             add_window_listeners(wt);
         }
     }
@@ -102,6 +115,9 @@ pub fn add_window_listeners(wt: WindowType) {
 }
 
 fn setup_light_weight_timer() -> Result<()> {
+    // 如果已经有定时器在运行，先清理
+    let _ = cancel_light_weight_timer();
+
     Timer::global().init()?;
 
     // 创建任务
@@ -123,6 +139,8 @@ fn setup_light_weight_timer() -> Result<()> {
             .context("failed to add timer task")?;
     }
 
+    LIGHTWEIGHT_TIMER_ACTIVE.store(true, Ordering::Release);
+
     Ok(())
 }
 
@@ -132,23 +150,24 @@ pub fn entry_lightweight_mode() {
 
     // 获取所有窗口类型并销毁它们
     for window_type in &WindowType::all() {
-        WM::global().destroy_window(window_type.clone());
+        WM::global().destroy_window(*window_type);
     }
 
     let _ = cancel_light_weight_timer();
 
     // 更新托盘显示
-    let _tray = crate::base::tray::update_menu_visible(false);
+    crate::base::tray::update_menu_visible(false);
 }
 
 fn cancel_light_weight_timer() -> Result<()> {
-    // let mut timer_map = Timer::global().timer_map.write();
-    let delay_timer = Timer::global().delay_timer.write();
+    // 只在任务已注册时执行移除，避免 delay_timer 内部报 "No task-mark found" 错误
+    if !LIGHTWEIGHT_TIMER_ACTIVE.load(Ordering::Acquire) {
+        return Ok(());
+    }
 
-    // if let Some(task) = timer_map.remove(&LIGHT_WEIGHT_TASK_ID) {
-    delay_timer
-        .remove_task(LIGHT_WEIGHT_TASK_ID)
-        .context("failed to remove timer task")?;
-    // }
+    let delay_timer = Timer::global().delay_timer.write();
+    let _ = delay_timer.remove_task(LIGHT_WEIGHT_TASK_ID);
+
+    LIGHTWEIGHT_TIMER_ACTIVE.store(false, Ordering::Release);
     Ok(())
 }

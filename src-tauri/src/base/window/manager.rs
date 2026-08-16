@@ -20,7 +20,10 @@ pub struct Manager {
 }
 
 fn default_states() -> HashMap<WindowType, WindowState> {
-    HashMap::from([(WindowType::Main, WindowState::NotExist)])
+    HashMap::from([
+        (WindowType::Main, WindowState::NotExist),
+        (WindowType::Pet, WindowState::NotExist),
+    ])
 }
 
 impl Manager {
@@ -98,17 +101,25 @@ impl Manager {
             return Ok(existing_window);
         }
 
+        // 解析目标 URL：http(s) 开头视为外部地址（sidecar / Vite dev server），
+        // 否则为打包内应用路由。
+        let url_str = url_with_args
+            .map(|u| u.to_string())
+            .unwrap_or_else(|| window_type.url());
+        let webview_url = if url_str.starts_with("http://") || url_str.starts_with("https://") {
+            tauri::WebviewUrl::External(
+                url_str
+                    .parse()
+                    .unwrap_or_else(|_| tauri::Url::parse("about:blank").unwrap()),
+            )
+        } else {
+            tauri::WebviewUrl::App(url_str.into())
+        };
+
         let mut builder = WebviewWindowBuilder::new(
             &app_handle,
             window_type.label().to_string(),
-            tauri::WebviewUrl::App(
-                url_with_args
-                    .map(|u| {
-                        u.parse()
-                            .unwrap_or(window_type.url().parse().unwrap_or_default())
-                    })
-                    .unwrap_or_else(|| window_type.url().into()),
-            ),
+            webview_url,
         )
         .title(config.window_type.title())
         .inner_size(config.inner_size.0, config.inner_size.1)
@@ -126,6 +137,17 @@ impl Manager {
         if config.float {
             let (x, y) = adjust_float_window_position(&app_handle, config);
             builder = builder.position(x, y);  
+        }
+        // 桌宠：常驻屏幕右下角（贴靠工作区边缘）
+        if window_type == WindowType::Pet {
+            if let Some(monitor) = app_handle.primary_monitor().ok().flatten() {
+                let area = monitor.work_area();
+                let x = (area.position.x + area.size.width as i32 - config.inner_size.0 as i32 - 24) as f64;
+                let y = (area.position.y + area.size.height as i32 - config.inner_size.1 as i32 - 24) as f64;
+                let x = x.max(area.position.x as f64);
+                let y = y.max(area.position.y as f64);
+                builder = builder.position(x, y);
+            }
         }
 
         #[cfg(target_os = "windows")]

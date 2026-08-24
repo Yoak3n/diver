@@ -36,32 +36,38 @@ diver/
 │  ├─ src/services/        # 本地服务：axum /rpc + memory RPC handler
 │  └─ resources/speak.ps1  # TTS 脚本
 ├─ crates/diver-memory/    # Rust 记忆后端 crate（SQLite 存储 + 确定性逻辑）
-├─ harness/                # Node sidecar workspace（pnpm）
-│  ├─ companion/           # @diver/companion bundle（link: 符号链接进 profile）
-│  │  ├─ cordis.patch.yml  # 人设/权限/工具策略/服务行
-│  │  └─ lib/              # TypeScript 插件（Node ≥22.18 原生 type-stripping）：
-│  │                       #   web.ts（传输层）、presence.ts、session.ts、
-│  │                       #   settings-registry.ts、memory/、llm-opencode/
-│  └─ .dsh-home/           # 仓库本地 DSH_HOME（凭据、会话、设置、记忆；gitignore）
-│     └─ profiles/companion/
+├─ harness/                # Node sidecar workspace（pnpm，自研 cos）
+│  ├─ packages/            # 所有 @cos/* 工作区插件包
+│  │  └─ profile/          # DSH 对齐的 profile 模型（home/双锚点/平面回退/reconcile）
+│  ├─ scripts/plugin.ts    # pnpm 转发：profile 插件管理
+│  ├─ cos-plugins/         # 第三方 @diver/*（本仓库实际在仓库根 ../cos-plugins）
+│  └─ .dsh-home/           # 仓库本地 cos home（凭据、会话、设置、记忆；gitignore）
+│     └─ profiles/companion/  # companion profile：package.json（dsh.profile.bundles）
+│                            # + node_modules + cordis.patch.yml
 └─ scripts/                # 冒烟测试脚本
 ```
 
 ## 独立调试 sidecar
 
+diver 直连模式（默认）直接以路径引用 `cos-plugins/` 源码，零安装：
+
 ```powershell
 cd harness
+pnpm install
+# 启动自研 cos 的常驻 HTTP sidecar（Rust 壳即以此方式拉起）：
 $env:DSH_HOME = "$PWD\.dsh-home"; $env:DIVER_PORT = "3620"
-node node_modules/@deepseek-ai/dsh/lib/bin.js --profile companion
+node --import tsx --expose-internals packages/sidecar/src/companion.ts
 # 然后访问 http://127.0.0.1:3620/api/health
 ```
 
-也可以：`cd harness && pnpm boot`（等价于上面 node 命令，不设端口则用默认 3620）。
+也可以：`pnpm start:companion`（等价于上面 node 命令，不设端口则用默认 3620）。
 
-### 修改 companion bundle
+### 修改第三方插件（cos-plugins）
 
-bundle 以 `link:` 符号链接进 profile（`harness/.dsh-home/profiles/companion/node_modules/@diver/companion`），
-改 `harness/companion/` 下的文件后**重启 sidecar 即生效**，无需重装。
+`@diver/*` 源码在仓库根 `cos-plugins/`，companion 以
+`pluginPaths` 直连加载（bundle 路径 = `../cos-plugins/bundle-companion`）。
+改 `cos-plugins/` 下的文件后**重启 sidecar 即生效**，无需任何安装步骤。
+（通用 profile 形态仍可用：`pnpm plugin --profile <name> -- add <pkg>`。）
 
 ### 本地服务（Rust 记忆后端）
 
@@ -97,6 +103,6 @@ node scripts/opencode-test.mjs # opencode-go provider 直测
 | 现象 | 处理 |
 |---|---|
 | 启动报 "harness 未安装" | 根目录执行 `pnpm install`（sidecar 入口 `node_modules/@deepseek-ai/dsh/lib/bin.js`） |
-| 端口被占 | `DIVER_PORT` 覆盖默认 3620；Vite 1420 为 strictPort，占用需先释放 |
+| 端口被占 | `DIVER_PORT` 覆盖默认 3620；Vite 1420 为 strictPort。3620 若被上一会话残留的 sidecar 占用，`tauri dev` 启动前会自动回收（命令行匹配 `companion.ts`/`cos-sidecar.exe`）；被其他进程占用则中止并提示释放 |
 | 改了 bundle 不生效 | 确认重启了 sidecar（不是只刷新窗口）；bundle 是符号链接，直接生效 |
 | 桌宠不显示 | 检查启动配置 `auto_open_pet`（设置面板可改）；`pnpm tauri dev` 下默认全开 |

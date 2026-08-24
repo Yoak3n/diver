@@ -1,11 +1,17 @@
 # Node sidecar 与 dsh 框架接入
 
-agent 大脑是一个**常驻 Node 进程**：dsh 框架（`@deepseek-ai/dsh`）提供 agent loop 等
-核心，`@diver/companion` bundle 提供陪伴场景的自研插件。本页说明框架接入方式。
+agent 大脑是一个**常驻 Node 进程**。运行时核心已迁移为仓库内自研的 cos harness
+（`harness/`，`@cos/*` 工作区插件，DSH profile 模型：`<home>/profiles/<name>` 自带
+package.json + node_modules + cordis.patch.yml），陪伴场景的第三方插件
+（`@diver/backend` / `@diver/memory`，源码在 `cos-plugins/`）以 **diver 直连
+模式**加载：bundle 路径 = `../cos-plugins/bundle-companion`，插件按
+`pluginPaths` 从 cos-plugins 源码解析，由 `@diver/bundle-companion` 组装。
+Rust `base/sidecar.rs` 以 `node --import tsx .../companion.ts` 拉起（详见
+`docs/development.md`）。本页说明接入方式。
 
 ## 角色与生命周期
 
-- sidecar 由 Rust `base/sidecar.rs` 启动：`node <dsh>/lib/bin.js --profile companion`
+- sidecar 由 Rust `base/sidecar.rs` 启动：`node --import tsx packages/sidecar/src/companion.ts`（diver 直连 cos-plugins）
   - `DSH_HOME` → `harness/.dsh-home`（仓库本地，gitignore）
   - `DIVER_PORT` → sidecar HTTP 端口（默认 3620）
   - `DIVER_MEMORY_PORT` → Rust 本地服务端口（记忆 RPC）
@@ -26,9 +32,9 @@ agent 大脑是一个**常驻 Node 进程**：dsh 框架（`@deepseek-ai/dsh`）
 ## Profile 组装
 
 `harness/.dsh-home/profiles/companion/` 是运行时组装出的 profile：
-`dsh-base` 与 `@diver/companion`（`link:` 符号链接）两层 bundle + 用户
-`cordis.patch.yml`（当前就是 `harness/companion/cordis.patch.yml` 的内容）。
-顺序：base 行 → companion 覆盖/插入行 → 用户 patch。
+cos 核心（`cordis.yml` 基础行）与 `cos-plugins/bundle-companion`（路径直连）两层
++ profile/用户 `cordis.patch.yml`。
+顺序：base 行 → companion bundle 覆盖/插入行 → 用户 patch。
 
 ## cordis.patch.yml 要点
 

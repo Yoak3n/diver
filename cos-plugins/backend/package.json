@@ -1,0 +1,25 @@
+{
+  "name": "@diver/backend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Diver companion backend connector plugin (third-party, outside the harness workspace): the HTTP/SSE service the outer program (Tauri UI) connects to, driving the companion agent and exposing health/settings/history.",
+  "main": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./session": "./src/session.ts",
+    "./handlers": "./src/handlers.ts",
+    "./sse": "./src/sse.ts",
+    "./types": "./src/types.ts",
+    "./settings-registry": "./src/settings-registry.ts",
+    "./secrets": "./src/secrets.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@cos/types": "file:../../harness/packages/types",
+    "cordis": "4.0.0-rc.7",
+    "yaml": "2.4.0"
+  }
+}

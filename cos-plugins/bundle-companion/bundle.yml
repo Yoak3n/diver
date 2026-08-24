@@ -1,0 +1,17 @@
+# Bundle declaration for @diver/bundle-companion — assemble the Diver companion
+# deployment: relation-layer memory + backend connector service.
+# Apply with:  pnpm start --bundles @diver/bundle-companion
+# (or compose bundles programmatically via BootOptions.bundles).
+# Depends on the harness core rows that provide the injected services.
+bundle:
+  id: diver:companion
+  name: '@diver/bundle-companion'
+  requires:
+    - llm
+    - credentials
+    - session
+    - persistence
+    - system-prompt
+    - tools
+    - agents
+    - agent-loop

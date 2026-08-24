@@ -1,0 +1,21 @@
+{
+  "name": "@diver/memory",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Diver companion memory plugin (third-party, outside the harness workspace): relation-layer memory backed by the Rust SQLite RPC backend.",
+  "main": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./store-rpc": "./src/store-rpc.ts",
+    "./extract": "./src/extract.ts",
+    "./session": "./src/session.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@cos/types": "file:../../harness/packages/types",
+    "cordis": "4.0.0-rc.7"
+  }
+}

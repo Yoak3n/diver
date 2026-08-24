@@ -34,7 +34,7 @@
 │ Node sidecar（agent 大脑，常驻进程）               │
 │  · @deepseek-ai/dsh-base（仅框架：agent loop、    │
 │    会话、LLM 适配器、工具、persona、持久化）        │
-│  · @diver/companion bundle（自研）：               │
+│  · cos-plugins/bundle-companion（自研，路径直连）：  │
 │    - 陪伴人设 patch（system-prompt 覆盖）          │
 │    - companion-web：自有 node:http 传输层          │
 │      （静态 UI + JSON/SSE API，不用 dsh 交互层）    │
@@ -67,13 +67,11 @@ diver/
 │  ├─ src/services/        # 本地服务：axum /rpc（SQLite 记忆后端）
 │  └─ resources/speak.ps1  # TTS 脚本
 ├─ crates/diver-memory/    # Rust 记忆后端 crate（SQLite 存储 + 确定性逻辑）
-├─ harness/                # Node sidecar workspace（pnpm）
-│  ├─ companion/           # @diver/companion bundle（link: 符号链接进 profile）
-│  │  ├─ cordis.patch.yml  # 人设/权限/工具策略/服务行
-│  │  └─ lib/              # TypeScript 插件（Node ≥22.18 原生 type-stripping 直接运行，
-│  │                       #   零构建）：web.ts（传输层）、presence.ts（主动问候）、
-│  │                       #   session.ts、memory/（关系层记忆）、llm-opencode/（provider）
-│  └─ .dsh-home/           # 仓库本地 DSH_HOME（凭据、会话、设置、记忆；gitignore）
+├─ harness/                # Node sidecar workspace（pnpm，自研 cos）
+│  ├─ packages/profile/    # DSH 对齐的 profile 模型（通用；diver 用直连模式）
+│  ├─ cos-plugins/         # 第三方 @diver/*（本仓库实际在仓库根 ../cos-plugins）
+│  │                       # diver 直连：bundle 路径 = ../cos-plugins/bundle-companion
+│  └─ .dsh-home/           # 仓库本地 cos home（凭据、会话、设置、记忆；gitignore）
 ├─ docs/                   # 项目文档（本仓库的文档中心）
 └─ scripts/                # 冒烟测试脚本（smoke/smoke2/presence/readlog/memory-test/opencode-test）
 ```
@@ -99,14 +97,15 @@ Key 存入本地凭据库（`harness/.dsh-home/.credentials.yaml`），模型默
 ```bash
 cd harness
 $env:DSH_HOME = "$PWD\.dsh-home"; $env:DIVER_PORT = "3620"
-node node_modules/@deepseek-ai/dsh/lib/bin.js --profile companion
+node --import tsx --expose-internals packages/sidecar/src/companion.ts
 # 然后访问 http://127.0.0.1:3620/api/health
 ```
 
-### 修改 companion bundle
+### 修改第三方插件（cos-plugins）
 
-bundle 以 `link:` 符号链接进 profile（`harness/.dsh-home/profiles/companion/node_modules/@diver/companion`），
-改 `harness/companion/` 下的文件后**重启 sidecar 即生效**，无需重装。
+`@diver/*` 源码在仓库根 `cos-plugins/`，companion 以 `pluginPaths` 直连加载
+（bundle 路径 = `../cos-plugins/bundle-companion`）。改 `cos-plugins/` 下的
+文件后**重启 sidecar 即生效**，无需安装。
 
 ### 冒烟测试
 

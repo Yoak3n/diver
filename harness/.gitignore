@@ -1,0 +1,9 @@
+.env
+secrets.yml
+.sessions/
+node_modules/
+main.js
+dist/
+.dsh-home/
+.pnpm-store-local/
+.compat-test-home/

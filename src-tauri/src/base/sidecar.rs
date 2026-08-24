@@ -1,6 +1,6 @@
 //! Sidecar 生命周期管理：负责启动/监控/停止 Node harness 子进程。
 //!
-//! sidecar 是 Node 进程，运行 dsh 框架（`--profile companion`），
+//! sidecar 是 Node 进程，运行自研 cos harness（diver path 直连 `cos-plugins/bundle-companion`），
 //! 通过 `DIVER_READY` 标志行报告就绪，随后由 WebView 通过
 //! `http://127.0.0.1:{port}` 访问其自有的 HTTP/SSE 服务。
 //! agent 常驻于 sidecar：窗口隐藏/销毁（轻量模式）不影响它持续运行。
@@ -125,43 +125,65 @@ impl SidecarManager {
             }
         }
 
-        let bin_js = self
-            .harness_dir
-            .join("node_modules/@deepseek-ai/dsh/lib/bin.js");
-        let bin_js = if bin_js.exists() {
-            bin_js
+        // 自研 cos harness 的常驻 HTTP sidecar 入口（companion profile）。
+        // dev/sidecar 形态经 tsx 直接运行 TS（Node ≥22.18 亦可原生 type-strip，
+        // 但扩展名省略的相对导入需要 tsx 的 loader）。
+        let entry = self.harness_dir.join("packages/sidecar/src/companion.ts");
+        let entry = if entry.exists() {
+            entry
         } else {
-            // pnpm workspace 布局：依赖可能提升到仓库根 node_modules
+            // pnpm 依赖提升布局：入口可能位于仓库根
             self.harness_dir
                 .parent()
                 .unwrap_or(&self.harness_dir)
-                .join("node_modules/@deepseek-ai/dsh/lib/bin.js")
+                .join("packages/sidecar/src/companion.ts")
         };
         let dsh_home = self.harness_dir.join(".dsh-home");
-        if !bin_js.exists() {
+        if !entry.exists() {
             log::error!(
                 "sidecar 入口不存在: {}（请先在根目录执行 pnpm install）",
-                bin_js.display()
+                entry.display()
             );
-            self.push_log(format!("[diver] harness 未安装: {}", bin_js.display()));
+            self.push_log(format!("[diver] harness 未安装: {}", entry.display()));
             self.set_state(SidecarState::Crashed);
             return false;
         }
 
+        // 预检：上一会话可能留下仍然占用端口的孤儿 sidecar（强杀会话时未被回收）。
+        // 命中自研 cos 入口（companion.ts / cos-sidecar.exe）的先回收再启动；
+        // 被其他进程占用则中止并给出明确提示。
+        match Self::reclaim_stale_sidecar(self.port()) {
+            Some(true) => {
+                log::warn!("端口 {} 被残留 sidecar 占用，已回收后继续启动", self.port());
+                self.push_log(format!("[diver] 回收残留 sidecar (port {})", self.port()));
+            }
+            Some(false) => {
+                log::error!("端口 {} 被其他进程占用，无法启动 sidecar", self.port());
+                self.push_log(format!(
+                    "[diver] 端口 {} 被其他进程占用（非本应用 sidecar），请释放后重试",
+                    self.port()
+                ));
+                self.set_state(SidecarState::Crashed);
+                return false;
+            }
+            None => {}
+        }
+
         log::info!(
-            "启动 sidecar: {} --profile companion (DSH_HOME={})",
-            bin_js.display(),
+            "启动 sidecar: node --import tsx {}（diver path: cos-plugins/bundle-companion, DSH_HOME={}）",
+            entry.display(),
             dsh_home.display()
         );
         self.push_log(format!(
-            "[diver] 启动: {} --profile companion",
-            bin_js.display()
+            "[diver] 启动: {}（diver path 直连）",
+            entry.display()
         ));
 
         let mut cmd = Command::new(&self.node_bin);
-        cmd.arg(&bin_js)
-            .arg("--profile")
-            .arg("companion")
+        cmd.arg("--import")
+            .arg("tsx")
+            .arg("--expose-internals")
+            .arg(&entry)
             .env("DSH_HOME", &dsh_home)
             .env("DIVER_PORT", self.port().to_string())
             .env(
@@ -277,8 +299,52 @@ impl SidecarManager {
         self.start(app)
     }
 
+    /// Windows: 预检并回收上一会话残留、仍占用 `port` 的自研 cos sidecar。
+    ///
+    /// 通过 PowerShell 查询端口监听者：命令行匹配 `companion.ts` / `cos-sidecar.exe`
+    /// 的进程视为本应用的孤儿 sidecar（强杀会话时未被回收），杀死后放行启动；
+    /// 端口被其他进程占用时返回 `Some(false)`，由调用方中止启动并给出明确日志。
+    /// 端口空闲、非 Windows 或探测失败返回 `None`（放行）。
+    #[cfg(target_os = "windows")]
+    fn reclaim_stale_sidecar(port: u16) -> Option<bool> {
+        let script = format!(
+            "$conns = Get-NetTCPConnection -LocalPort {port} -State Listen -ErrorAction SilentlyContinue; \
+             if (-not $conns) {{ exit 0 }}; \
+             $found = $false; \
+             foreach ($conn in $conns) {{ \
+                 $procId = $conn.OwningProcess; \
+                 $proc = Get-CimInstance Win32_Process -Filter ('ProcessId = ' + $procId) -ErrorAction SilentlyContinue; \
+                 if ($proc -and ($proc.CommandLine -like '*companion.ts*' -or $proc.CommandLine -like '*cos-sidecar.exe*')) {{ \
+                     Stop-Process -Id $procId -Force -ErrorAction SilentlyContinue; \
+                     Write-Output ('RECLAIM ' + $procId); \
+                     $found = $true \
+                 }} \
+             }}; \
+             if (-not $found) {{ Write-Output 'FOREIGN' }}"
+        );
+        let output = Command::new("powershell")
+            .args(["-NoProfile", "-NonInteractive", "-Command", &script])
+            .stdin(Stdio::null())
+            .output()
+            .ok()?;
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        if stdout.contains("RECLAIM") {
+            Some(true)
+        } else if stdout.contains("FOREIGN") {
+            Some(false)
+        } else {
+            None
+        }
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    fn reclaim_stale_sidecar(_port: u16) -> Option<bool> {
+        None
+    }
+
     fn emit_status(&self, app: &AppHandle) {
         let status = self.status();
         let _ = app.emit("sidecar://status", status);
     }
 }
+

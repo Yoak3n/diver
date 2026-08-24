@@ -1,5 +1,10 @@
 packages:
   - harness
+  # The harness is itself a workspace; expose its @cos/* workspace packages so
+  # a root-level `pnpm install` (e.g. the one `cargo tauri dev` triggers
+  # through pnpm's verifyDepsBeforeRun) can resolve harness's
+  # `"@cos/*": "workspace:*"` dependencies.
+  - harness/packages/*
 
 nodeLinker: hoisted
 

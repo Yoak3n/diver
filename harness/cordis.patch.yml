@@ -1,0 +1,10 @@
+# User patch layer — the LAST layer applied on top of base row's and every
+# overlay (DSH's home-level cordis.patch.yml analog: the user / outer program
+# has the final say). Patch semantics match the include patch engine:
+#   - `insert:` adds new rows (mounted by bare package name from node_modules)
+#   - `id: + fields` patches an existing row (config/disabled/...)
+# Auto-loaded by @cos/boot from the cwd (or COS_PATCH=<path>).
+#
+# Diver companion 插件由第三方 bundle 组装（cos-plugins/bundle-companion）：
+#   pnpm start --bundles @diver/bundle-companion
+# 本用户补丁层保持干净，仅用于外层程序/用户的最终覆盖。

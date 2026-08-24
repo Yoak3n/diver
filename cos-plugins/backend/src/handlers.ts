@@ -6,7 +6,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import { SessionId } from '@cos/types'
 
 import { readDiverSettings, writeDiverSettings, textOf } from './session-helpers'
-import { SESSION_ID, userMessage } from './session'
+import { SESSION_ID, userMessage } from './agent'
 import type { WebHandlerDeps } from './types'
 
 const MIME: Record<string, string> = {
@@ -122,7 +122,15 @@ export async function handleRequest(
         return
       }
       if (!(await deps.isModelConfigured())) {
-        sendJson(res, 400, { error: '尚未配置 API Key，请先在设置中配置' })
+        // 区分"已注册但缺凭据"与"未注册/未启用"，给出不同提示。
+        const s = readDiverSettings()
+        const provider = typeof s.provider === 'string' && s.provider
+          ? s.provider
+          : (deps.ctx.llm.listProviders()[0]?.id ?? '')
+        const registered = provider !== '' && deps.ctx.llm.listProviders().some((p) => p.id === provider)
+        sendJson(res, 400, {
+          error: registered ? '尚未配置 API Key，请先在设置中配置' : '当前模型提供商未注册或未启用，请在设置中重新选择',
+        })
         return
       }
       const agent = await deps.ensureAgent()
@@ -172,17 +180,16 @@ export async function handleRequest(
     // /api/settings GET / POST
     if (pathname === '/api/settings') {
       if (req.method === 'GET') {
-        const s = readDiverSettings()
         const h = await deps.healthInfo()
         sendJson(res, 200, {
           modelConfigured: h.modelConfigured,
-          opencodeConfigured: await deps.isOpencodeConfigured(),
-          provider: s.provider ?? 'deepseek-official',
-          model: s.model ?? h.model,
+          // provider/model 与 harness 注册表对齐（持久化选择失效时钳制到当前适配器）
+          provider: h.provider,
+          model: h.model,
           models: await deps.catalogModels(),
           providers: await deps.providerDecls(),
-          ttsEnabled: !!s.ttsEnabled,
-          ttsVoice: s.ttsVoice ?? '',
+          ttsEnabled: !!readDiverSettings().ttsEnabled,
+          ttsVoice: (readDiverSettings().ttsVoice as string) ?? '',
           sidecar: { state: 'running', port: deps.port },
         })
         return
@@ -200,7 +207,15 @@ export async function handleRequest(
         writeDiverSettings(patch)
         if (patch.model || patch.provider) {
           const s = readDiverSettings()
-          await deps.applyModelChange(patch.provider ?? s.provider ?? 'deepseek-official', patch.model ?? s.model)
+          const provider = (typeof patch.provider === 'string' && patch.provider)
+            ? patch.provider
+            : (typeof s.provider === 'string' && s.provider)
+              ? s.provider
+              : (deps.ctx.llm.listProviders()[0]?.id ?? '')
+          const model = (typeof patch.model === 'string' && patch.model)
+            ? patch.model
+            : (typeof s.model === 'string' ? s.model : undefined)
+          await deps.applyModelChange(provider, model)
         }
         const h = await deps.healthInfo()
         sendJson(res, 200, { modelConfigured: h.modelConfigured, provider: h.provider, model: h.model })

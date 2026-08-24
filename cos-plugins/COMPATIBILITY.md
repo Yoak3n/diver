@@ -2,7 +2,7 @@
 
 > 对象：`@diver/memory`（关系层记忆）与 `@diver/backend`（后端连接服务）
 > 组装：`@diver/bundle-companion`（第三方 bundle，`--bundles` 应用）
-> 部署形态：`cos-plugins/` 独立第三方插件目录（工作区外）；diver 项目以**直连模式**运行——bundle 路径 = `../cos-plugins/bundle-companion`、插件按 `pluginPaths` 从 cos-plugins 源码加载（通用 DSH profile 形态仍保留：`pnpm plugin --profile <name> add …` 装进 `<home>/profiles/<name>`）
+> 部署形态：`cos-plugins/` 独立第三方插件目录（工作区外），经 `pnpm add file:` 安装、bundle 补丁层挂载
 > 验证日期：2026-08-24
 
 ---
@@ -23,7 +23,7 @@
 | 项 | 值 |
 |---|---|
 | 框架 | harness（cordis 4.0.0-rc.7，`@cos/*` 工作区包） |
-| 插件 | `@diver/memory`、`@diver/backend`（`cos-plugins/` 源码，diver 直连加载；通用形态经 `pnpm plugin` 安装进 profile） |
+| 插件 | `@diver/memory`、`@diver/backend`（`cos-plugins/`，`file:` 安装） |
 | 组装 | `@diver/bundle-companion`（`cos-plugins/bundle-companion/`，`--bundles` 应用） |
 | Provider | mock（`overlays/mock.yml`，离线无 key 运行） |
 | 运行 | `pnpm tsx scripts/compat-test.ts`（自动断言） |
@@ -80,7 +80,7 @@ pnpm tsx scripts/compat-test.ts   # 自动断言，退出码 0 = 全部通过
 ### 2. 运行状态记录
 
 - **插件加载日志**：`[memory] 关系层记忆插件就绪`、`[diver] companion backend listening on 127.0.0.1:3620`、`DIVER_READY http://127.0.0.1:3620`。
-- **bundle 组装**：`--profile companion` 时 `dsh.profile.bundles` 经双锚点（cos 安装 → profile）解析第三方 bundle，`requires` 校验通过后 insert memory + backend 两行。
+- **bundle 组装**：`--bundles @diver/bundle-companion` 经 `node_modules` 解析第三方 bundle，`requires` 校验通过后 insert memory + backend 两行。
 - **会话持久化**：`/api/history` 正确返回跨重启的持久化消息（含上一轮测试会话），证明 `diver-companion` 会话 resume 生效。
 - **类型检查**：harness 根 `pnpm typecheck` 与两个插件独立 `tsc --noEmit` 均通过。
 
@@ -102,18 +102,97 @@ pnpm tsx scripts/compat-test.ts   # 自动断言，退出码 0 = 全部通过
 ### 4. 最终验证结论
 
 - 两个第三方插件以独立目录（`cos-plugins/`）部署、经 `@diver/bundle-companion` 组装挂载后，**初始化加载、核心功能、跨模块交互、异常场景** 四个维度全部通过（13/13）。
-- 插件与框架核心完全解耦：`@cos/sidecar/plugins.ts` 不再静态导入插件；第三方插件安装在 profile 的 `node_modules`（harness 自身依赖只读），可独立版本迭代。
+- 插件与框架核心完全解耦：`@cos/sidecar/plugins.ts` 不再静态导入插件；插件经 `node_modules` 裸包名解析，可独立版本迭代。
 - bundle 组装：`@diver/bundle-companion` 声明 `requires`（8 个核心行）并 insert memory + backend，`--bundles` 一键应用；`cordis.patch.yml` 用户补丁层保持干净，仅用于外层程序最终覆盖。
-- SEA 与第三方插件：SEA 运行时无法对 node_modules 下的 TS 做 type-strip，故 `pnpm build:sea --profile companion --home ./.dsh-home` 在构建期把 profile 的第三方插件烤入同一模块图；新增插件包需重构建（dev/sidecar 形态不受影响，仍是运行时从 profile 解析）。
+- 已知边界：SEA 单文件构建（`pnpm build:sea`）目前只内联框架核心插件；第三方插件在 SEA 形态下需另行打包（dev/sidecar 形态不受影响）。
 
 ### 5. 复现方式
 
 ```sh
 cd harness
-pnpm install --store-dir ./.pnpm-store-local --config.confirmModulesPurge=false   # 安装 @cos/profile 等工作区包
-pnpm typecheck                                                                    # 类型检查（含插件）
-pnpm tsx scripts/compat-test.ts                                                   # 兼容性验证（17 项断言：T0 reconcile + T1-T4 diver 直连 + T5 profile 组装）
-# 手动启动（diver 直连 + mock 离线）：
-#   $env:COS_OVERLAYS="overlays/mock.yml"; pnpm start:companion
-# SEA 构建（第三方插件烤入）：pnpm build:sea --bundle ../cos-plugins/bundle-companion --plugin-root ../cos-plugins
+pnpm install --store-dir ./.pnpm-store-local --config.confirmModulesPurge=false   # 链接第三方插件与 bundle
+pnpm typecheck                                                                     # 类型检查（含插件）
+pnpm tsx scripts/compat-test.ts                                                    # 兼容性验证（13 项断言，经 bundle 组装）
+# 手动启动（bundle 组装 + mock 离线）：
+#   $env:COS_OVERLAYS="overlays/mock.yml"; pnpm start --bundles @diver/bundle-companion
+```
+
+---
+
+## 第三部分：@diver/backend 插件化重构与 provider 配置适配（复核）
+
+> 复核结果：**12 / 12 通过**（退出码 0）。同一 composition 下直连 `/api/health` /
+> `/api/settings` 冒烟通过：provider 目录与模型目录来自 harness 适配器注册表，
+> 设置面板的配置字段来自适配器自声明的 `providerConfig()`。
+
+> ⚠️ 已移除原 T3.2：它向 `diver-companion` 会话投递"测试消息"并经持久化落盘，
+> 会让应用每次启动都在聊天历史里看到它；且 mock 回显会掩盖真实 API 失败。
+> 测试数据现完全隔离（临时 `COS_HOME` + 临时持久化根），不触碰应用数据。
+> 后端对"持久化 provider 已不在注册表"不再静默钳制到其它适配器——原样采用并
+> 在首轮 turn 以 `NO_ADAPTER` 显式报错，配置错位可见而非被 mock 掩盖。
+
+### 1. 后端模块化（解决"一个服务耦合太多模块功能"）
+
+`apply()` 从 260 行装配降为纯组装，职责按模块拆分（各有独立文件、可单独测试）：
+
+| 模块 | 职责 |
+|---|---|
+| `index.ts` | 纯装配：状态、事件接线、依赖注入、server 生命周期 |
+| `agent.ts` | 陪伴 agent 生命周期（单例会话创建/resume、模型切换释放） |
+| `providers.ts` | 模型 provider 配置子系统（注册表/凭据/适配器声明，见下） |
+| `health.ts` | 健康信息组装 |
+| `server.ts` | HTTP server 创建/监听/释放（thin transport） |
+| `handlers.ts` / `sse.ts` | 路由分发 / harness 事件 → SSE 映射（保持不变） |
+| `state.ts` / `types.ts` | 传输层共享状态 / 共享类型 |
+
+原 `session.ts`（并入 `agent.ts`）与 `settings-registry.ts`（静态全局注册表，被
+适配器声明取代）已删除；`./session`、`./settings-registry` 导出同步移除。
+
+### 2. provider 配置适配新版 harness（移除一切硬编码 provider 知识）
+
+后端不再出现 `deepseek-official` / `opencode-go` / `DEFAULT_MODELS` /
+`deepseek.apiKey` 等字面量，全部从框架推导：
+
+| harness 注册面 | 后端使用点 |
+|---|---|
+| `ctx.llm.listProviders()` | provider 目录与显示名（适配器注册的路由） |
+| `ctx.llm.listModels(provider)` | 模型下拉（适配器自声明，advisory；不再有 DEFAULT_MODELS 兜底） |
+| `LlmAdapter.providerConfig()`（新增，`@cos/llm`） | 配置 schema 由各适配器插件声明，`ctx.llm.listProviderConfigs()` / `adapterConfig()` 汇总 |
+| `ctx.credentials.get(ref)` | "已配置"判定（适配器已 `provide`） |
+| `credentials.config.file`（新增 `secretFile` getter） | 凭据写入路径（与读取同一文件） |
+
+配套改动：`@cos/llm-deepseek` / `@cos/mock-llm` 实现 `providerConfig()`；
+deepseek 的 `DEEPSEEK_API_KEY` 环境变量兜底并入 `@cos/credentials` 的注册
+（`provide` 默认携带 envKey）。设置面板（`/api/settings.providers`）仍按
+`ProviderConfigDecl` 协议渲染，前端零协议改动；`opencodeConfigured` 字段移除。
+
+### 3. 运行环境修正（此前验证无法通过的根因）
+
+| 问题 | 修复 |
+|---|---|
+| `@diver/*` 未链接、bundle 解析为空 "补丁" | harness/package.json 声明 `file:` 依赖 + 根 `pnpm install` 链接到 `node_modules/@diver` |
+| 插件源码运行时无法解析 `@cos/*`（祖先链无 node_modules） | 根 `pnpm-workspace.yaml` 登记 `cos-plugins/backend|memory|bundle-companion`，根安装为插件生成自有 `node_modules` 链接 |
+| `--bundles` 只扫 cwd 的 node_modules | `@cos/boot` 的 `resolveBundle` 增祖先节点扫描（hoisted 布局下 bundle 在 workspace 根） |
+| harness 根 typecheck 无法解析 `@cos/llm` / `@diver/*` 子路径 | `harness/tsconfig.json` 增 `@cos/*`、`@diver/*`（含子路径）映射 |
+| T4.2 写入位置与后端读取不一致 | shell 设了 `COS_HOME` 时，测试改用 `@diver/backend/session-helpers.cosHome()` 计算设置路径 |
+| `.cos-home/sessions/diver-companion.jsonl` 膨胀到 15 万行导致 resume 栈溢出 | 测试前裁剪为最近尾部（测试数据，gitignored）；会话日志现统一存放于 `$COS_HOME/sessions/`（与配置同目录） |
+| 会话日志与配置零散（`.sessions` 与 `.cos-home` 同级） | `@cos/persistence` 根锚定 `COS_HOME`（`cordis.yml root: sessions` → `$COS_HOME/sessions`）；既有数据迁移至 `harness/.cos-home/sessions/`，配置与产物同目录统一管理 |
+
+### 4. 会话落盘格式：通用事件流（`.pi/agent` v3 对齐）
+
+`@cos/persistence` 的 `format` 默认 `standard`：落盘文件是通用 agent 会话事件流
+（`id`/`parentId` 链 + `message` 块，`user` / `assistant` / `toolResult` 角色、
+camelCase `toolCall` 块、assistant 经流式 chunk 丰富 `usage` / `stopReason`）。
+框架内部数据流完全不动（session/event 广播、deriveMessages、记忆/压缩照旧）；
+读取时解码回内部 `SessionEvent` 供 resume，旧 internal 行可混读（按行识别）。
+内部记账事件（turn/start、step/*、assistant/chunk、session/end-seed）不落盘。
+实测：真实落盘无内部事件泄漏、resume 无重复追加；codec 单元往返（含工具流）通过。
+
+### 5. 复核命令
+
+```sh
+pnpm install            # 仓库根：链接 cos-plugins 工作区插件
+cd harness
+pnpm typecheck          # 类型检查（含插件与 compat-test）
+pnpm tsx scripts/compat-test.ts   # 12/12 通过（数据隔离于临时目录，不触碰应用数据）
 ```

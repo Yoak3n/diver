@@ -91,6 +91,13 @@ export class CredentialsService extends Service {
     return () => { this.entries.delete(ref) }
   }
 
+  /** The configured secrets file path (as configured, before cwd resolution),
+   * so writers (e.g. a settings panel) persist into exactly the file this
+   * service reads. Undefined when no file source is configured. */
+  get secretFile(): string | undefined {
+    return this.file
+  }
+
   /** Read one credential. Throws with a configuration-point diagnostic when
    * it is required and unresolvable. */
   get(ref: string): string {

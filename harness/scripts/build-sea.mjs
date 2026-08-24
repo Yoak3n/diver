@@ -159,7 +159,7 @@ if (bundle !== undefined) {
   bakeLabel = `bundle ${bundle} (${extra.length} third-party plugin(s) baked)`
 } else if (profile !== undefined) {
   const home = homeArg === undefined
-    ? process.env.COS_HOME || process.env.DSH_HOME || join(homedir(), '.cos')
+    ? process.env.COS_HOME || join(homedir(), '.cos')
     : resolve(homeArg)
   extra = collectProfilePlugins(profile, home)
   bakeLabel = `profile ${profile} (${extra.length} third-party plugin(s) baked)`

@@ -237,14 +237,36 @@ impl Manager {
                 }
             }
             WindowState::VisibleFocused => {
-                WindowOperationResult::NoAction
+                // 缓存状态可能过期（X 关闭/任务栏最小化等路径未同步缓存）：
+                // 以真实窗口为准——实际隐藏/最小化时自愈激活，避免"点开主窗口没反应"。
+                if let Some(window) = self.get_window(window_type) {
+                    let visible = window.is_visible().unwrap_or(true);
+                    let minimized = window.is_minimized().unwrap_or(false);
+                    if visible && !minimized {
+                        let _ = window.set_focus();
+                        WindowOperationResult::NoAction
+                    } else {
+                        self.activate_window(&window, window_type);
+                        self.update_window_state(window_type, WindowState::VisibleFocused);
+                        WindowOperationResult::Shown
+                    }
+                } else {
+                    WindowOperationResult::Failed
+                }
             }
             WindowState::Minimized | WindowState::Hidden => {
                 if let Some(window) = self.get_window(window_type) {
                     self.activate_window(&window, window_type);
                     WindowOperationResult::Shown
                 } else {
-                    WindowOperationResult::Failed
+                    // 缓存为隐藏但窗口已不存在：按不存在处理，重建。
+                    match self.create_window_inner(window_type, url) {
+                        Ok(_) => WindowOperationResult::Created,
+                        Err(e) => {
+                            println!("创建窗口失败: {:?}", e);
+                            WindowOperationResult::Failed
+                        }
+                    }
                 }
             }
         };
@@ -304,7 +326,6 @@ impl Manager {
             }
         }
     }
-
 
     /// 切换窗口显示状态
     pub fn toggle_window(&self, window_type: WindowType) -> WindowOperationResult {

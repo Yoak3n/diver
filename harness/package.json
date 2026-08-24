@@ -5,8 +5,6 @@
   "scripts": {
     "dev": "tsx --expose-internals main.ts",
     "start": "tsx --expose-internals main.ts",
-    "plugin": "tsx scripts/plugin.ts",
-    "start:companion": "tsx --expose-internals packages/sidecar/src/companion.ts",
     "typecheck": "tsc --noEmit",
     "build:sea": "node scripts/build-sea.mjs",
     "scaffold": "tsx scripts/scaffold.ts"
@@ -26,7 +24,6 @@
     "@cos/mock-llm": "workspace:*",
     "@cos/persistence": "workspace:*",
     "@cos/persona": "workspace:*",
-    "@cos/profile": "workspace:*",
     "@cos/scope": "workspace:*",
     "@cos/session": "workspace:*",
     "@cos/sidecar": "workspace:*",
@@ -34,6 +31,9 @@
     "@cos/tools": "workspace:*",
     "@cos/types": "workspace:*",
     "@deepseek-ai/cordis": "npm:cordis@4.0.0-rc.7",
+    "@diver/backend": "file:../cos-plugins/backend",
+    "@diver/bundle-companion": "file:../cos-plugins/bundle-companion",
+    "@diver/memory": "file:../cos-plugins/memory",
     "cordis": "4.0.0-rc.7",
     "yaml": "2.4.0"
   },

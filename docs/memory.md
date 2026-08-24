@@ -7,7 +7,7 @@
 - **Rust 后端**（`crates/diver-memory` + `src-tauri/src/services/`）— 确定性层：
   SQLite 存储、衰减/激活/遗忘、阻塞候选、统计快照，经本地 HTTP JSON-RPC 暴露
 
-> 早期版本记忆落在 `$DSH_HOME/memory/` 的 JSON 文件；现迁移为 Rust SQLite 后端，
+> 早期版本记忆落在 `$COS_HOME/memory/` 的 JSON 文件；现迁移为 Rust SQLite 后端，
 > JSON 文件布局已废弃（数据文件 `diver-memory.sqlite3` 位于 app data 目录）。
 
 ## 架构与数据流

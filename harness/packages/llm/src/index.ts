@@ -35,6 +35,38 @@ export interface LlmProviderInfo {
   name: string
 }
 
+/** One configurable field of a provider route — owned by the adapter, rendered
+ * by any configuration surface (e.g. the web settings panel). */
+export interface AdapterConfigField {
+  /** Field identity: a credential ref when `store === 'credentials'`, a raw
+   * provider-scoped settings key when `store === 'settings'`. */
+  key: string
+  label: string
+  type?: 'password' | 'text' | 'select'
+  /** Sensitive field: surfaces only expose a `configured` boolean, never the value. */
+  secret?: boolean
+  /** Persistence: the credentials seam (secret) or a plain settings namespace
+   * (the consumer applies `<provider>.<key>` into its settings store). */
+  store?: 'credentials' | 'settings'
+  /** store=credentials: explicit credential ref; defaults to `<provider>.<key>`. */
+  credentialRef?: string
+  /** store=credentials: fallback environment variable checked when the credential is unresolved. */
+  envKey?: string
+  required?: boolean
+  placeholder?: string
+  hint?: string
+  options?: string[]
+}
+
+/** A provider route's configuration declaration, declared by its owning adapter
+ * so the harness never hardcodes provider-specific configuration knowledge. */
+export interface ProviderConfigDecl {
+  provider: string
+  name: string
+  description?: string
+  fields: readonly AdapterConfigField[]
+}
+
 /** Exact-model metadata an adapter may resolve, parallel to dsh-llm. */
 export interface ResolvedModelInfo {
   provider: string
@@ -57,6 +89,13 @@ export abstract class LlmAdapter {
   /** Models this adapter advertises for one owned provider, advisory only. */
   async listModels(_provider: string): Promise<readonly string[]> {
     return []
+  }
+
+  /** Configuration surface for one owned provider route. A configuration panel
+   * (e.g. the web settings view) renders these fields; a provider returning
+   * `undefined` needs no configuration. */
+  providerConfig(_provider: string): ProviderConfigDecl | undefined {
+    return undefined
   }
 
   /** Resolve exact-model identity (no routing/validation side effects). */
@@ -178,6 +217,23 @@ export class LlmRuntime extends Service {
     return [...this.adapters.values()].map(({ provider }) => ({ ...provider }))
   }
 
+  /** Configuration declarations of provider routes whose adapter declared one,
+   * in registration order — the provider-config surface is adapter-owned. */
+  listProviderConfigs(): ProviderConfigDecl[] {
+    const out: ProviderConfigDecl[] = []
+    for (const { adapter, provider } of this.adapters.values()) {
+      const decl = adapter.providerConfig(provider.id)
+      if (decl !== undefined) out.push(decl)
+    }
+    return out
+  }
+
+  /** One provider's configuration declaration, when its adapter declared one. */
+  adapterConfig(provider: string): ProviderConfigDecl | undefined {
+    const registration = this.find(provider)
+    return registration?.adapter.providerConfig(provider)
+  }
+
   /** Models one registered provider advertises, advisory only. */
   async listModels(provider: string): Promise<readonly string[]> {
     return this.registration(provider).adapter.listModels(provider)
@@ -214,12 +270,16 @@ export class LlmRuntime extends Service {
   }
 
   private registration(provider: string): Registration {
-    const registration = this.adapters.get(provider)
+    const registration = this.find(provider)
     if (registration === undefined) {
       const available = [...this.adapters.keys()].join(', ') || 'none'
       throw new LlmError(`no adapter registered for provider "${provider}" (registered: ${available})`, 'NO_ADAPTER')
     }
     return registration
+  }
+
+  private find(provider: string): Registration | undefined {
+    return this.adapters.get(provider)
   }
 
   /** Dispatch through the adapter; adapter failures throw to the caller. */

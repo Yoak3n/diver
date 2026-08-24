@@ -1,48 +1,48 @@
 # 模型提供商（一切皆插件）
 
-设置面板的配置区由**插件声明驱动**：每个 provider 插件通过
-`registerProviderConfig({provider, name, fields: [...]})`
-（`harness/companion/lib/settings-registry.ts`）声明自己的配置字段
-（类型/存储位置/必填/提示），UI 动态渲染，**没有硬编码的配置输入框**。
+设置面板的配置区由**适配器插件声明驱动**：每个 provider 适配器通过
+`LlmAdapter.providerConfig()`（`@cos/llm`，见 `harness/packages/llm`）声明自己的
+配置字段（类型/存储位置/必填/提示），经 `ctx.llm.listProviderConfigs()` /
+`adapterConfig()` 汇总，`@diver/backend` 的设置接口原样透传给 UI 动态渲染，
+**没有硬编码的配置输入框，也没有硬编码的 provider 名单**。
+
+`@diver/backend` 不再持有任何 provider 知识：
+
+| harness 注册面 | 后端使用点 |
+|---|---|
+| `ctx.llm.listProviders()` | provider 目录与显示名（适配器注册的路由） |
+| `ctx.llm.listModels(provider)` | 模型下拉（适配器自己声明的模型，advisory） |
+| `ctx.llm.listProviderConfigs()` / `adapterConfig()` | 配置 schema（字段声明） |
+| `ctx.credentials.get(ref)` | “已配置”判定（适配器已 `provide`） |
+| `credentials.config.file`（secrets 文件） | 凭据写入路径（框架配置的同一文件） |
+
+因此**新增 provider 只需注册适配器并实现 `providerConfig()`，后端与设置面板零改动**。
 
 ## 字段落位
 
-字段按 `store` 分两类：
+字段按 `store` 分两类（由适配器声明）：
 
 | store | 落位 | 说明 |
 |---|---|---|
-| `credentials` | `$DSH_HOME/.credentials.yaml` | dsh 凭据库（如 API Key，password 类型） |
-| `settings` | `diver-settings.json`（`provider.` 前缀） | 普通设置（如 baseUrl） |
+| `credentials` | 框架配置的 secrets 文件（`credentials.config.file`，默认 `./secrets.yml`） | 凭据（如 API Key，password 类型） |
+| `settings` | `diver-settings.json`（`<provider>.` 前缀） | 普通设置（如 baseUrl） |
 
 `provider` / `model` 选择存于 `diver-settings.json`；切换后下次对话生效，会话记忆保留。
+若持久化的 provider 已不在 harness 注册表（如改用了别的 overlay），后端自动钳制到
+当前注册表的第一个适配器。
 
-## 当前已注册的 provider
+## 当前已注册的 provider 声明
 
-| 提供商 | 声明字段 | 说明 |
-|---|---|---|
-| `deepseek-official` | apiKey（password/credentials，必填） | DeepSeek 官方 API（`deepseek-v4-flash` / `deepseek-v4-pro`，窗口 1M token） |
-| `opencode-go` | apiKey（password/credentials，可选）、baseUrl（text/settings） | opencode.ai Zen Go 网关（26 个模型，无 key 也可用） |
-
-## opencode-go 端点路由
-
-`harness/companion/lib/llm-opencode/` 按模型表自动选择端点
-（`endpointFor(model)`，OpenAI 兼容全功能优先）：
-
-| 端点 | 能力 | 模型 |
-|---|---|---|
-| `/v1/chat/completions` | **全功能含工具调用** | `glm-5.3/5.2/5.1`、`kimi-k3/k2.7-code/k2.6`、`deepseek-v4-pro/flash`、`mimo-v2.5/pro`、`hy3` |
-| `/v1/responses` | 第一版文本流 | `grok-4.5`、`gpt-5.6-luna` |
-| `/v1/messages`（Anthropic） | 第一版文本流 | `minimax-m3/m2.7/m2.5`、`qwen3.8-max/3.7-max/3.7-plus/3.6-plus` |
-
-> 文本流端点（responses/messages）暂不支持工具调用；选择这些模型时记忆工具自动不可用，
-> 建议聊天用 chat/completions 端点模型。
-
-可选鉴权：凭据库或环境变量 `OPENCODE_API_KEY`（无 key 时网关可裸请求）。
+| 提供商 | 声明来源 | 声明字段 | 说明 |
+|---|---|---|---|
+| `deepseek-official` | `@cos/llm-deepseek` 的 `providerConfig()` | apiKey（password/credentials，必填，env 兜底 `DEEPSEEK_API_KEY`） | 官方 API（`deepseek-v4-flash` / `deepseek-v4-pro`） |
+| `mock` | `@cos/mock-llm` 的 `providerConfig()` | （无） | 本地 mock（离线 / 无 key 调试） |
 
 ## 扩展新 provider
 
-1. 实现 dsh LLM adapter（参考 `llm-opencode/` 的 `OpencodeGoAdapter`：`listModels` /
-   `resolveModel` / `stream`）
-2. 插件里 `registerProviderConfig` 声明配置字段
-3. 注册为 companion 服务行（`cordis.patch.yml` insert）
-4. 设置面板自动渲染配置区，无需改 UI
+1. 实现 `LlmAdapter` 并 `ctx.llm.registerAdapter([provider], adapter)`（参考
+   `@cos/llm-deepseek` / `@cos/mock-llm`，模型目录经 `listModels()` 声明）。
+2. 在适配器里实现 `providerConfig(provider)` 声明配置字段；凭据字段同时
+   `ctx.credentials.provide(ref, {...})` 注册来源。
+3. 注册为 companion 服务行（`cordis.patch.yml` insert）。
+4. 设置面板自动渲染配置区，无需改 UI。

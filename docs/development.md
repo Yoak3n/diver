@@ -18,7 +18,7 @@ pnpm tauri dev   # 自动拉起 sidecar + Vite(1420) + 窗口
 
 首次启动：在设置（⚙）里填入 DeepSeek API Key（或 opencode-go Key，可选）即可开始对话。
 
-- Key 存入本地凭据库 `harness/.dsh-home/.credentials.yaml`
+- Key 存入本地凭据库 `harness/.cos-home/.credentials.yaml`
 - 模型默认 `deepseek-v4-flash`（可在设置中切换，下次对话生效）
 
 ## 目录结构
@@ -41,7 +41,7 @@ diver/
 │  │  └─ profile/          # DSH 对齐的 profile 模型（home/双锚点/平面回退/reconcile）
 │  ├─ scripts/plugin.ts    # pnpm 转发：profile 插件管理
 │  ├─ cos-plugins/         # 第三方 @diver/*（本仓库实际在仓库根 ../cos-plugins）
-│  └─ .dsh-home/           # 仓库本地 cos home（凭据、会话、设置、记忆；gitignore）
+│  └─ .cos-home/           # 仓库本地 cos home（凭据、会话、设置、记忆；gitignore）
 │     └─ profiles/companion/  # companion profile：package.json（dsh.profile.bundles）
 │                            # + node_modules + cordis.patch.yml
 └─ scripts/                # 冒烟测试脚本
@@ -55,7 +55,7 @@ diver 直连模式（默认）直接以路径引用 `cos-plugins/` 源码，零�
 cd harness
 pnpm install
 # 启动自研 cos 的常驻 HTTP sidecar（Rust 壳即以此方式拉起）：
-$env:DSH_HOME = "$PWD\.dsh-home"; $env:DIVER_PORT = "3620"
+$env:COS_HOME = "$PWD\.cos-home"; $env:DIVER_PORT = "3620"
 node --import tsx --expose-internals packages/sidecar/src/companion.ts
 # 然后访问 http://127.0.0.1:3620/api/health
 ```
@@ -96,7 +96,7 @@ node scripts/opencode-test.mjs # opencode-go provider 直测
   （`%APPDATA%/diver/logs/app.log`，见 `base/init.rs`）
 - sidecar 日志：stdout/stderr 实时转发到 Rust 控制台（前缀 `[sidecar]` / `[sidecar:err]`），
   同时缓存在 `SidecarStatus.logs`（环形 300 条）供 UI 查看
-- 会话 JSONL：`harness/.dsh-home/sessions/`（明文，方便第三方工具读取）
+- 会话 JSONL：`harness/.cos-home/sessions/`（通用事件流格式：`id`/`parentId` 链 + `message` 块 `user`/`assistant`/`toolResult`，明文，方便第三方工具读取）
 
 ## 常见问题
 

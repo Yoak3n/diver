@@ -55,7 +55,7 @@ configure(builder)
     2. services::start() → axum /rpc（SQLite 记忆后端），
        端口写入 DIVER_MEMORY_PORT
     3. SidecarManager::start() → node --import tsx packages/sidecar/src/companion.ts（diver 直连 cos-plugins/bundle-companion）
-       （DSH_HOME=harness/.dsh-home；stdout 日志实时转发到
+       （COS_HOME=harness/.cos-home；stdout 日志实时转发到
        Rust 控制台；检测到 DIVER_READY 置 Running 并发事件）
     4. 按 window_startup 配置打开主窗口 / 桌宠窗口
 ```

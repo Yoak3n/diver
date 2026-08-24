@@ -11,7 +11,7 @@
 
 import type { Context } from 'cordis'
 import { LlmAdapter } from '@cos/llm'
-import type { LlmProviderInfo } from '@cos/llm'
+import type { LlmProviderInfo, ProviderConfigDecl } from '@cos/llm'
 import type { GenerateOptions, MessageContent, ModelMessage, StreamChunk } from '@cos/types'
 import { LlmError } from '@cos/types'
 
@@ -87,20 +87,48 @@ class DeepSeekLlmAdapter extends LlmAdapter {
   private readonly baseUrl: string
   private readonly models: readonly string[]
   private readonly defaultModel: string
+  private readonly apiKeyRef: string
+  private readonly apiKeyEnv: string | undefined
 
   constructor(credentials: Context['credentials'], config: DeepSeekConfig) {
     super()
     this.baseUrl = config.baseUrl ?? 'https://api.deepseek.com'
     this.models = config.models ?? ['deepseek-v4-flash', 'deepseek-v4-pro']
     this.defaultModel = config.defaultModel ?? 'deepseek-v4-flash'
+    this.apiKeyRef = config.apiKeyKey ?? API_KEY_REF
+    this.apiKeyEnv = config.apiKeyEnv ?? 'DEEPSEEK_API_KEY'
     // Fail-loud credential resolution: unresolved key surfaces here with a
     // diagnostic naming the setting (never the secret). The value stays in
     // this instance and is never logged.
-    this.apiKey = credentials.get(API_KEY_REF)
+    this.apiKey = credentials.get(this.apiKeyRef)
   }
 
   providerInfo(provider: string): LlmProviderInfo {
     return { id: provider, name: 'DeepSeek' }
+  }
+
+  /** Adapter-owned configuration surface: the settings panel renders this
+   * API-key field (and checks `configured` through the credentials seam). */
+  providerConfig(provider: string): ProviderConfigDecl {
+    return {
+      provider,
+      name: 'DeepSeek（官方）',
+      description: 'DeepSeek 官方 API（deepseek-v4-flash / deepseek-v4-pro）。',
+      fields: [
+        {
+          key: 'apiKey',
+          label: 'API Key',
+          type: 'password',
+          secret: true,
+          store: 'credentials',
+          credentialRef: this.apiKeyRef,
+          envKey: this.apiKeyEnv,
+          required: true,
+          placeholder: 'sk-…',
+          hint: `存于 secrets 文件（${this.apiKeyRef}）${this.apiKeyEnv === undefined ? '' : `，环境变量 ${this.apiKeyEnv} 兜底`}`,
+        },
+      ],
+    }
   }
 
   async listModels(provider: string): Promise<readonly string[]> {
@@ -189,13 +217,14 @@ class DeepSeekLlmAdapter extends LlmAdapter {
 export function apply(ctx: Context, config: DeepSeekConfig = {}) {
   // Register the credential source, then resolve it by building the adapter.
   // The key comes from the @cos/credentials secrets file (key deepseek.apiKey by
-  // default), with an optional environment fallback; a missing key fails the
-  // load with a clear diagnostic.
+  // default), with an environment fallback (DEEPSEEK_API_KEY by default); a
+  // missing key fails the load with a clear diagnostic.
+  const envKey = config.apiKeyEnv ?? 'DEEPSEEK_API_KEY'
   ctx.credentials.provide(API_KEY_REF, {
     key: config.apiKeyKey ?? 'deepseek.apiKey',
-    ...(config.apiKeyEnv === undefined ? {} : { envKey: config.apiKeyEnv }),
+    envKey,
   }, {
-    ref: 'DeepSeek API key (credentials.config.file → deepseek.apiKey)',
+    ref: 'DeepSeek API key (credentials.config.file → deepseek.apiKey, or env DEEPSEEK_API_KEY)',
   })
   ctx.llm.registerAdapter([PROVIDER], new DeepSeekLlmAdapter(ctx.credentials, config))
 }

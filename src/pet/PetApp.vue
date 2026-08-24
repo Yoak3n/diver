@@ -231,6 +231,8 @@ watch(
   (list) => {
     const last = list[list.length - 1];
     if (!last) return;
+    // 历史加载（重启恢复）不是"到达"的消息：不弹气泡，避免重放上次会话末尾。
+    if (last.fromHistory) return;
     if (last.kind === "user") {
       const want = estimateWindowWidth(last.content);
       if (want > currentPetW) void resizePetWindow(want);
@@ -351,18 +353,6 @@ async function sendAndClose() {
   panelOpen.value = false;
 }
 
-/** 打开主聊天窗口。 */
-async function openMainWindow() {
-  if (!tauriAvailable()) return;
-  try {
-    const { invoke } = await import("@tauri-apps/api/core");
-    await invoke("show_main_window");
-    panelOpen.value = false;
-  } catch {
-    /* 忽略 */
-  }
-}
-
 // ---------- 语音朗读 + 口型同步 ----------
 async function speak(text: string) {
   // 受设置面板的 TTS 总开关控制（与主窗口一致），关闭时不朗读
@@ -383,12 +373,12 @@ async function speak(text: string) {
   }, duration);
 }
 
-// 助手最终消息到达时自动朗读
+// 助手最终消息到达时自动朗读（历史加载/重启恢复的消息不朗读，避免重放）
 watch(
   () => messages.value,
   (list) => {
     const last = list[list.length - 1];
-    if (last && last.kind === "assistant" && !last.streaming && last.content) {
+    if (last && last.kind === "assistant" && !last.streaming && last.content && !last.fromHistory) {
       const prev = list[list.length - 2];
       // 只朗读新到达的最终消息（避免重放历史）
       if (!prev || prev.id !== last.id) {
@@ -516,7 +506,9 @@ onBeforeUnmount(() => {
           </button>
         </div>
         <div class="panel-actions">
-          <button class="ghost-btn" @click="openMainWindow">主窗口</button>
+          <!-- 注：不再提供"主窗口"入口——从桌宠 WebView IPC 里创建/拉起主窗口会
+               在 Windows WebView2 上与既有渲染器重入死锁（白屏卡死）；打开主窗口
+               请使用系统托盘 Show。 -->
           <button class="ghost-btn" @click="panelOpen = false">收起</button>
         </div>
       </div>

@@ -12,7 +12,7 @@ Rust `base/sidecar.rs` 以 `node --import tsx .../companion.ts` 拉起（详见
 ## 角色与生命周期
 
 - sidecar 由 Rust `base/sidecar.rs` 启动：`node --import tsx packages/sidecar/src/companion.ts`（diver 直连 cos-plugins）
-  - `DSH_HOME` → `harness/.dsh-home`（仓库本地，gitignore）
+  - `COS_HOME` → `harness/.cos-home`（仓库本地，gitignore）
   - `DIVER_PORT` → sidecar HTTP 端口（默认 3620）
   - `DIVER_MEMORY_PORT` → Rust 本地服务端口（记忆 RPC）
   - stdout 检测 `DIVER_READY` 标志行 → 状态置 Running，UI 开始连接
@@ -31,7 +31,7 @@ Rust `base/sidecar.rs` 以 `node --import tsx .../companion.ts` 拉起（详见
 
 ## Profile 组装
 
-`harness/.dsh-home/profiles/companion/` 是运行时组装出的 profile：
+`harness/.cos-home/profiles/companion/` 是运行时组装出的 profile：
 cos 核心（`cordis.yml` 基础行）与 `cos-plugins/bundle-companion`（路径直连）两层
 + profile/用户 `cordis.patch.yml`。
 顺序：base 行 → companion bundle 覆盖/插入行 → 用户 patch。
@@ -69,14 +69,14 @@ cos 核心（`cordis.yml` 基础行）与 `cos-plugins/bundle-companion`（路�
 |---|---|
 | `web.ts` | HTTP 传输层：静态 UI、`/api/health` `/api/chat`（SSE 流式）、`/api/settings`、`/api/question-answer`；模型/provider 切换、SSE 广播、provider 声明聚合 |
 | `presence.ts` | 定时主动问候（boot greeting + schedule），有会话才触发 |
-| `session.ts` | dshHome/workspace 定位、`diver-settings.json` 读写、`ensureCompanionAgent` |
+| `session.ts` | cosHome/workspace 定位、`diver-settings.json` 读写、`ensureCompanionAgent` |
 | `settings-registry.ts` | provider 配置插件注册表（驱动设置面板动态渲染） |
 | `memory/` | 关系层记忆：`index.ts`（插件主体）、`extract.ts`（LLM 提取/digest）、`store-rpc.ts`（Rust 后端客户端 + 同步视图缓存） |
 | `llm-opencode/` | opencode-go provider 适配器（chat/responses/anthropic 三端点） |
 
 ## 会话持久化与压缩
 
-- 会话：单会话 `diver-companion` JSONL（`$DSH_HOME/sessions/`），明文，跨重启陪伴记忆
+- 会话：单会话 `diver-companion` JSONL（`$COS_HOME/sessions/`，通用事件流格式：`id`/`parentId` 链 + `message` 块，明文），跨重启陪伴记忆
 - 压缩：`compaction-basic` 达到阈值把早期消息压缩为摘要、保留最近 32k token 完整
   （约最近三四十轮），请求规模稳定在 ~40k~400k 有界区间；产生的
   `compaction/summary` 事件由 memory 插件监听并内化为长期记忆

@@ -36,8 +36,8 @@ list), a `node_modules` pnpm manages for those plugins, and a
 `cordis.patch.yml` (the profile's own user patch layer, applied after every
 bundle layer).
 
-- The cos home resolves `COS_HOME`, then `DSH_HOME`, then `~/.cos`. This repo's
-  shell drives `DSH_HOME=<repo>/harness/.dsh-home` (see
+- The cos home resolves `COS_HOME`, then `~/.cos`. This repo's
+  shell drives `COS_HOME=<repo>/harness/.cos-home` (see
   `src-tauri/src/base/sidecar.rs`).
 - The `dsh` manifest section is the ecosystem namespace (a bundle written for
   DSH works in a cos profile untouched); `cos` is accepted as an alias.

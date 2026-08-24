@@ -71,7 +71,7 @@ diver/
 │  ├─ packages/profile/    # DSH 对齐的 profile 模型（通用；diver 用直连模式）
 │  ├─ cos-plugins/         # 第三方 @diver/*（本仓库实际在仓库根 ../cos-plugins）
 │  │                       # diver 直连：bundle 路径 = ../cos-plugins/bundle-companion
-│  └─ .dsh-home/           # 仓库本地 cos home（凭据、会话、设置、记忆；gitignore）
+│  └─ .cos-home/           # 仓库本地 cos home（凭据、会话、设置、记忆；gitignore）
 ├─ docs/                   # 项目文档（本仓库的文档中心）
 └─ scripts/                # 冒烟测试脚本（smoke/smoke2/presence/readlog/memory-test/opencode-test）
 ```
@@ -90,13 +90,13 @@ pnpm tauri dev
 ```
 
 首次启动后：在设置（⚙）里填入 DeepSeek API Key（或 opencode-go Key，可选）即可开始对话。
-Key 存入本地凭据库（`harness/.dsh-home/.credentials.yaml`），模型默认 `deepseek-v4-flash`（可切换）。
+Key 存入本地凭据库（`harness/.cos-home/.credentials.yaml`），模型默认 `deepseek-v4-flash`（可切换）。
 
 ### 独立调试 sidecar
 
 ```bash
 cd harness
-$env:DSH_HOME = "$PWD\.dsh-home"; $env:DIVER_PORT = "3620"
+$env:COS_HOME = "$PWD\.cos-home"; $env:DIVER_PORT = "3620"
 node --import tsx --expose-internals packages/sidecar/src/companion.ts
 # 然后访问 http://127.0.0.1:3620/api/health
 ```

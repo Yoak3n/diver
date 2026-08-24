@@ -10,8 +10,11 @@
     "verbatimModuleSyntax": true,
     "skipLibCheck": true,
     "paths": {
-      "@cos/types": ["./packages/types/src/index.ts"],
-      "cordis": ["./node_modules/cordis"]
+      "@cos/*": ["./packages/*/src/index.ts"],
+      "cordis": ["./node_modules/cordis"],
+      "@diver/backend/*": ["../cos-plugins/backend/src/*.ts"],
+      "@diver/memory/*": ["../cos-plugins/memory/src/*.ts"],
+      "@diver/*": ["../cos-plugins/*/src/index.ts"]
     }
   },
   "include": ["main.ts", "scripts/**/*.ts", "packages/**/*.ts", "../cos-plugins/**/*.ts"]

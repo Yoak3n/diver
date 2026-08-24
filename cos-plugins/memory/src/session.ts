@@ -9,14 +9,14 @@ import { join } from 'node:path'
 
 export const SESSION_ID = 'diver-companion'
 
-/** 当前进程的 DSH_HOME（sidecar 启动时由 Rust 注入）。 */
-export function dshHome() {
-  return process.env.DSH_HOME ?? join(process.cwd(), '.dsh-home')
+/** 当前进程的 cos home（sidecar 启动时由 Rust 注入 COS_HOME）。 */
+export function cosHome() {
+  return process.env.COS_HOME ?? join(process.cwd(), '.cos-home')
 }
 
 /** Diver 自身偏好（TTS 等）持久化文件。 */
 function diverSettingsPath() {
-  return join(dshHome(), 'diver-settings.json')
+  return join(cosHome(), 'diver-settings.json')
 }
 
 export function readDiverSettings(): Record<string, any> {
@@ -31,7 +31,7 @@ export function writeDiverSettings(patch: Record<string, unknown>): Record<strin
   const current = readDiverSettings()
   const next = { ...current, ...patch }
   try {
-    mkdirSync(dshHome(), { recursive: true })
+    mkdirSync(cosHome(), { recursive: true })
     writeFileSync(diverSettingsPath(), JSON.stringify(next, null, 2), 'utf8')
   } catch (err) {
     console.error('[diver] 保存设置失败:', err)

@@ -138,7 +138,7 @@ impl SidecarManager {
                 .unwrap_or(&self.harness_dir)
                 .join("packages/sidecar/src/companion.ts")
         };
-        let dsh_home = self.harness_dir.join(".dsh-home");
+        let cos_home = self.harness_dir.join(".cos-home");
         if !entry.exists() {
             log::error!(
                 "sidecar 入口不存在: {}（请先在根目录执行 pnpm install）",
@@ -170,9 +170,9 @@ impl SidecarManager {
         }
 
         log::info!(
-            "启动 sidecar: node --import tsx {}（diver path: cos-plugins/bundle-companion, DSH_HOME={}）",
+            "启动 sidecar: node --import tsx {}（diver path: cos-plugins/bundle-companion, COS_HOME={}）",
             entry.display(),
-            dsh_home.display()
+            cos_home.display()
         );
         self.push_log(format!(
             "[diver] 启动: {}（diver path 直连）",
@@ -184,7 +184,7 @@ impl SidecarManager {
             .arg("tsx")
             .arg("--expose-internals")
             .arg(&entry)
-            .env("DSH_HOME", &dsh_home)
+            .env("COS_HOME", &cos_home)
             .env("DIVER_PORT", self.port().to_string())
             .env(
                 "DIVER_MEMORY_PORT",

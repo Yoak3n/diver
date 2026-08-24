@@ -5,9 +5,8 @@
  * holding its own `package.json` (out-of-tree plugin dependencies plus the
  * profile manifest `dsh.profile` with its ordered `bundles` list) and a
  * `cordis.patch.yml` (the profile's own patch layer, applied after every
- * bundle layer). The cos home defaults to `COS_HOME`, falls back to `DSH_HOME`
- * (the harness runs the same `@deepseek-ai/cordis` ABI and the Tauri shell
- * already drives `DSH_HOME`), then `~/.cos`.
+ * bundle layer). The cos home defaults to `COS_HOME` (the Tauri shell drives
+ * `COS_HOME=<repo>/harness/.cos-home`), else `~/.cos`.
  * @module @cos/profile/home
  */
 
@@ -24,11 +23,11 @@ export const PROFILE_PATCH_FILENAME = 'cordis.patch.yml'
 export const PROFILES_MODULE_FALLBACK = 'node_modules'
 
 /**
- * Resolve the cos home: `COS_HOME`, else `DSH_HOME`, else `~/.cos`.
+ * Resolve the cos home: `COS_HOME`, else `~/.cos`.
  * @param env - the environment to read (overridable for tests).
  */
 export function resolveCosHome(env: NodeJS.ProcessEnv = process.env): string {
-  return env.COS_HOME || env.DSH_HOME || join(homedir(), '.cos')
+  return env.COS_HOME || join(homedir(), '.cos')
 }
 
 /**

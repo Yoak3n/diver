@@ -124,11 +124,11 @@ export class MemoryStore {
   }
 
   // 之前 JSON 文件版的节流持久化已由 Rust 后端接管。
-  save(): void {}
-  markDirty(): void {}
+  save(): void { }
+  markDirty(): void { }
 
   // 衰减/遗忘由 Rust 在读取 topics 相关数据时懒执行。
-  decayAll(): void {}
+  decayAll(): void { }
 
   // ───────────────────────── 同步视图（section / stats 用） ─────────────────────────
 

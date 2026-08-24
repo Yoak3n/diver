@@ -3,12 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Diver companion bundle (third-party, outside the harness workspace): assembles the diver plugins (@diver/memory + @diver/backend) as one composition layer. Apply with pnpm start --bundles @diver/bundle-companion, or install it into a cos profile where dsh.profile.bundles picks it up automatically.",
-  "dsh": {
-    "bundle": {
-      "patch": "./cordis.patch.yml"
-    }
-  },
+  "description": "Diver companion bundle (third-party, outside the harness workspace): assembles the diver plugins (@diver/memory + @diver/backend) as one composition layer. Apply with pnpm start --bundles @diver/bundle-companion.",
   "dependencies": {
     "@diver/backend": "file:../backend",
     "@diver/memory": "file:../memory"

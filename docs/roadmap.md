@@ -24,5 +24,5 @@
 
 - `crates/diver-memory` 的 `server.rs` 已迁移（HTTP 传输层在 `src-tauri/src/services`），
   仅保留注释说明
-- 记忆存储已从 JSON 文件迁到 SQLite，旧的 `$DSH_HOME/memory/*.json` 布局文档已废弃
+- 记忆存储已从 JSON 文件迁到 SQLite，旧的 `$COS_HOME/memory/*.json` 布局文档已废弃
 - persona / 工具策略 / schedule 等配置集中在 `cordis.patch.yml`，改动后需重启 sidecar

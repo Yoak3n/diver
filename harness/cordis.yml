@@ -1,21 +1,22 @@
-# Cordis composition for the harness: every row is one source plugin living in
-# its own workspace package under packages/ (Loader resolves bare @cos/*
-# names; tsx or Node type-stripping transpiles the .ts). Load order is
-# expressed through each service's `static inject`, not by row order.
 - id: llm
   name: '@cos/llm'
 - id: credentials
   name: '@cos/credentials'
   config:
-    # Secrets file backing file-sourced credentials (e.g. deepseek.apiKey).
-    # gitignored; see secrets.example.yml for the shape.
     file: ./secrets.yml
 - id: session
   name: '@cos/session'
 - id: persistence
   name: '@cos/persistence'
   config:
-    root: ./.sessions
+    # 数据家园：root 相对 COS_HOME（sidecar 注入 harness/.cos-home）解析，
+    # 会话日志与 diver-settings.json / workspace / memory 同目录统一管理。
+    # 落盘格式与体积控制（见 @cos/persistence）：
+    # - format 默认 standard：通用 agent 会话事件流（.pi/agent v3，id/parentId 链；
+    #   assistant/chunk、turn/step 等内部记账事件不落盘）；internal = 原始事件行
+    # - segmentBytes 默认 8MB：超过即轮转 <id>.N.jsonl，避免单文件膨胀
+    # - maxSegments 默认 0（不限）；>0 时只保留最近 N 段，超出丢弃最旧段（限制 resume IO）
+    root: sessions
 - id: system-prompt
   name: '@cos/system-prompt'
 - id: persona
@@ -27,12 +28,6 @@
   config:
     baseUrl: https://api.deepseek.com
     defaultModel: deepseek-v4-flash
-# Mock adapter — optional test provider for offline / no-key runs. The registry
-# holds both providers and the agent's route selects which serves; the real
-# DeepSeek row above is the default. To use the mock, disable this DeepSeek row
-# and mount the mock, or apply overlays/mock.yml:
-# - id: mock-llm
-#   name: '@cos/mock-llm'
 - id: agents
   name: '@cos/agents'
 - id: agent-loop

@@ -106,7 +106,8 @@ export function usePetChat() {
       const res = await fetch("/api/history");
       if (res.ok) {
         const data = (await res.json()) as { messages: ChatMessage[] };
-        messages.value = data.messages.slice(-MAX_MESSAGES).map((m) => ({ ...m, streaming: false }));
+        // 历史消息标记 fromHistory：气泡/朗读等"新消息到达提示"不得重放上次会话末尾。
+        messages.value = data.messages.slice(-MAX_MESSAGES).map((m) => ({ ...m, streaming: false, fromHistory: true }));
       }
     } catch {
       /* 历史拉取失败不阻断 */

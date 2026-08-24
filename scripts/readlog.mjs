@@ -16,7 +16,7 @@ function findJsonl(dir) {
   return null
 }
 
-const root = fileURLToPath(new URL('../harness/.dsh-home/sessions', import.meta.url))
+const root = fileURLToPath(new URL('../harness/.cos-home/sessions', import.meta.url))
 const file = findJsonl(root)
 console.log('log file:', file)
 if (!file) process.exit(1)

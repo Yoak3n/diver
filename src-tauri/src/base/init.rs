@@ -10,7 +10,6 @@ pub fn generate_handlers() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + 
         get_sidecar_url,
         speak,
         list_voices,
-        show_main_window,
         get_window_startup_config,
         set_window_startup_config,
     ]
@@ -99,6 +98,12 @@ pub fn app_event_handle(app_handle: &AppHandle, event: RunEvent) {
                     api.prevent_close();
                     let window = app_handle.get_webview_window(&label).unwrap();
                     let _ = window.hide();
+                    // 状态缓存同步：X 关闭 = 隐藏。否则缓存停留 VisibleFocused，
+                    // 托盘/桌宠的"打开主窗口"会误判为已可见而无操作（打不开）。
+                    if let Some(wt) = crate::base::window::schema::WindowType::from_label(&label) {
+                        crate::base::window::manager::Manager::global()
+                            .update_window_state(wt, crate::base::window::schema::WindowState::Hidden);
+                    }
                 }
                 tauri::WindowEvent::Focused(true) => {}
                 tauri::WindowEvent::Focused(false) => {}

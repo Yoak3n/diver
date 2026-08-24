@@ -41,7 +41,6 @@ export interface ProviderConfigDecl {
 
 export interface SettingsInfo {
   modelConfigured: boolean;
-  opencodeConfigured: boolean;
   provider: string;
   model: string;
   models: ModelEntry[];
@@ -61,6 +60,8 @@ export interface ChatMessage {
   origin: "user" | "assistant" | "presence";
   time: number;
   streaming?: boolean;
+  /** 来自重启后的历史加载（非新到达消息）：气泡/朗读等"到达提示"应跳过。 */
+  fromHistory?: boolean;
 }
 
 export interface ToolActivity {

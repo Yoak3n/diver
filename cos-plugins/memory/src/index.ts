@@ -17,7 +17,7 @@
 import { join } from 'node:path'
 import type { Context } from 'cordis'
 
-import { dshHome, SESSION_ID, textOf } from './session.ts'
+import { cosHome, SESSION_ID, textOf } from './session.ts'
 import { MemoryStore } from './store-rpc.ts'
 import { digestSession } from './extract.ts'
 
@@ -46,7 +46,7 @@ function timeHm(ts: number) {
 }
 
 export function apply(ctx: Context, config: { digestIntervalMs?: number }) {
-  const store = new MemoryStore(join(dshHome(), 'memory'))
+  const store = new MemoryStore(join(cosHome(), 'memory'))
   const digestIntervalMs = Number(config?.digestIntervalMs) || DEFAULT_DIGEST_INTERVAL_MS
 
   const transcript: Array<{ user: string; assistant: string | null; ts: number }> = [] // 最近 turn pairs（供 digest）

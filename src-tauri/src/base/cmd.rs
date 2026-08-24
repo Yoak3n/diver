@@ -35,16 +35,6 @@ pub fn list_voices(app: AppHandle) -> Vec<String> {
     tts::list_voices(&app)
 }
 
-/// 显示主聊天窗口（桌宠交互面板调用）。
-#[tauri::command]
-pub fn show_main_window() -> bool {
-    use crate::base::window::schema::{WindowOperationResult, WindowType};
-    matches!(
-        crate::base::window::manager::Manager::global().show_window(WindowType::Main, None),
-        WindowOperationResult::Shown | WindowOperationResult::Created
-    )
-}
-
 /// 读取启动窗口配置。
 #[tauri::command]
 pub fn get_window_startup_config(app: AppHandle) -> crate::config::window_startup::WindowStartupConfig {

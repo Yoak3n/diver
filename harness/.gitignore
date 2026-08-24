@@ -4,6 +4,5 @@ secrets.yml
 node_modules/
 main.js
 dist/
-.dsh-home/
+.cos-home/
 .pnpm-store-local/
-.compat-test-home/

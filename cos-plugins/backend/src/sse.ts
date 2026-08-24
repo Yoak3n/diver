@@ -3,8 +3,8 @@
 import type { ServerResponse } from 'node:http'
 import type { Context } from 'cordis'
 import { textOf } from './session-helpers'
-import { SESSION_ID } from './session'
-import type { WebState } from './types'
+import { SESSION_ID } from './agent'
+import type { WebState } from './state'
 
 export function sseWrite(res: ServerResponse, event: unknown) {
   if (res.writableEnded || res.destroyed) return

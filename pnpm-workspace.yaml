@@ -5,6 +5,13 @@ packages:
   # through pnpm's verifyDepsBeforeRun) can resolve harness's
   # `"@cos/*": "workspace:*"` dependencies.
   - harness/packages/*
+  # Diver third-party plugins live outside the harness workspace but are
+  # repo-managed: registering them lets a root-level install create their own
+  # node_modules (file: links to @cos/*), so their runtime imports resolve by
+  # the ordinary parent-walk from cos-plugins/ sources (diver direct-path mode).
+  - cos-plugins/backend
+  - cos-plugins/memory
+  - cos-plugins/bundle-companion
 
 nodeLinker: hoisted
 

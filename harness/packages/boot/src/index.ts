@@ -95,7 +95,7 @@ export interface BootOptions {
    * directory. When absent, boots the flat (installation-level) tree.
    */
   profile?: string
-  /** Cos home; defaults to COS_HOME || DSH_HOME || ~/.cos. */
+  /** Cos home; defaults to COS_HOME || ~/.cos. */
   home?: string
   /**
    * Absolute path of the cos app's package.json — the installation anchor for
@@ -255,8 +255,10 @@ function readBaseRowIds(configPath: string): Set<string> {
  * Resolve one bundle specifier into a Bundle value. Package-style bundles
  * (DSH: a package.json `dsh.bundle.patch` declaration) and dir-style bundles
  * (`cordis.patch.yml` / `bundle.yml` in the package directory) are both
- * recognized; candidates are scanned from node_modules/<spec> (scoped too),
- * then the top-level bundles/<name>.
+ * recognized; candidates are scanned from `node_modules/<spec>` (scoped too)
+ * at the cwd and every ancestor — pnpm's hoisted linker places workspace
+ * dependencies at the workspace root, which may sit above the process cwd —
+ * then the top-level `bundles/<name>`, then the specifier as a path.
  */
 function resolveBundle(spec: string | Bundle, registry: Map<string, Bundle>): Bundle {
   if (typeof spec !== 'string') return spec
@@ -266,12 +268,29 @@ function resolveBundle(spec: string | Bundle, registry: Map<string, Bundle>): Bu
   const scoped = spec.startsWith('@')
   const firstSlash = spec.indexOf('/')
   const unscoped = spec.slice(firstSlash >= 0 ? firstSlash + 1 : 0)
-  const candidates = [
-    join(cwd, 'node_modules', spec),
-    ...scoped ? [join(cwd, 'node_modules', spec.slice(0, firstSlash), unscoped)] : [],
-    join(cwd, 'bundles', unscoped),
+  const candidatesFor = (base: string) => [
+    join(base, 'node_modules', spec),
+    ...scoped ? [join(base, 'node_modules', spec.slice(0, firstSlash), unscoped)] : [],
   ]
-  for (const dir of candidates) {
+  // cwd → ancestors: a workspace-root install hoists @scoped/packages there.
+  let base = cwd
+  for (;;) {
+    for (const dir of candidatesFor(base)) {
+      if (isBundleDir(dir)) {
+        return {
+          name: spec,
+          patches: parsePatchFile(bundlePatchPath(dir)),
+          requires: readBundleDeclaration(dir),
+        }
+      }
+    }
+    const parent = dirname(base)
+    if (parent === base) break
+    base = parent
+  }
+  // Re-check the top-level bundles/<name> at the cwd, then a local path.
+  const localCandidates = [join(cwd, 'bundles', unscoped)]
+  for (const dir of localCandidates) {
     if (isBundleDir(dir)) {
       return {
         name: spec,
@@ -280,7 +299,6 @@ function resolveBundle(spec: string | Bundle, registry: Map<string, Bundle>): Bu
       }
     }
   }
-  // Fall back to a local filesystem path.
   const dir = resolve(process.cwd(), spec)
   return {
     name: spec,

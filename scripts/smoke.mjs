@@ -1,5 +1,7 @@
 // Diver E2E 冒烟测试：连接 SSE 流 → 发消息 → 打印事件序列（60s 超时）。
-const BASE = 'http://127.0.0.1:3620'
+const BASE = process.env.DIVER_PORT
+  ? `http://127.0.0.1:${process.env.DIVER_PORT}`
+  : 'http://127.0.0.1:3620'
 
 async function post(path, body) {
   const res = await fetch(BASE + path, {

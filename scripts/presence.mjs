@@ -1,5 +1,7 @@
 // 观察 presence 主动问候：连接 SSE 流 30 秒，打印 presence 相关事件
-const BASE = 'http://127.0.0.1:3620'
+const BASE = process.env.DIVER_PORT
+  ? `http://127.0.0.1:${process.env.DIVER_PORT}`
+  : 'http://127.0.0.1:3620'
 const controller = new AbortController()
 setTimeout(() => controller.abort(), 30000)
 

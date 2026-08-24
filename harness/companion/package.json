@@ -10,7 +10,7 @@
   },
   "exports": {
     ".": "./lib/index.ts",
-    "./web": "./lib/web.ts",
+    "./web": "./lib/web/index.ts",
     "./presence": "./lib/presence.ts",
     "./memory": "./lib/memory/index.ts",
     "./llm-opencode": "./lib/llm-opencode/index.ts"

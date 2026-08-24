@@ -1,5 +1,7 @@
 // opencode-go provider E2E：切换 provider → 对话 → 工具调用验证
-const BASE = 'http://127.0.0.1:3620'
+const BASE = process.env.DIVER_PORT
+  ? `http://127.0.0.1:${process.env.DIVER_PORT}`
+  : 'http://127.0.0.1:3620'
 
 async function post(path, body) {
   const res = await fetch(BASE + path, {

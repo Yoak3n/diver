@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from "vue";
-import { useChat } from "./composables/useChat";
+import { useChat } from "./composables/chat";
 import { useSettings } from "./composables/useSettings";
 import TopBar from "./components/TopBar.vue";
 import ChatArea from "./components/ChatArea.vue";
@@ -73,6 +73,7 @@ const dotClass = computed(() => (canSend.value ? "on" : busy.value ? "busy" : "o
       :tts-voice="state.ttsVoice"
       :pending-question="pendingQuestion"
       @retry="reconnect"
+        @restart="doRestartSidecar"
       @open-settings="openSettings"
       @suggestion="composer = $event"
       @answer-question="submitQuestionAnswer"

@@ -3,7 +3,7 @@
 // 接线（2026-08 简化）：
 // - 写路径：不做逐轮 LLM 提取；记忆来源为
 //   ① agent 主动 remember 工具（对话中自觉沉淀）
-//   ② 压缩 subagent（见 ./summarize.ts）：深读被压缩历史 → remember 工具沉淀
+//   ② 压缩 subagent（见 ./extract.ts）：深读被压缩历史 → 摘要内化为长期记忆
 //   ③ 会话末 digest（节流 10 分钟，把最近轮次归纳进关系卡）
 // - 读路径：关系卡 + Mode B 近期摘要经 systemPrompt.section 常驻注入；
 //   4 个工具（remember/recall/inventory/demote）供 agent 自主管理记忆
@@ -119,7 +119,7 @@ export function apply(ctx: Context, config: { digestIntervalMs?: number }) {
       const summary = transcript
         .map((p) => `用户：${p.user.slice(0, 200)}\n助手：${(p.assistant ?? '').slice(0, 200)}`)
         .join('\n\n')
-      const diff = await digestSession(ctx, card, store.stats(), summary)
+      const diff = await digestSession(ctx, card, await store.stats(), summary)
       if (diff) {
         await store.updateCard(diff)
         store.markDirty()

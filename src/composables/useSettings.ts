@@ -11,7 +11,7 @@ import {
   tauriAvailable,
   type WindowStartupConfig,
 } from "../tauri";
-import type { useChat } from "./useChat";
+import type { useChat } from "./chat";
 
 export interface SettingsState {
   open: boolean;

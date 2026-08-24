@@ -19,6 +19,11 @@ const DECAY_RULES: [(&str, f64, f64); 2] = [
     ("trivia", 0.15, 0.1),
 ];
 
+/// snapshot 视图缓存的最近条数上限（topics 与 events 各一份；card/promises 保持全量）。
+pub const SNAPSHOT_DEFAULT_LIMIT: usize = 200;
+/// events 表最多保留的最近事件数（超出后按 seq 裁剪最旧记录）。
+const MAX_EVENTS: i64 = 2000;
+
 /// 全局 id 计数器（进程内唯一已足够，id 仅是数据库主键）。
 static ID_SEQ: AtomicU64 = AtomicU64::new(0);
 
@@ -264,6 +269,9 @@ impl MemoryDb {
     }
 
     pub fn delete_topic(&self, id: &str) -> rusqlite::Result<()> {
+        // 遗忘/主动删除主题时，连带清理该主题的 events，避免孤儿事件无限增长。
+        self.conn
+            .execute("DELETE FROM events WHERE topic_id = ?1", params![id])?;
         self.conn
             .execute("DELETE FROM topics WHERE id = ?1", params![id])?;
         Ok(())
@@ -391,6 +399,16 @@ impl MemoryDb {
         self.conn.execute(
             "INSERT INTO events (topic_id, statement, ts, episode_id) VALUES (?1, ?2, ?3, ?4)",
             params![topic_id, statement, ts, episode_id],
+        )?;
+        self.prune_events(MAX_EVENTS)?;
+        Ok(())
+    }
+
+    /// 只保留最近 `keep` 条事件，避免长跑后 events 表无限增长。
+    fn prune_events(&self, keep: i64) -> rusqlite::Result<()> {
+        self.conn.execute(
+            "DELETE FROM events WHERE seq NOT IN (SELECT seq FROM events ORDER BY seq DESC LIMIT ?1)",
+            params![keep],
         )?;
         Ok(())
     }
@@ -598,14 +616,32 @@ impl MemoryDb {
         })
     }
 
-    pub fn snapshot(&self) -> rusqlite::Result<Snapshot> {
+    pub fn snapshot(&self, limit: Option<usize>) -> rusqlite::Result<Snapshot> {
         self.decay_all()?;
+        let limit = limit.unwrap_or(SNAPSHOT_DEFAULT_LIMIT).max(1);
         Ok(Snapshot {
             card: self.get_card()?,
-            topics: self.list_topics()?,
+            topics: self.recent_topics(limit)?,
             promises: self.list_promises(None)?,
-            events: self.today_events()?,
+            events: self.recent_events(limit)?,
         })
+    }
+
+    fn recent_topics(&self, limit: usize) -> rusqlite::Result<Vec<TopicRow>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT * FROM topics ORDER BY last_discussed_at DESC LIMIT ?1")?;
+        let rows = stmt.query_map(params![limit as i64], topic_from_row)?;
+        rows.collect()
+    }
+
+    fn recent_events(&self, limit: usize) -> rusqlite::Result<Vec<MemoryEvent>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT seq, topic_id, statement, ts, episode_id FROM events ORDER BY seq DESC LIMIT ?1")?;
+        let mut rows: Vec<MemoryEvent> = stmt.query_map(params![limit as i64], event_from_row)?.collect::<rusqlite::Result<_>>()?;
+        rows.reverse();
+        Ok(rows)
     }
 }
 

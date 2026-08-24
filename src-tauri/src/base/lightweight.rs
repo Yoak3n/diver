@@ -47,6 +47,8 @@ impl Default for LightWeightState {
     }
 }
 
+/// 当前未启用：轻量模式触发逻辑待真机验证后再接入。
+/// 若后续要启用，需先确认 `are_all_windows_closed()` 与主窗口 prevent-close 的行为。
 pub fn setup_window_close_listener() {
     let window_labels = WindowType::all_exclude_float()
         .iter()

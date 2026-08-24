@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 
 // @ts-expect-error process is a nodejs global
 const host = process.env.TAURI_DEV_HOST;
+const sidecarPort = Number(process.env.DIVER_PORT ?? 3620);
 
 // https://vite.dev/config/
 export default defineConfig(async () => ({
@@ -21,7 +22,7 @@ export default defineConfig(async () => ({
     proxy: {
       // dev 模式下 /api 转发到 sidecar（与 release 同源行为保持一致）
       "/api": {
-        target: "http://127.0.0.1:3620",
+        target: `http://127.0.0.1:${sidecarPort}`,
         changeOrigin: true,
       },
     },

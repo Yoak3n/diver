@@ -1,0 +1,57 @@
+{
+  "navigation": [
+    {
+      "title": "快速开始",
+      "items": [
+        {
+          "title": "文档中心",
+          "path": "index.md"
+        },
+        {
+          "title": "开发指南",
+          "path": "development.md"
+        }
+      ]
+    },
+    {
+      "title": "架构",
+      "items": [
+        {
+          "title": "总体架构",
+          "path": "architecture.md"
+        },
+        {
+          "title": "Node sidecar 与 dsh 接入",
+          "path": "sidecar.md"
+        }
+      ]
+    },
+    {
+      "title": "功能模块",
+      "items": [
+        {
+          "title": "Live2D 桌宠",
+          "path": "live2d-pet.md"
+        },
+        {
+          "title": "模型提供商",
+          "path": "providers.md"
+        },
+        {
+          "title": "关系层记忆",
+          "path": "memory.md"
+        }
+      ]
+    },
+    {
+      "title": "规划",
+      "items": [
+        {
+          "title": "打包与路线图",
+          "path": "roadmap.md"
+        }
+      ]
+    }
+  ],
+  "redirects": []
+}

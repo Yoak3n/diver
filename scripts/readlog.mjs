@@ -1,6 +1,7 @@
 // 读取会话 JSONL，统计事件类型
-import { readFileSync, readdirSync, statSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 function findJsonl(dir) {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
@@ -15,7 +16,7 @@ function findJsonl(dir) {
   return null
 }
 
-const root = 'harness/.dsh-home/sessions'
+const root = fileURLToPath(new URL('../harness/.dsh-home/sessions', import.meta.url))
 const file = findJsonl(root)
 console.log('log file:', file)
 if (!file) process.exit(1)

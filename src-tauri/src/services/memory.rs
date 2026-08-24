@@ -108,7 +108,7 @@ pub fn dispatch(db: &Arc<Mutex<MemoryDb>>, method: &str, params: &Value) -> Resu
             db.recent_self_actions(str_opt("kind").as_deref(), usize_opt("limit")).map_err(err)?,
         ),
         "stats" => to_value(db.stats().map_err(err)?),
-        "snapshot" => to_value(db.snapshot().map_err(err)?),
+        "snapshot" => to_value(db.snapshot(usize_opt("limit")).map_err(err)?),
         other => return Err(format!("unknown method: {other}")),
     };
 

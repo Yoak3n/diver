@@ -67,6 +67,15 @@ export interface Snapshot {
   events: MemoryEvent[]
 }
 
+
+  export interface MemoryStats {
+    total: number
+    byTier: Record<string, number>
+    top: Array<{ name: string; nTimes: number }>
+    events: number
+    openPromises: number
+  }
+
 interface RpcEnvelope<T> {
   ok: boolean
   data: T | null
@@ -74,6 +83,7 @@ interface RpcEnvelope<T> {
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000
+const SNAPSHOT_LIMIT = 200
 
 function memoryUrl(): string | null {
   const port = process.env.DIVER_MEMORY_PORT
@@ -105,10 +115,10 @@ export class MemoryStore {
     void this.refresh()
   }
 
-  /** 拉取全量快照，刷新同步视图缓存。 */
+  /** 拉取分页快照，刷新同步视图缓存（topics/events 只取最近 N 条）。 */
   async refresh(): Promise<void> {
     try {
-      this.view = await rpc<Snapshot>('snapshot')
+      this.view = await rpc<Snapshot>('snapshot', { limit: SNAPSHOT_LIMIT })
     } catch (err) {
       console.warn(`[memory] 拉取快照失败: ${err?.message ?? err}`)
     }
@@ -144,7 +154,12 @@ export class MemoryStore {
       .slice(0, limit)
   }
 
-  stats(): { total: number; byTier: Record<string, number>; top: Array<{ name: string; nTimes: number }>; events: number; openPromises: number } {
+  async stats(): Promise<MemoryStats> {
+      try {
+        return await rpc<MemoryStats>('stats')
+      } catch (err) {
+        console.warn(`[memory] 拉取 stats 失败，回退视图缓存: ${err?.message ?? err}`)
+      }
     const rows = this.view.topics
     const byTier: Record<string, number> = { episodic: 0, trivia: 0 }
     for (const r of rows) byTier[r.tier] = (byTier[r.tier] ?? 0) + 1

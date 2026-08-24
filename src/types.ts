@@ -6,6 +6,7 @@ export interface HealthInfo {
   provider: string;
   model: string;
   modelConfigured: boolean;
+  memoryPort?: number;
   sessionId: string | null;
   busy: boolean;
 }

@@ -2,6 +2,8 @@ use super::super::window::config::WindowConfig;
 use mouse_position::mouse_position::Mouse;
 use tauri::AppHandle;
 
+/// 预留能力：仅在 `WindowConfig.float == true` 时使用，当前配置恒为 false。
+/// 不要把它当成当前生效路径；后续若启用浮窗定位，再移除本注释。
 pub fn adjust_float_window_position(app_handle: &AppHandle, config: &WindowConfig) -> (f64, f64) {
     let postion = if let Mouse::Position { x, y } = Mouse::get_mouse_position() {
         let half_width = config.inner_size.0 / 2.0;

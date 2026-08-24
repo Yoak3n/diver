@@ -1,14 +1,11 @@
-// 聊天核心状态与逻辑（旧单文件版）
-//
-// 已迁移至 useChat-v2.ts + chatState.ts + chatTransport.ts；
-// 本文件保留仅为降低删除风险，当前 App.vue 已改为使用 useChat-v2。
+// 聊天核心状态（chat/ 子模块）：消息、工具、连接态、SSE 事件 → 本地状态。
+// 不负责 HTTP/SSE 连接建立，也不负责发送；这些由 chat/transport 处理。
 
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue";
-import { answerQuestion, getSettings, health, sendChat, streamEvents } from "../api";
-import type { ChatMessage, HealthInfo, SettingsInfo, StreamEvent, ToolActivity, UserQuestion, UserQuestionAnswerItem } from "../types";
-import { speakMessageText } from "../tts";
+import { computed, nextTick, ref } from "vue";
+import type { ChatMessage, HealthInfo, SettingsInfo, StreamEvent, ToolActivity, UserQuestion } from "../../types";
+import { speakMessageText } from "../../tts";
 
-export function useChat() {
+export function createChatState() {
   // ---------- 状态 ----------
   const healthInfo = ref<HealthInfo | null>(null);
   const settingsInfo = ref<SettingsInfo | null>(null);
@@ -20,7 +17,6 @@ export function useChat() {
   const composer = ref("");
   /** 模型通过 ask_user_question 提出的问题（待用户回答）。 */
   const pendingQuestion = ref<{ requestId: string; questions: UserQuestion[] } | null>(null);
-  let closeStream: (() => void) | null = null;
   let ttsSource: (() => { enabled: boolean; voice: string } | null) | null = null;
 
   // ---------- 派生 ----------
@@ -174,88 +170,6 @@ export function useChat() {
     }
   }
 
-  /** 提交对 ask_user_question 的回答。 */
-  async function submitQuestionAnswer(answers: UserQuestionAnswerItem[]) {
-    const q = pendingQuestion.value;
-    if (!q) return;
-    try {
-      await answerQuestion(q.requestId, answers);
-      pendingQuestion.value = null;
-    } catch (err) {
-      error.value = err instanceof Error ? err.message : String(err);
-      // 保持卡片可见，用户可重试
-    }
-  }
-
-  // ---------- 连接 ----------
-  async function refreshHealth() {
-    try {
-      const h = await health();
-      healthInfo.value = h;
-      busy.value = h.busy;
-      error.value = null;
-    } catch (err) {
-      error.value = err instanceof Error ? err.message : String(err);
-      healthInfo.value = null;
-    }
-  }
-
-  async function connect() {
-    connecting.value = true;
-    await refreshHealth();
-    try {
-      settingsInfo.value = await getSettings();
-    } catch {
-      /* 设置接口失败不阻断 */
-    }
-    try {
-      const res = await fetch("/api/history");
-      if (res.ok) {
-        const data = (await res.json()) as { messages: ChatMessage[] };
-        messages.value = data.messages.map((m) => ({ ...m, streaming: false }));
-      }
-    } catch {
-      /* 历史拉取失败不阻断 */
-    }
-    connecting.value = false;
-    openStream();
-    scrollToBottom();
-  }
-
-  function openStream() {
-    closeStream?.();
-    closeStream = streamEvents(
-      handleStreamEvent,
-      (err) => {
-        error.value = err instanceof Error ? err.message : String(err);
-      },
-    );
-  }
-
-  async function reconnect() {
-    await refreshHealth();
-    openStream();
-  }
-
-  // ---------- 发送 ----------
-  async function send() {
-    const content = composer.value.trim();
-    if (!content) return;
-    if (!canSend.value) return;
-    composer.value = "";
-    const localId = `local-${Date.now()}`;
-    upsertMessage({ id: localId, kind: "user", content, origin: "user", time: Date.now() });
-    busy.value = true;
-    try {
-      await sendChat(content);
-    } catch (err) {
-      error.value = err instanceof Error ? err.message : String(err);
-      const idx = messages.value.findIndex((m) => m.id === localId);
-      if (idx >= 0) messages.value.splice(idx, 1);
-      busy.value = false;
-    }
-  }
-
   // ---------- 滚动 ----------
   function scrollToBottom() {
     nextTick(() => {
@@ -270,18 +184,6 @@ export function useChat() {
     return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
   }
 
-  // ---------- 生命周期 ----------
-  onMounted(() => {
-    connect();
-    const timer = window.setInterval(() => {
-      refreshHealth();
-    }, 8000);
-    onBeforeUnmount(() => {
-      window.clearInterval(timer);
-      closeStream?.();
-    });
-  });
-
   return {
     healthInfo,
     settingsInfo,
@@ -291,6 +193,7 @@ export function useChat() {
     connecting,
     error,
     composer,
+    pendingQuestion,
     personaName,
     modelConfigured,
     currentModelLabel,
@@ -298,10 +201,9 @@ export function useChat() {
     canSend,
     setTtsSource,
     speakMessage,
-    send,
-    reconnect,
-    pendingQuestion,
-    submitQuestionAnswer,
+    upsertMessage,
+    handleStreamEvent,
+    scrollToBottom,
     fmtTime,
   };
 }

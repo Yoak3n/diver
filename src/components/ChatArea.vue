@@ -23,6 +23,7 @@ const props = defineProps<{
 
 defineEmits<{
   retry: [];
+  restart: [];
   "open-settings": [];
   suggestion: [text: string];
   answerQuestion: [answers: UserQuestionAnswerItem[]];
@@ -57,6 +58,11 @@ async function speak(msg: ChatMessage) {
       </div>
 
       <template v-else>
+          <div v-if="error" class="chat-error-strip">
+            <span class="chat-error-text">小潜遇到点问题：{{ error }}</span>
+            <button class="btn small" @click="$emit('retry')">重连</button>
+            <button class="btn small" @click="$emit('restart')">重启 sidecar</button>
+          </div>
         <WelcomeCard
           v-if="messages.length === 0"
           :persona-name="personaName"
@@ -133,6 +139,25 @@ async function speak(msg: ChatMessage) {
   cursor: pointer;
   font-family: inherit;
 }
+  .chat-error-strip {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    padding: 8px 12px;
+    border: 1px solid rgba(211, 125, 125, 0.4);
+    border-radius: 10px;
+    background: rgba(211, 93, 93, 0.12);
+  }
+  .chat-error-text {
+    flex: 1;
+    color: #e8a3a3;
+    font-size: 13px;
+  }
+  .btn.small {
+    padding: 4px 10px;
+    font-size: 12px;
+  }
 .tools-strip {
   display: flex;
   flex-wrap: wrap;

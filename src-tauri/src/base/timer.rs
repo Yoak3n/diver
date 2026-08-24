@@ -1,3 +1,7 @@
+//! 本模块仅持有 delay_timer 单例基础设施，不负责具体业务任务。
+//! 具体任务（如轻量模式定时器）由调用方直接向 `Timer::delay_timer` 注册。
+//! `gen_map` / `refresh` / `async_task` 目前为预留/未接入逻辑，勿误认为当前生效路径。
+
 use anyhow::{Context, Result};
 use chrono::Local;
 use delay_timer::prelude::{DelayTimer, DelayTimerBuilder, TaskBuilder};

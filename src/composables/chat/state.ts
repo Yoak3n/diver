@@ -20,7 +20,9 @@ export function createChatState() {
   let ttsSource: (() => { enabled: boolean; voice: string } | null) | null = null;
 
   // ---------- 派生 ----------
-  const personaName = computed(() => healthInfo.value?.persona || "小潜");
+  // 不预设名字：health 的 persona 字段保留扩展点（未来可让用户自定义名字），
+  // 为空时 UI 走无人称样式（不显示名字）。
+  const personaName = computed(() => healthInfo.value?.persona || "");
   const modelConfigured = computed(() => !!healthInfo.value?.modelConfigured);
   const providerNameOf = (p: string): string =>
     p === "opencode-go" ? "opencode-go" : p === "deepseek-official" ? "DeepSeek" : p;
@@ -104,6 +106,7 @@ export function createChatState() {
           busy: e.busy,
         };
         busy.value = e.busy;
+        error.value = null;
         break;
       case "message":
         if (e.kind === "user") {

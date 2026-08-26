@@ -1,6 +1,5 @@
 <script setup lang="ts">
 defineProps<{
-  personaName: string;
   statusText: string;
   modelLabel: string;
   dotClass: string;
@@ -12,12 +11,8 @@ defineEmits<{ "open-settings": [] }>();
 <template>
   <header class="topbar">
     <div class="identity">
-      <div class="avatar">潜</div>
+      <!-- 不显示名字/头像：不预设身份，头像留待用户自定义 -->
       <div class="meta">
-        <div class="name-row">
-          <span class="name">{{ personaName }}</span>
-          <span class="badge">陪伴中</span>
-        </div>
         <div class="status-row">
           <span class="dot" :class="dotClass"></span>
           <span class="status">{{ statusText }}</span>
@@ -45,37 +40,6 @@ defineEmits<{ "open-settings": [] }>();
   display: flex;
   align-items: center;
   gap: 12px;
-}
-.avatar {
-  width: 44px;
-  height: 44px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 20px;
-  font-weight: 700;
-  color: #fff;
-  background: linear-gradient(135deg, #ff9d6c, #b06ab3 60%, #6a8cff);
-  box-shadow: 0 2px 12px rgba(255, 157, 108, 0.35);
-  user-select: none;
-}
-.name-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.name {
-  font-size: 16px;
-  font-weight: 600;
-}
-.badge {
-  font-size: 11px;
-  padding: 1px 8px;
-  border-radius: 10px;
-  background: rgba(255, 176, 124, 0.15);
-  color: #ffb07c;
-  border: 1px solid rgba(255, 176, 124, 0.3);
 }
 .status-row {
   display: flex;

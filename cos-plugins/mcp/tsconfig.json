@@ -1,0 +1,19 @@
+{
+  "compilerOptions": {
+    "target": "es2022",
+    "lib": ["es2022", "es2024"],
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "allowImportingTsExtensions": true,
+    "types": ["node"],
+    "noEmit": true,
+    "verbatimModuleSyntax": true,
+    "skipLibCheck": true,
+    "paths": {
+      "@cos/*": ["../../harness/packages/*/src/index.ts"],
+      "cordis": ["../../harness/node_modules/cordis"]
+    }
+  },
+  "include": ["src/**/*.ts", "../../harness/packages/**/*.ts"]
+}

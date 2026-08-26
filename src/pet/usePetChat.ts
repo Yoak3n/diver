@@ -3,7 +3,7 @@
 import { computed, onBeforeUnmount, ref } from "vue";
 import { answerQuestion, getSettings, health, sendChat, streamEvents } from "../api";
 import type { ChatMessage, StreamEvent, UserQuestion, UserQuestionAnswerItem } from "../types";
-import { onTauriEvent, tauriAvailable } from "../tauri";
+import { onTauriEvent, tauriAvailable, waitForSidecarReady } from "../tauri";
 
 const MAX_MESSAGES = 8;
 const HEALTH_POLL_MS = 8000;
@@ -23,8 +23,32 @@ export function usePetChat() {
   let streamOpen = false;
   let healthTimer: number | null = null;
   let stopSidecarEvent: (() => void) | null = null;
+  /** 历史成功加载一次后不再重复拉取（hello / 状态事件 / 健康轮询都会触发重试）。 */
+  let historyLoaded = false;
 
   const canSend = computed(() => connected.value && !busy.value);
+
+  /**
+   * 拉取最近会话历史（幂等）。
+   * 首次启动时桌宠页面可能先于 sidecar 就绪，单次拉取会静默失败；
+   * 这里由三路信号重试：SSE hello、sidecar://status running、健康轮询恢复。
+   */
+  async function loadHistory() {
+    if (historyLoaded) return;
+    try {
+      const res = await fetch("/api/history");
+      if (!res.ok) return;
+      const data = (await res.json()) as { messages: ChatMessage[] };
+      // 仅当本地还没有消息时填充，避免覆盖正在进行的会话
+      if (messages.value.length === 0) {
+        // 历史消息标记 fromHistory：气泡/朗读等"新消息到达提示"不得重放上次会话末尾。
+        messages.value = data.messages.slice(-MAX_MESSAGES).map((m) => ({ ...m, streaming: false, fromHistory: true }));
+      }
+      historyLoaded = true;
+    } catch {
+      /* sidecar 尚未就绪：由 hello / sidecar://status / 健康轮询重试 */
+    }
+  }
 
   function push(msg: ChatMessage) {
     messages.value.push(msg);
@@ -39,10 +63,31 @@ export function usePetChat() {
         connected.value = true;
         busy.value = e.busy;
         error.value = null;
+        // SSE 流建立说明 sidecar HTTP 已就绪：补拉历史（幂等）
+        void loadHistory();
         break;
       case "message":
         if (e.kind === "user") {
-          push({ id: e.messageId, kind: "user", content: e.content, origin: "user", time: e.time });
+          // 去重：send() 已本地 push 一条 local- 前缀消息，服务端回传同一条时
+          // 替换本地消息（拿到服务端 id），而不是再 push 一条造成重复。
+          const localIdx = messages.value.findIndex(
+            (m) =>
+              m.id.startsWith("local-") &&
+              m.kind === "user" &&
+              m.content === e.content &&
+              // 只匹配 3 秒内发送的本地消息，避免误合并历史同文消息
+              Date.now() - m.time < 3000,
+          );
+          if (localIdx >= 0) {
+            messages.value[localIdx] = {
+              ...messages.value[localIdx],
+              id: e.messageId,
+              time: e.time,
+              origin: e.origin ?? "user",
+            };
+          } else {
+            push({ id: e.messageId, kind: "user", content: e.content, origin: "user", time: e.time });
+          }
         } else if (e.turnMessageId) {
           const idx = messages.value.findIndex((m) => m.id === e.turnMessageId);
           if (idx >= 0) {
@@ -102,16 +147,13 @@ export function usePetChat() {
   }
 
   async function connect() {
-    try {
-      const res = await fetch("/api/history");
-      if (res.ok) {
-        const data = (await res.json()) as { messages: ChatMessage[] };
-        // 历史消息标记 fromHistory：气泡/朗读等"新消息到达提示"不得重放上次会话末尾。
-        messages.value = data.messages.slice(-MAX_MESSAGES).map((m) => ({ ...m, streaming: false, fromHistory: true }));
-      }
-    } catch {
-      /* 历史拉取失败不阻断 */
+    // 先等后端就绪（backend://ready + 状态查询兜底），再发起首轮请求；
+    // 超时降级由 hello / sidecar://status / 健康轮询的幂等重试兜底。
+    const ready = await waitForSidecarReady();
+    if (!ready) {
+      console.warn("[pet] 等待 sidecar 就绪超时，降级为重试模式");
     }
+    await loadHistory();
     openStream();
     void refreshHealth();
     void refreshSettings();
@@ -134,13 +176,15 @@ export function usePetChat() {
     );
   }
 
-  /** 探活：sidecar 恢复后自动重开事件流。 */
+  /** 探活：sidecar 恢复后自动重开事件流 + 补拉历史。 */
   async function refreshHealth() {
     try {
       const h = await health();
       connected.value = true;
       error.value = null;
       busy.value = h.busy;
+      // 健康恢复说明 sidecar 已就绪：补拉历史（幂等）
+      void loadHistory();
       if (!streamOpen) {
         openStream();
       }
@@ -167,7 +211,9 @@ export function usePetChat() {
     }, HEALTH_POLL_MS);
     // Tauri 环境：sidecar 状态变化（启动/停止/重启）时立即刷新
     if (tauriAvailable()) {
-      void onTauriEvent("sidecar://status", () => {
+      void onTauriEvent<import("../types").SidecarStatus>("sidecar://status", (status) => {
+        // 状态为 running（DIVER_READY）时补拉历史，修复启动竞态
+        if (status.state === "running") void loadHistory();
         void refreshHealth();
       }).then((unlisten) => {
         stopSidecarEvent = unlisten;

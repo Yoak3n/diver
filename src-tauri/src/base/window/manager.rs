@@ -46,6 +46,37 @@ impl Manager {
             .and_then(|app| app.get_webview_window(window_type.label()))
     }
 
+    /// 判断窗口是否为「幽灵窗口」：tauri 的 `builder.build()` 是先返回后创建，
+    /// 若 WebView2 环境/控制器在事件循环中创建失败（如 HRESULT 0x8007139F），
+    /// 错误只被 tauri-runtime-wry 内部 log，应用级注册表里仍残留一个不存在的窗口。
+    /// 此后对该窗口的 getter 全部返回 Err——用一次轻量探测即可识别。
+    fn is_phantom_window(window: &WebviewWindow<Wry>) -> bool {
+        window.is_visible().is_err() && window.is_minimized().is_err()
+    }
+
+    /// 清理「幽灵窗口」：从 tauri 注册表移除残留的 window/webview 条目并同步缓存状态。
+    /// tauri 公开 API 没有移除入口，这里通过 `destroy()` 走内部 Destroyed 事件链，
+    /// 由 tauri 的 `on_window_close` 清掉注册表；Destroyed 事件不会为幽灵窗口产生，
+    /// 因此兜底直接置 NotExist（后续 get_window 返回 None，走正常重建路径）。
+    fn purge_phantom_window(&self, window_type: WindowType) {
+        log::warn!("[window] 检测到 {:?} 幽灵窗口（WebView2 创建失败残留），清理并重建", window_type);
+        if let Some(window) = self.get_window(window_type) {
+            let _ = window.destroy();
+        }
+        self.update_window_state(window_type, WindowState::NotExist);
+    }
+
+    /// 获取真实窗口：幽灵窗口先清理，返回 None 让调用方走重建路径。
+    pub fn get_real_window(&self, window_type: WindowType) -> Option<WebviewWindow<Wry>> {
+        match self.get_window(window_type) {
+            Some(window) if Self::is_phantom_window(&window) => {
+                self.purge_phantom_window(window_type);
+                None
+            }
+            other => other,
+        }
+    }
+
     pub fn update_window_state(&self, window_type: WindowType, state: WindowState) {
         self.states.lock().unwrap().insert(window_type, state);
     }
@@ -70,8 +101,8 @@ impl Manager {
             .get(&window_type)
             .ok_or_else(|| Error::FailedToReceiveMessage)?;
 
-        // 检查是否已存在窗口
-        if let Some(existing_window) = self.get_window(window_type) {
+        // 检查是否已存在窗口（幽灵窗口视为不存在，先清理再重建）
+        if let Some(existing_window) = self.get_real_window(window_type) {
             if let Some(u) = url_with_args {
                 if let Ok(current_url) = existing_window.url() {
                     let path = current_url.path();
@@ -113,7 +144,7 @@ impl Manager {
                     .unwrap_or_else(|_| tauri::Url::parse("about:blank").unwrap()),
             )
         } else {
-            tauri::WebviewUrl::App(url_str.into())
+            tauri::WebviewUrl::App(url_str.clone().into())
         };
 
         let mut builder = WebviewWindowBuilder::new(
@@ -152,10 +183,45 @@ impl Manager {
 
         #[cfg(target_os = "windows")]
         {
-            builder = builder.additional_browser_args("--enable-features=msWebView2EnableDraggableRegions --disable-features=OverscrollHistoryNavigation,msExperimentalScrolling");
+            // WebView2 环境创建失败（HRESULT 0x8007139F）的已知诱因之一是多窗口/多环境
+            // 共用同一个 user-data 目录时发生竞争（见 tauri#8196）。
+            // 每个窗口使用独立的 data_directory 子目录，规避共享环境竞争与残留锁。
+            if let Ok(local_dir) = app_handle.path().app_local_data_dir() {
+                let data_dir = local_dir.join(format!("EBWebView-{}", window_type.label()));
+                builder = builder.data_directory(data_dir);
+            }
+
+            // dev 调试辅助：WebView2 远程调试端口（诊断桌宠页面问题用，release 无影响）
+            let mut args = String::from("--enable-features=msWebView2EnableDraggableRegions --disable-features=OverscrollHistoryNavigation,msExperimentalScrolling");
+            #[cfg(debug_assertions)]
+            if window_type == WindowType::Pet {
+                args.push_str(" --remote-debugging-port=9223");
+            }
+            builder = builder.additional_browser_args(&args);
         }
-        
+
+        log::info!(
+            "[window] creating {:?} at url={} size={}x{} transparent={} aot={}",
+            window_type,
+            url_str.clone(),
+            config.inner_size.0,
+            config.inner_size.1,
+            config.transparent,
+            config.always_on_top
+        );
         let window = builder.build()?;
+        log::info!("[window] {:?} built ok", window_type);
+        // 构建返回 Ok 不代表 webview 创建成功（tauri 先返回后创建）。
+        // 立即探测一次：幽灵窗口则清理注册表并报错，让上层走重建/失败路径，
+        // 避免残留一个永远打不开的"主窗口"。
+        if Self::is_phantom_window(&window) {
+            log::error!(
+                "[window] {:?} build 返回成功但 webview 创建失败（幽灵窗口），清理",
+                window_type
+            );
+            self.purge_phantom_window(window_type);
+            return Err(Error::FailedToReceiveMessage);
+        }
         window.set_focus()?;
         add_window_listeners(window_type);
         Ok(window)
@@ -231,6 +297,7 @@ impl Manager {
                         WindowOperationResult::Created
                     }
                     Err(e) => {
+                        log::error!("[window] 创建 {:?} 失败: {:?}", window_type, e);
                         println!("创建窗口失败: {:?}", e);
                         WindowOperationResult::Failed
                     }
@@ -239,7 +306,8 @@ impl Manager {
             WindowState::VisibleFocused => {
                 // 缓存状态可能过期（X 关闭/任务栏最小化等路径未同步缓存）：
                 // 以真实窗口为准——实际隐藏/最小化时自愈激活，避免"点开主窗口没反应"。
-                if let Some(window) = self.get_window(window_type) {
+                // 幽灵窗口/窗口已不存在：清理后按不存在处理，直接重建。
+                if let Some(window) = self.get_real_window(window_type) {
                     let visible = window.is_visible().unwrap_or(true);
                     let minimized = window.is_minimized().unwrap_or(false);
                     if visible && !minimized {
@@ -251,11 +319,17 @@ impl Manager {
                         WindowOperationResult::Shown
                     }
                 } else {
-                    WindowOperationResult::Failed
+                    match self.create_window_inner(window_type, url) {
+                        Ok(_) => WindowOperationResult::Created,
+                        Err(e) => {
+                            log::error!("[window] 重建 {:?} 失败: {:?}", window_type, e);
+                            WindowOperationResult::Failed
+                        }
+                    }
                 }
             }
             WindowState::Minimized | WindowState::Hidden => {
-                if let Some(window) = self.get_window(window_type) {
+                if let Some(window) = self.get_real_window(window_type) {
                     self.activate_window(&window, window_type);
                     WindowOperationResult::Shown
                 } else {
@@ -284,7 +358,7 @@ impl Manager {
 
 
     pub fn close_window(&self, window_type: WindowType) -> WindowOperationResult {
-        let result = match self.get_window(window_type) {
+        let result = match self.get_real_window(window_type) {
             Some(window) => {
                 let operation = window.close();
                 match operation {
@@ -311,7 +385,7 @@ impl Manager {
     }
 
     pub fn destroy_window(&self, window_type: WindowType) -> bool {
-        match self.get_window(window_type) {
+        match self.get_real_window(window_type) {
             Some(window) => {
                 if let Err(e) = window.destroy() {
                     println!("窗口销毁失败: {:?}", e);
@@ -353,18 +427,40 @@ impl Manager {
                 }
             }
             WindowState::VisibleFocused => {
-                println!("窗口可见，将隐藏窗口");
-                update_tray(false);
-                self.close_window(window_type)
+                // 幽灵窗口/窗口已不存在（WebView2 创建失败残留）：清理后直接重建显示。
+                if self.get_real_window(window_type).is_some() {
+                    println!("窗口可见，将隐藏窗口");
+                    update_tray(false);
+                    self.close_window(window_type)
+                } else {
+                    println!("窗口为幽灵窗口，重建");
+                    match self.create_window_inner(window_type, None) {
+                        Ok(_) => {
+                            update_tray(true);
+                            WindowOperationResult::Created
+                        }
+                        Err(_) => WindowOperationResult::Failed,
+                    }
+                }
             }
             WindowState::Minimized | WindowState::Hidden => {
-                println!("窗口存在但被隐藏或最小化，将激活窗口");
-                if let Some(window) = self.get_window(window_type) {
+                if let Some(window) = self.get_real_window(window_type) {
+                    println!("窗口存在但被隐藏或最小化，将激活窗口");
                     update_tray(true);
                     self.activate_window(&window, window_type)
                 } else {
-                    println!("无法获取窗口实例");
-                    WindowOperationResult::Failed
+                    // 幽灵窗口/已销毁：按不存在处理，重建。
+                    println!("窗口不存在，将创建新窗口");
+                    match self.create_window_inner(window_type, None) {
+                        Ok(_) => {
+                            update_tray(true);
+                            WindowOperationResult::Created
+                        }
+                        Err(_) => {
+                            println!("无法获取窗口实例");
+                            WindowOperationResult::Failed
+                        }
+                    }
                 }
             }
         };
@@ -385,7 +481,7 @@ impl Manager {
     }
 
     pub fn minimized_window(&self, window_type: WindowType) -> bool {
-        match self.get_window(window_type) {
+        match self.get_real_window(window_type) {
             Some(window) => {
                 if window.is_minimized().unwrap_or(false) {
                     return true;

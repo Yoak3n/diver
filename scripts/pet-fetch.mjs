@@ -95,4 +95,16 @@ if (!hasModel(TARGET_DIR)) {
   console.error(`[pet:fetch] 安装后仍缺少 Hiyori.model3.json：${TARGET_DIR}`)
   process.exit(1)
 }
+// 拉取到的是官方原始模型包（只有 Idle/TapBody）：
+// 1) 生成情绪动作文件（Hiyori_happy01 等）
+// 2) 把情绪动作组声明补丁到 model3.json
+// 这样 clone 后一条命令即可获得完整的情绪动作能力。
+console.log('[pet:fetch] 应用情绪动作补丁…')
+try {
+  execFileSync(process.execPath, [join(ROOT, 'scripts', 'gen-motions.mjs')], { stdio: 'inherit' })
+  execFileSync(process.execPath, [join(ROOT, 'scripts', 'patch-model3.mjs'), join(TARGET_DIR, 'Hiyori.model3.json')], { stdio: 'inherit' })
+  console.log('[pet:fetch] 情绪动作补丁完成')
+} catch (err) {
+  console.warn(`[pet:fetch] 情绪动作补丁失败（不影响模型本体）：${err?.message ?? err}`)
+}
 console.log(`[pet:fetch] 完成：${TARGET_DIR}`)

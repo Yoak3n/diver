@@ -4,6 +4,9 @@
 > 组装：`@diver/bundle-companion`（第三方 bundle，`--bundles` 应用）
 > 部署形态：`cos-plugins/` 独立第三方插件目录（工作区外），经 `pnpm add file:` 安装、bundle 补丁层挂载
 > 验证日期：2026-08-24
+>
+> 后续新增：`@diver/basic-tools`（四个基础工具 read/write/edit/sh，DSH 最小工具面）
+> 于同目录部署、经同一 bundle 组装挂载，见 compat-test 的 T1.4 / T2.4。
 
 ---
 
@@ -33,14 +36,14 @@
 | 编号 | 维度 | 用例 | 预期 |
 |---|---|---|---|
 | T1.1 | 初始化加载 | boot 组合树（bundle 组装第三方插件） | 启动成功，无未捕获异常 |
-| T1.2 | 初始化加载 | memory `apply()` 执行 | 4 个记忆工具（remember/recall/inventory/demote）注册成功 |
+| T1.2 | 初始化加载 | memory `apply()` 执行 | 5 个记忆工具（remember/recall/inventory/demote/identity）注册成功 |
 | T1.3 | 初始化加载 | backend `apply()` 执行 | HTTP server 监听 3620，health 端点可达 |
 | T2.1 | 核心功能 | memory 常驻注入 | `memory:relation-card` systemPrompt section 已注册 |
 | T2.2 | 核心功能 | backend `/api/health` | 返回 200，含 provider/model/memoryPort 等字段 |
 | T2.3 | 核心功能 | backend `/api/settings` | 返回 200 |
 | T3.1 | 跨模块交互 | backend ↔ agentLoop | `createAgent(resume)` 创建/恢复陪伴 agent |
 | T3.2 | 跨模块交互 | memory ↔ sessions | `session/event` 事件流监听，消息投递 + turn 完成无异常 |
-| T3.3 | 跨模块交互 | memory ↔ llm | `digestSession` 直连 `ctx.llm.stream`，后端缺失时优雅降级 |
+| T3.3 | 跨模块交互 | memory ↔ subagents | `digestSession` 委派 harness core 的 `ctx.subagents`（worker 经记忆工具直写记忆，不再 parseJson），后端缺失时优雅降级 |
 | T3.4 | 跨模块交互 | web ↔ sessionPersistence | `/api/history` 读取持久化事件返回 200 |
 | T4.1 | 异常场景 | Rust 后端未启动（`DIVER_MEMORY_PORT` 未配置） | memory 拉取快照失败仅告警，插件继续运行 |
 | T4.2 | 异常场景 | API Key 未配置（deepseek provider） | `/api/chat` 返回 400 明确提示 |
@@ -64,14 +67,14 @@ pnpm tsx scripts/compat-test.ts   # 自动断言，退出码 0 = 全部通过
 | 编号 | 用例 | 结果 | 实测详情 |
 |---|---|---|---|
 | T1.1 | boot 组合树（bundle 组装） | ✅ PASS | `cordis.yml` + `@diver/bundle-companion` 组合树就绪 |
-| T1.2 | memory apply() | ✅ PASS | 已注册: remember, recall, inventory, demote |
+| T1.2 | memory apply() | ✅ PASS | 已注册: remember, recall, inventory, demote, identity |
 | T1.3 | backend apply() | ✅ PASS | health 端点可达（`127.0.0.1:3620`） |
 | T2.1 | memory 常驻注入 | ✅ PASS | `memory:relation-card` 已注册 |
-| T2.2 | backend /api/health | ✅ PASS | `{"ok":true,"persona":"小潜","provider":"mock","model":"mock-1","modelConfigured":true,...}` |
+| T2.2 | backend /api/health | ✅ PASS | `{"ok":true,"persona":"","provider":"mock","model":"mock-1","modelConfigured":true,...}` |
 | T2.3 | backend /api/settings | ✅ PASS | 返回 200 |
 | T3.1 | backend ↔ agentLoop | ✅ PASS | agent `diver-companion` 就绪（resume 语义） |
 | T3.2 | memory ↔ sessions | ✅ PASS | 消息投递 + turn 完成无异常 |
-| T3.3 | memory ↔ llm | ✅ PASS | digestSession 调用完成（后端缺失时优雅降级） |
+| T3.3 | memory ↔ subagents | ✅ PASS | digestSession 委派 worker（ctx.subagents.run）完成，后端缺失时优雅降级 |
 | T3.4 | backend ↔ sessionPersistence | ✅ PASS | /api/history 返回 200 |
 | T4.1 | Rust 后端未启动 | ✅ PASS | store 调用不抛未捕获异常（仅告警 `DIVER_MEMORY_PORT 未配置`） |
 | T4.2 | API Key 未配置 | ✅ PASS | 400: 尚未配置 API Key，请先在设置中配置 |

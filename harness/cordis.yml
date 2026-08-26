@@ -34,3 +34,8 @@
   name: '@cos/agent-loop'
   config:
     debugSystemPrompt: false
+- id: subagents
+  name: '@cos/subagents'
+  config:
+    # worker 单次运行的默认墙钟上限（超时则 cancel 该 worker agent）
+    defaultTimeoutMs: 120000

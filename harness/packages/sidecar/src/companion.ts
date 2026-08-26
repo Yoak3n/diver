@@ -35,7 +35,10 @@ const diverPluginsRoot = join(repoRoot, 'cos-plugins')
 const diverBundles = [join(diverPluginsRoot, 'bundle-companion')]
 const diverPluginPaths: Record<string, string> = {
   '@diver/memory': join(diverPluginsRoot, 'memory'),
+  '@diver/voice': join(diverPluginsRoot, 'voice'),
   '@diver/backend': join(diverPluginsRoot, 'backend'),
+  '@diver/basic-tools': join(diverPluginsRoot, 'basic-tools'),
+  '@diver/mcp': join(diverPluginsRoot, 'mcp'),
 }
 if (!existsSync(diverBundles[0]) || !existsSync(join(diverPluginPaths['@diver/memory'], 'package.json'))) {
   console.error(`[cos] diver plugins not found under ${diverPluginsRoot} — expected the cos-plugins checkout next to the harness`)
@@ -51,7 +54,7 @@ try {
   ctx = await boot(bootOptionsFromCli(cli, {
     ...(cli.profile === undefined ? {} : { profile: cli.profile }),
     ...diverOverrides,
-    required: ['agentLoop', 'llm', 'tools', 'sessions', 'agents', 'systemPrompt', 'credentials', 'sessionPersistence'],
+    required: ['agentLoop', 'llm', 'tools', 'sessions', 'agents', 'systemPrompt', 'credentials', 'sessionPersistence', 'subagents'],
   }))
 } catch (error) {
   console.error(`[cos] boot failed: ${error}`)

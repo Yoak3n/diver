@@ -3,7 +3,7 @@
 陪伴 agent 的长期记忆系统，双端架构：
 
 - **Node 插件**（`harness/companion/lib/memory/`）— agent 侧的智能层：
-  agent 主动 remember 工具、会话末 digest 归纳、压缩摘要内化、常驻注入、agent 工具面
+  agent 主动 remember 工具、身份卡片（identity）工具、会话末 digest 归纳、压缩摘要内化、常驻注入、agent 工具面
 - **Rust 后端**（`crates/diver-memory` + `src-tauri/src/services/`）— 确定性层：
   SQLite 存储、衰减/激活/遗忘、阻塞候选、统计快照，经本地 HTTP JSON-RPC 暴露
 
@@ -15,7 +15,8 @@
 ```
 agent（Node）
   ├─ 主动 remember 工具：对话中自觉沉淀（无逐轮 LLM 提取）
-  ├─ 会话末 digest（节流）：transcript → LLM → 关系卡增量
+  ├─ 身份卡片 identity 工具：agent 主动完善"我是什么样的人"（性格/说话方式/价值观）
+  ├─ 会话末 digest（节流）：transcript → LLM → 身份卡片增量
   ├─ compaction/summary：把压缩摘要内化为长期记忆
   ├─ 写入：remember / append_event / upsert_promise / update_card（经 RPC）
   └─ 常驻注入：systemPrompt.section(order 15) ← 同步视图缓存（快照）
@@ -38,7 +39,7 @@ topics          -- 主题层：id(不透明稳定)/canonical_name/aliases/state_
                 --   weight/tier(episodic|trivia)/activation_count/时间锚点/
                 --   n_times/uncertain/demoted_at/demoted_reason
 events          -- 事件层：append-only（seq 自增、topic_id、statement、ts、episode_id）
-relation_card   -- 关系卡：profile（关于用户）/ agent_model（关于自己）/ relationship
+relation_card   -- 身份卡片（关系卡）：profile（关于用户）/ agent_model（关于自己——性格/说话方式/价值观）/ relationship
 promises        -- 承诺：content/status(open|done|expired)/due_at
 self_history    -- 行为史：kind/content/topic_id/ts（如建议去重）
 ```
@@ -64,11 +65,12 @@ self_history    -- 行为史：kind/content/topic_id/ts（如建议去重）
 | 机制 | 实现 |
 |---|---|
 | Agent 主动 remember（工具） | 对话中由 agent 自觉调用 `remember` 写 topics；**不做逐轮 LLM 提取** |
-| 会话末 digest（节流） | 积累 ≥3 对 turn pair 且距上次 digest ≥10 分钟 → LLM 归纳关系卡增量 |
+| 身份卡片 identity（工具） | agent 对"我是什么样的人"有了稳定看法时主动调用 `identity` 写 `agent_model`/`relationship`，让性格跨会话保持、持续完善 |
+| 会话末 digest（节流） | 积累 ≥3 对 turn pair 且距上次 digest ≥10 分钟 → LLM 归纳身份卡片增量（含 agent_model 自我认知） |
 | 压缩内化 | 监听 `compaction/summary` 事件，把早期对话摘要写入「会话历史回顾」话题 |
-| 常驻注入 | `systemPrompt.section`（order 15）：关系卡 + Mode B（近期经历/未完成承诺/今天事件），永不检索 |
+| 常驻注入 | `systemPrompt.section`（order 15）：身份卡片 + Mode B（近期经历/未完成承诺/今天事件），永不检索；卡片为空时也注入引导（提示用 identity 沉淀） |
 | 衰减/激活/遗忘 | episodic 0.05/天、trivia 0.15/天线性衰减（Rust 侧懒执行）；用户提起 → activation+1 权重恢复 ≥0.6；低于阈值系统遗忘 |
-| Agent 工具面 | `remember` / `recall` / `inventory` / `demote`（只加强/减弱，不亲手删，可逆） |
+| Agent 工具面 | `remember` / `recall` / `inventory` / `demote` / `identity`（只加强/减弱，不亲手删，可逆） |
 | 快照视图 | store-rpc 维护 `snapshot` 缓存：card/promises 全量，topics/events 只取最近 200 条；`events` 超出 2000 条自动裁剪 |
 | 读取 | `recall` 走 `blocking_candidates`（词法 contains，≥2 字符文本命中）；无命中时 Mode B 近期经历兜底 |
 

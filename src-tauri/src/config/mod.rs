@@ -3,6 +3,7 @@
 //! 所有配置以 JSON 文件形式保存在 Tauri 的应用配置目录（`app_config_dir`）下。
 //! 新增配置时，在此目录下添加一个子模块，并用 [load]、[save] 完成读写即可。
 
+pub mod mcp;
 pub mod window_startup;
 
 use std::path::PathBuf;

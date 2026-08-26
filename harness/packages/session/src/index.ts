@@ -21,14 +21,14 @@ declare module 'cordis' {
 /** One session's live log and store entry. */
 export class Session implements SessionShape {
   readonly id: SessionId
-  readonly header: { cwd?: string }
+  readonly header: { cwd?: string; ephemeral?: boolean }
   readonly events: SessionEvent[] = []
   private seq = 0
 
   constructor(
     private readonly ctx: Context,
     id: SessionId,
-    meta: { cwd?: string } = {},
+    meta: { cwd?: string; ephemeral?: boolean } = {},
     seed: readonly SessionEvent[] = [],
   ) {
     this.id = id
@@ -88,7 +88,7 @@ export class SessionsService extends Service {
   }
 
   /** Create a fresh session, register it, and announce `session/created`. */
-  create(id: SessionId = brandSessionId(randomUUID()), meta?: { cwd?: string }, seed?: readonly SessionEvent[]): SessionShape {
+  create(id: SessionId = brandSessionId(randomUUID()), meta?: { cwd?: string; ephemeral?: boolean }, seed?: readonly SessionEvent[]): SessionShape {
     const session = new Session(this.ctx, id, meta, seed)
     this.store.set(id, session)
     this.ctx.emit('session/created', session)

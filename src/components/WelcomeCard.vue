@@ -1,6 +1,5 @@
 <script setup lang="ts">
 defineProps<{
-  personaName: string;
   modelConfigured: boolean;
 }>();
 
@@ -12,8 +11,8 @@ defineEmits<{
 
 <template>
   <div class="welcome">
-    <div class="welcome-avatar">潜</div>
-    <h2>你好呀，我是{{ personaName }}</h2>
+    <div class="welcome-avatar">✦</div>
+    <h2>你好呀，想聊点什么？</h2>
     <p v-if="modelConfigured" class="welcome-sub">
       我会一直陪着你。有什么想聊的、想查的、想计划的，都可以告诉我。
     </p>

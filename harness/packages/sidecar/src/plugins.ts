@@ -19,6 +19,7 @@ import * as llmDeepseek from '@cos/llm-deepseek'
 import * as mockLlm from '@cos/mock-llm'
 import * as agents from '@cos/agents'
 import * as agentLoop from '@cos/agent-loop'
+import * as subagents from '@cos/subagents'
 
 /** Mount name -> plugin module (namespace carrying `name`/`inject`/`apply`). */
 export const plugins: Readonly<Record<string, unknown>> = {
@@ -34,6 +35,7 @@ export const plugins: Readonly<Record<string, unknown>> = {
   '@cos/mock-llm': mockLlm,
   '@cos/agents': agents,
   '@cos/agent-loop': agentLoop,
+  '@cos/subagents': subagents,
 }
 
 export default plugins

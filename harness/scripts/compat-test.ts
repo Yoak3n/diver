@@ -58,10 +58,16 @@ async function main() {
 
   // memory 插件 apply() 是否执行（工具注册成功即证明 apply 跑通）
   const toolNames = ctx.tools.listDefinitions().map((t) => t.name)
-  const memoryTools = ['remember', 'recall', 'inventory', 'demote']
+  const memoryTools = ['remember', 'recall', 'inventory', 'demote', 'identity']
   const missingTools = memoryTools.filter((t) => !toolNames.includes(t))
-  record('T1.2', 'memory 插件 apply() 执行（4 个记忆工具注册）', missingTools.length === 0,
+  record('T1.2', 'memory 插件 apply() 执行（5 个记忆工具注册）', missingTools.length === 0,
     missingTools.length === 0 ? `已注册: ${memoryTools.join(', ')}` : `缺失: ${missingTools.join(', ')}`)
+
+  // basic-tools 插件 apply() 是否执行（四个基础工具：read/write/edit/sh 注册）
+  const basicTools = ['read', 'write', 'edit', 'sh']
+  const missingBasic = basicTools.filter((t) => !toolNames.includes(t))
+  record('T1.4', 'basic-tools 插件 apply() 执行（4 个基础工具注册）', missingBasic.length === 0,
+    missingBasic.length === 0 ? `已注册: ${basicTools.join(', ')}` : `缺失: ${missingBasic.join(', ')}`)
 
   // backend 插件 apply() 是否执行（HTTP server 是否监听）
   const webUp = await new Promise<boolean>((resolve) => {
@@ -105,6 +111,28 @@ async function main() {
   } catch { /* 忽略 */ }
   record('T2.3', 'backend /api/settings 端点', settingsOk, settingsOk ? '返回 200' : '请求失败')
 
+  // T2.4 basic-tools 功能：write → read → edit → sh 四工具闭环（临时工作区）
+  let basicRoundTrip = false
+  let basicDetail = ''
+  try {
+    const wsRoot = join(testHome, 'workspace')
+    mkdirSync(wsRoot, { recursive: true })
+    // 用插件配置覆盖 workspace 根到临时目录：重新挂载一个 basic-tools 实例太
+    // 重，这里直接以临时目录为 cwd 验证工具本身的行为（相对路径基于 wsRoot 不
+    // 成立时，工具会按绝对路径解析——测试传绝对路径即可）。
+    const probe = join(wsRoot, 'probe.txt')
+    const w = await ctx.tools.execute('write', { file_path: probe, content: 'line1\nline2\nline3' }, new AbortController().signal)
+    const r = await ctx.tools.execute('read', { file_path: probe, offset: 2, limit: 2 }, new AbortController().signal)
+    const e = await ctx.tools.execute('edit', { file_path: probe, old_string: 'line2', new_string: 'LINE2' }, new AbortController().signal)
+    const s = await ctx.tools.execute('sh', { command: 'echo hello', workdir: wsRoot }, new AbortController().signal)
+    basicRoundTrip = !w.isError && r.content.includes('2: line2') && r.content.includes('3: line3')
+      && !e.isError && s.content.includes('hello') && s.content.includes('[exit code: 0]')
+    basicDetail = `write/read/edit/sh 闭环: ${basicRoundTrip ? 'OK' : `w=${w.isError} r=${r.content.slice(0, 60)} e=${e.isError} s=${s.content.slice(0, 60)}`}`
+  } catch (err) {
+    basicDetail = `异常: ${String(err)}`
+  }
+  record('T2.4', 'basic-tools 功能（write/read/edit/sh 闭环）', basicRoundTrip, basicDetail)
+
   // ── T3 跨模块交互 ──────────────────────────────────────────────
   console.log('\n--- T3 跨模块交互 ---')
 
@@ -128,18 +156,20 @@ async function main() {
   // 落盘进应用的真实聊天历史，每次启动 dev 都能看到。事件流接线由 T2.1/T3.1 覆盖；
   // 真实验证请走应用本身（DeepSeek / 其它真实 provider），不要用 mock 回显掩盖问题。
 
-  // T3.3 memory ↔ llm：digest 路径（Rust 后端未启动时应优雅降级，不抛未捕获异常）
+  // T3.3 memory ↔ subagents/llm：digest 路径（Rust 后端未启动时应优雅降级，不抛未捕获异常；
+  // 消化已委托给 harness 核心 ctx.subagents，worker 通过工具直写记忆）
   let digestGraceful = true
   try {
-    const { digestSession } = await import('@diver/memory/extract')
-    const diff = await digestSession(ctx, { profile: '', agent_model: '', relationship: '' }, { total: 0 }, '测试摘要')
-    // Rust 后端未启动 → llmText 可能失败返回 null，或 stats 失败回退；都不应抛未捕获异常
-    void diff
+    const { MemoryStore } = await import('@diver/memory/store-rpc')
+    const { digestSession } = await import('@diver/memory/digest')
+    const store = new MemoryStore('.')
+    await digestSession(ctx, store, { profile: '', agent_model: '', relationship: '' }, { total: 0 }, '测试摘要')
+    // Rust 后端未启动 → 记忆工具调用返回 isError、worker 正常收场；不应抛未捕获异常
   } catch (err) {
     digestGraceful = false
     console.error('  digest 路径异常:', err)
   }
-  record('T3.3', 'memory ↔ llm（digestSession 调用）', digestGraceful, digestGraceful ? '调用完成（后端缺失时优雅降级）' : '抛未捕获异常')
+  record('T3.3', 'memory ↔ subagents（digestSession 委派 worker）', digestGraceful, digestGraceful ? '调用完成（后端缺失时优雅降级）' : '抛未捕获异常')
 
   // T3.4 backend ↔ sessionPersistence：history 端点读取持久化事件
   let historyOk = false

@@ -1,0 +1,20 @@
+{
+  "name": "@diver/llm-commandcode",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Diver companion Command Code LLM provider adapter (third-party, outside the harness workspace): registers a `commandcode` provider route into the @cos/llm adapter registry, streaming OpenAI-compatible /provider/v1/chat/completions from the Command Code Provider API (GOAT / Pro / Max / Provider plans).",
+  "main": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@cos/credentials": "file:../../harness/packages/credentials",
+    "@cos/llm": "file:../../harness/packages/llm",
+    "@cos/types": "file:../../harness/packages/types",
+    "cordis": "4.0.0-rc.7"
+  }
+}

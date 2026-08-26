@@ -187,6 +187,10 @@ impl SidecarManager {
             .env("COS_HOME", &cos_home)
             .env("DIVER_PORT", self.port().to_string())
             .env(
+                "DIVER_MCP_CONFIG_FILE",
+                crate::config::mcp::config_path(app).to_string_lossy().to_string(),
+            )
+            .env(
                 "DIVER_MEMORY_PORT",
                 std::env::var("DIVER_MEMORY_PORT").unwrap_or_default(),
             )
@@ -241,6 +245,9 @@ impl SidecarManager {
                         mgr.push_log("[diver] 就绪 ✓".into());
                         mgr.set_state(SidecarState::Running);
                         mgr.emit_status(&app_clone);
+                        // 后端就绪通知：前端 waitForSidecarReady() 收到该事件后
+                        // 即可发起 /api 请求（修复 WebView 先于 sidecar 挂载的启动竞态）。
+                        let _ = app_clone.emit("backend://ready", mgr.status());
                     }
                 }
             }

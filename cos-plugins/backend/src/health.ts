@@ -10,7 +10,7 @@ export async function healthInfo(ctx: Context, state: WebState) {
   const model = provider ? (await firstModelOf(ctx, provider)) ?? '' : ''
   return {
     ok: true,
-    persona: '小潜',
+    persona: '',
     provider,
     model,
     modelConfigured: await isConfigured(ctx, provider),

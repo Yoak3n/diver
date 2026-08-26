@@ -1,6 +1,6 @@
 # 总体架构
 
-Diver 是三层架构的桌面陪伴 agent「小潜」：Rust 负责壳与原生扩展，WebView 承载 Vue 3
+Diver 是三层架构的桌面陪伴 agent：Rust 负责壳与原生扩展，WebView 承载 Vue 3
 陪伴 UI，agent 大脑常驻于 Node sidecar（DeepSeek Harness 框架）。
 
 借鉴 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 的架构理念
@@ -31,6 +31,10 @@ Diver 是三层架构的桌面陪伴 agent「小潜」：Rust 负责壳与原生
 │      （静态 UI + JSON/SSE API，不用 dsh 交互层）    │
 │    - companion-presence：定时主动问候/提醒          │
 │    - companion-memory：关系层记忆（提取/注入/工具） │
+│    - companion-mcp：MCP 客户端（stdio transport）， │
+│      从 mcp-servers.json（设置面板「MCP 服务」页    │
+│      直接编辑）读取 server 列表，把外部 MCP server   │
+│      工具以 mcp__<server>__<工具> 注册进 ctx.tools  │
 │    - llm-opencode：opencode.ai 网关 provider       │
 │  · 单会话「diver-companion」JSONL 持久化            │
 │    （跨重启陪伴记忆）                              │
@@ -82,8 +86,15 @@ Tauri 侧用 axum 起一个只监听 `127.0.0.1` 的 HTTP 服务，供 Node side
 （sidecar 作为 agent 进程不直接持有 SQLite 连接）：
 
 - `POST /rpc`：统一 JSON-RPC 入口（`{ method, params }` → `{ ok, data }` / `{ ok: false, error }`）
-- 当前路由：`memory::dispatch`（见 [关系层记忆](memory.md)）
+- 当前路由：`grep::*` 前缀 → `grep::dispatch`（grep 搜索，`spawn_blocking` 跑
+  `diver-search` 引擎）；其余 → `memory::dispatch`（见 [关系层记忆](memory.md)）
 - 扩展方式：`ServiceState` 加字段 → `rpc::route` 按 method 前缀分流 → merge 进 Router
+
+grep 搜索后端（crates/diver-search）：用 `grep-regex` / `grep-searcher` / `ignore`
+库进程内嵌入 ripgrep 引擎（与 rg 同源目录语义），免去打包 rg.exe 二进制的负担。
+Node 侧 `@diver/basic-tools` 的 grep 工具经同一 `/rpc` 通道调用
+`grep::search`（参数 `pattern` / `path` / `include?` / `maxMatches?` /
+`maxBytesPerLine?`），错误带稳定 code（`INVALID_PATTERN` / `INVALID_TARGET` 等）。
 
 数据目录：`app_data_dir()`（Windows 下为 `%APPDATA%/com.diver.companion/`），
 SQLite 文件 `diver-memory.sqlite3`。

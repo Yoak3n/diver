@@ -10,7 +10,9 @@ packages:
   # node_modules (file: links to @cos/*), so their runtime imports resolve by
   # the ordinary parent-walk from cos-plugins/ sources (diver direct-path mode).
   - cos-plugins/backend
+  - cos-plugins/basic-tools
   - cos-plugins/memory
+  - cos-plugins/voice
   - cos-plugins/bundle-companion
 
 nodeLinker: hoisted

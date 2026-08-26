@@ -21,7 +21,7 @@ defineEmits<{ send: [] }>();
         canSend
           ? '和我说点什么吧…（Enter 发送）'
           : busy
-            ? '小潜正在思考…'
+            ? '正在思考…'
             : '先在设置里配置 API Key'
       "
       :disabled="!canSend"

@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "crates/diver-memory",
+    "crates/diver-search",
     "src-tauri"
 ]
 

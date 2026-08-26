@@ -223,7 +223,12 @@ export interface AgentHandle {
 /** A live session: durable log plus registry identity. */
 export interface Session {
   readonly id: SessionId
-  readonly header: { cwd?: string }
+  /**
+   * Session header meta. `ephemeral` marks worker/subagent sessions: the
+   * persistence service skips them, so they never reach disk (per-run
+   * one-shot workers leave no JSONL artifacts).
+   */
+  readonly header: { cwd?: string; ephemeral?: boolean }
   readonly events: SessionEvent[]
   append<T extends SessionEventType>(type: T, data: SessionEventMap[T]): SessionEvent
   deriveMessages(): ModelMessage[]

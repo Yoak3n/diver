@@ -4,6 +4,7 @@ import type { SettingsState } from "../composables/useSettings";
 import ModelsTab from "./settings/ModelsTab.vue";
 import VoiceTab from "./settings/VoiceTab.vue";
 import SystemTab from "./settings/SystemTab.vue";
+import McpTab from "./settings/McpTab.vue";
 
 defineProps<{
   open: boolean;
@@ -50,6 +51,13 @@ defineEmits<{
           </button>
           <button
             class="tab"
+            :class="{ active: state.activeTab === 'mcp' }"
+            @click="state.activeTab = 'mcp'"
+          >
+            MCP 服务
+          </button>
+          <button
+            class="tab"
             :class="{ active: state.activeTab === 'system' }"
             @click="state.activeTab = 'system'"
           >
@@ -66,6 +74,11 @@ defineEmits<{
             :current-provider-models="currentProviderModels"
           />
           <VoiceTab v-if="state.activeTab === 'voice'" :state="state" />
+          <McpTab
+            v-if="state.activeTab === 'mcp'"
+            :state="state"
+            @restart="$emit('restart')"
+          />
           <SystemTab
             v-if="state.activeTab === 'system'"
             :state="state"

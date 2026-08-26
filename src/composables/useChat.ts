@@ -24,7 +24,7 @@ export function useChat() {
   let ttsSource: (() => { enabled: boolean; voice: string } | null) | null = null;
 
   // ---------- 派生 ----------
-  const personaName = computed(() => healthInfo.value?.persona || "小潜");
+  const personaName = computed(() => healthInfo.value?.persona || "");
   const modelConfigured = computed(() => !!healthInfo.value?.modelConfigured);
   const providerNameOf = (p: string): string =>
     p === "opencode-go" ? "opencode-go" : p === "deepseek-official" ? "DeepSeek" : p;

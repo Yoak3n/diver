@@ -3,6 +3,7 @@
 //! 使用 axum 承载 HTTP；服务通过 [ServiceState] 注册共享状态，
 //! 在[start]中把各服务的路由 merge 进同一个 Router 即可扩展新服务。
 
+mod grep;
 mod memory;
 mod rpc;
 

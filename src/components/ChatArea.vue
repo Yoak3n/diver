@@ -14,7 +14,6 @@ const props = defineProps<{
   connecting: boolean;
   error: string | null;
   healthOk: boolean;
-  personaName: string;
   modelConfigured: boolean;
   ttsEnabled: boolean;
   ttsVoice: string;
@@ -51,7 +50,7 @@ async function speak(msg: ChatMessage) {
 <template>
   <main class="chat">
     <div ref="scrollEl" class="chat-scroll">
-      <div v-if="connecting" class="center-hint">正在连接小潜…</div>
+      <div v-if="connecting" class="center-hint">正在连接…</div>
       <div v-else-if="error && !healthOk" class="center-hint error">
         <p>连接失败：{{ error }}</p>
         <button class="btn" @click="$emit('retry')">重试</button>
@@ -59,13 +58,12 @@ async function speak(msg: ChatMessage) {
 
       <template v-else>
           <div v-if="error" class="chat-error-strip">
-            <span class="chat-error-text">小潜遇到点问题：{{ error }}</span>
+            <span class="chat-error-text">遇到点问题：{{ error }}</span>
             <button class="btn small" @click="$emit('retry')">重连</button>
             <button class="btn small" @click="$emit('restart')">重启 sidecar</button>
           </div>
         <WelcomeCard
           v-if="messages.length === 0"
-          :persona-name="personaName"
           :model-configured="modelConfigured"
           @open-settings="$emit('open-settings')"
           @suggestion="$emit('suggestion', $event)"
@@ -94,7 +92,7 @@ async function speak(msg: ChatMessage) {
         </div>
 
         <div v-if="busy && !messages.some((m) => m.streaming)" class="thinking">
-          <span class="dot busy"></span> {{ personaName }}正在思考…
+          <span class="dot busy"></span> 正在思考…
         </div>
       </template>
     </div>

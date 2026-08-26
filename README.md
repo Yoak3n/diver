@@ -1,6 +1,6 @@
 # Diver · 桌面陪伴 Agent
 
-基于 **Tauri 2 + Vue 3 + DeepSeek Harness 框架**的桌面陪伴 agent「小潜」。
+基于 **Tauri 2 + Vue 3 + DeepSeek Harness 框架**的桌面陪伴 agent。
 借鉴 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 的架构理念（append-only 会话日志、turn/step agent 循环、工具注册表、persona 组装、事件驱动），**只取其框架、不搬其交互层**：UI 为自研 Vue 单会话陪伴聊天，传输层为自研 HTTP/SSE，agent 常驻于 Node sidecar，Rust 负责壳与原生扩展。
 
 ## 文档导航
@@ -67,6 +67,7 @@ diver/
 │  ├─ src/services/        # 本地服务：axum /rpc（SQLite 记忆后端）
 │  └─ resources/speak.ps1  # TTS 脚本
 ├─ crates/diver-memory/    # Rust 记忆后端 crate（SQLite 存储 + 确定性逻辑）
+├─ crates/diver-search/    # Rust grep 搜索后端 crate（ripgrep 引擎库）
 ├─ harness/                # Node sidecar workspace（pnpm，自研 cos）
 │  ├─ packages/profile/    # DSH 对齐的 profile 模型（通用；diver 用直连模式）
 │  ├─ cos-plugins/         # 第三方 @diver/*（本仓库实际在仓库根 ../cos-plugins）

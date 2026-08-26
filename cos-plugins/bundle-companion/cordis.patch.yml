@@ -8,6 +8,28 @@
       config:
         digestIntervalMs: 600000
 
+    # 五个基础工具：read / write / edit / sh / grep（grep 引擎在 Rust 壳，经 /rpc 调用）
+    - id: basic-tools
+      name: '@diver/basic-tools'
+
+    # MCP 客户端（registry 模式）：从外层程序维护的 MCP 配置文件
+    # （DIVER_MCP_CONFIG_FILE 或 $COS_HOME/mcp-servers.json）读取 server 列表，
+    # 逐个连接并把其工具以 mcp__<serverName>__<rawName> 注册进 ctx.tools。
+    # server 列表由 Tauri 壳管理，设置面板「MCP 服务」页直接编辑即热重载生效。
+    - id: mcp
+      name: '@diver/mcp'
+      config:
+        registry: true
+
+    # Command Code Provider API 适配器：注册 provider "commandcode"（GOAT 套餐）
+    - id: llm-commandcode
+      name: '@diver/llm-commandcode'
+
+    # 对话风格：约束 LLM 输出更像真人对话（口语短句、情绪色彩明确），
+    # 与桌宠前端情绪推断（src/pet/emotion.ts）形成闭环
+    - id: voice
+      name: '@diver/voice'
+
     # 后端连接服务：外层程序（Tauri UI）经此 HTTP/SSE 服务驱动陪伴 agent
     - id: backend
       name: '@diver/backend'

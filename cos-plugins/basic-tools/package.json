@@ -1,0 +1,18 @@
+{
+  "name": "@diver/basic-tools",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Diver companion basic-tools plugin (third-party, outside the harness workspace): the four DSH-style basic tools — read / write / edit text files and a shell tool (sh) — registered through ctx.tools for the companion agent.",
+  "main": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@cos/types": "file:../../harness/packages/types",
+    "cordis": "4.0.0-rc.7"
+  }
+}

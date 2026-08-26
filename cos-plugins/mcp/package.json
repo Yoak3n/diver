@@ -1,0 +1,19 @@
+{
+  "name": "@diver/mcp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Diver companion MCP client plugin: connects external MCP servers (stdio transport) and registers their tools on ctx.tools as mcp__<serverName>__<rawName>, forwarding tools/call.",
+  "main": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@cos/types": "file:../../harness/packages/types",
+    "cordis": "4.0.0-rc.7",
+    "@modelcontextprotocol/sdk": "^1.12.0"
+  }
+}

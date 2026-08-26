@@ -17,7 +17,7 @@ function fmtTime(ts: number): string {
 
 <template>
   <div class="msg-row" :class="msg.kind">
-    <div v-if="msg.kind === 'assistant'" class="avatar small">潜</div>
+    <div v-if="msg.kind === 'assistant'" class="avatar small">✦</div>
     <div class="bubble-wrap">
       <div class="bubble" :class="{ streaming: msg.streaming }">
         <span v-if="msg.origin === 'presence'" class="origin-tag">主动</span>

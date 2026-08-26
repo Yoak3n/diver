@@ -20,7 +20,6 @@ const {
   connecting,
   error,
   composer,
-  personaName,
   modelConfigured,
   currentModelLabel,
   statusText,
@@ -53,7 +52,6 @@ const dotClass = computed(() => (canSend.value ? "on" : busy.value ? "busy" : "o
 <template>
   <div class="app">
     <TopBar
-      :persona-name="personaName"
       :status-text="statusText"
       :model-label="currentModelLabel"
       :dot-class="dotClass"
@@ -67,7 +65,6 @@ const dotClass = computed(() => (canSend.value ? "on" : busy.value ? "busy" : "o
       :connecting="connecting"
       :error="error"
       :health-ok="!!healthInfo?.ok"
-      :persona-name="personaName"
       :model-configured="modelConfigured"
       :tts-enabled="state.ttsEnabled"
       :tts-voice="state.ttsVoice"

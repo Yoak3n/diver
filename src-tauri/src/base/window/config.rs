@@ -35,11 +35,14 @@ impl WindowConfig {
                 center: true,
                 float: false,
             },
-            // Live2D 桌宠：透明、无边框、置顶、不占任务栏、不抢焦点
+            // Live2D 桌宠：透明、无边框、置顶、不占任务栏、不抢焦点。
+            // 固定尺寸（600×560）：窗口紧凑，桌宠在屏幕上的移动范围大。
+            // 模型高度比例 0.8（模型 ~448px，与之前 640×0.7 相同，不随窗口变小）。
+            // 布局：模型（画布 ~330px 宽）+ 面板（画布宽×1.2 ≈ 400px）并排。
             WindowType::Pet => Self {
                 window_type,
-                inner_size: (360.0, 560.0),
-                min_inner_size: (240.0, 400.0),
+                inner_size: (600.0, 560.0),
+                min_inner_size: (600.0, 560.0),
                 decorations: false,
                 transparent: true,
                 skip_taskbar: true,

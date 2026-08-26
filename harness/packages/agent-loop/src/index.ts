@@ -497,7 +497,7 @@ export class AgentLoop extends Service {
   async createAgent(options: {
     sessionId?: SessionId
     agentOptions?: AgentOptions
-    meta?: { cwd?: string }
+    meta?: { cwd?: string; ephemeral?: boolean }
     resume?: boolean
   } = {}): Promise<AgentHandle> {
     const id = options.sessionId ?? brandSessionId(randomUUID())

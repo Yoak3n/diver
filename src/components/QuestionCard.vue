@@ -51,7 +51,7 @@ function submit() {
 
 <template>
   <div class="question-card">
-    <div class="q-head">小潜想问你</div>
+    <div class="q-head">想问你</div>
     <div v-for="q in questions" :key="q.id" class="q-item">
       <div v-if="q.header" class="q-header">{{ q.header }}</div>
       <div class="q-text">{{ q.question }}</div>

@@ -69,7 +69,7 @@ node --import tsx --expose-internals packages/sidecar/src/companion.ts
 改 `cos-plugins/` 下的文件后**重启 sidecar 即生效**，无需任何安装步骤。
 （通用 profile 形态仍可用：`pnpm plugin --profile <name> -- add <pkg>`。）
 
-### 本地服务（Rust 记忆后端）
+### 本地服务（Rust 记忆后端 + grep 搜索）
 
 `pnpm tauri dev` 启动时 Rust 侧自动起 axum 服务（随机端口），端口经
 `DIVER_MEMORY_PORT` 注入 sidecar 环境。`snapshot` 可快速验证：
@@ -77,7 +77,10 @@ node --import tsx --expose-internals packages/sidecar/src/companion.ts
 ```powershell
 # 找到日志中的端口，或任意 JSON-RPC 探测：
 # POST http://127.0.0.1:<port>/rpc  { "method": "stats", "params": {} }
+# grep 搜索：{ "method": "grep::search", "params": { "pattern": "...", "path": "..." } }
 ```
+
+Rust 侧单测：`cargo test -p diver-search`（引擎）与 `cargo test -p diver services::grep`（RPC 层）。
 
 ## 冒烟测试
 

@@ -1,6 +1,6 @@
 # Diver 文档中心
 
-Diver（小潜）是基于 **Tauri 2 + Vue 3 + DeepSeek Harness** 的桌面陪伴 agent。
+Diver 是基于 **Tauri 2 + Vue 3 + DeepSeek Harness** 的桌面陪伴 agent。
 本目录按主题组织项目文档，README.md 是入口，各主题的深入内容见下。
 
 ## 快速开始

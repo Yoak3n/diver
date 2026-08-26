@@ -14,7 +14,7 @@ Rust `base/sidecar.rs` 以 `node --import tsx .../companion.ts` 拉起（详见
 - sidecar 由 Rust `base/sidecar.rs` 启动：`node --import tsx packages/sidecar/src/companion.ts`（diver 直连 cos-plugins）
   - `COS_HOME` → `harness/.cos-home`（仓库本地，gitignore）
   - `DIVER_PORT` → sidecar HTTP 端口（默认 3620）
-  - `DIVER_MEMORY_PORT` → Rust 本地服务端口（记忆 RPC）
+  - `DIVER_MEMORY_PORT` → Rust 本地服务端口（统一本地 RPC：记忆 + grep 搜索）
   - stdout 检测 `DIVER_READY` 标志行 → 状态置 Running，UI 开始连接
 - 主窗口隐藏/销毁不影响它；应用退出时由 Rust 主动 stop（记忆保留在磁盘）
 
@@ -40,7 +40,7 @@ cos 核心（`cordis.yml` 基础行）与 `cos-plugins/bundle-companion`（路�
 
 | 节 | 配置 | 说明 |
 |---|---|---|
-| `system-prompt` | `includeHarnessIdentity: false` + 完整 persona | 覆盖 base 身份行；人设自洽（「小潜」） |
+| `system-prompt` | `includeHarnessIdentity: false` + 精简 persona | 覆盖 base 身份行；persona 只保留运行环境事实，不预设身份；身份形成期引导由 `@diver/memory` 动态注入（卡片为空时提示用 identity 工具，成型后消失） |
 | `approval` | `policy: never` | 陪伴场景免审批（工具面已裁剪） |
 | `permission` | `presets: workspace-write` / `defaultPreset: workspace-write` | 与 approval 保持一致 |
 | `tool-bash` | `disabled: true` | Windows 下 bash 无 PTY 持久化 |
@@ -59,6 +59,7 @@ cos 核心（`cordis.yml` 基础行）与 `cos-plugins/bundle-companion`（路�
 | `diver-companion-web` | `@diver/companion/web` | 自有传输层：静态 UI + JSON/SSE API（`DIVER_UI_DIST` 指向构建产物） |
 | `diver-companion-presence` | `@diver/companion/presence` | 主动问候：启动问候 + 9:00 / 13:30 / 21:00 定时 |
 | `diver-companion-memory` | `@diver/companion/memory` | 关系层记忆（见 [记忆](memory.md)），digest 节流 10 分钟 |
+| `diver-companion-voice` | `@diver/voice` | 对话风格提示词节（`diver:voice`）：引导输出口语化/短句/情绪色彩明确，与桌宠情绪动作闭环 |
 | `diver-llm-opencode` | `@diver/companion/llm-opencode` | opencode.ai Zen Go 网关 provider |
 
 ## companion bundle 插件

@@ -190,6 +190,9 @@ export class JsonlPersistenceService extends Service {
 
   /** Append durable events after the last watermark; advances the watermark and rotates when due. */
   private save(session: Session): void {
+    // Ephemeral sessions (worker/subagent one-shots) never reach disk: they are
+    // disposable by construction and resume would never want their history.
+    if (session.header.ephemeral === true) return
     // Resume 语义：新会话对象首次 flush 时，磁盘上已有的重放历史不得重复追加
     // （否则每次重启后首次对话都会让文件近似翻倍）。
     let written = this.watermarks.get(session)

@@ -13,7 +13,7 @@ position and boots:
 
 - bundle: `cos-plugins/bundle-companion` (a bundle **path**, read for its
   `cordis.patch.yml` / `bundle.yml` / `dsh.bundle.patch`);
-- plugin rows: `@diver/memory` / `@diver/backend` resolve by `pluginPaths`
+- plugin rows: `@diver/memory` / `@diver/backend` / `@diver/basic-tools` resolve by `pluginPaths`
   (explicit map) or `pluginRoot` (a directory where a row's unscoped package
   resolves, e.g. `--plugin-root ../cos-plugins`).
 
@@ -143,6 +143,63 @@ profile**, not into the harness's `package.json`.
 4. Restart the process (or let HMR reload it) — the section/text/tool is now
    live in every assembled prompt.
 
+## Subagents (harness core, `@cos/subagents`)
+
+`@cos/subagents` is a **core service** (mounted in `cordis.yml` like the other
+`@cos/*` rows, not a third-party plugin): `ctx.subagents.run({...})` spawns one
+short-lived worker agent over the same `@cos/agent-loop` the main agent uses,
+so the worker gets the full loop (streaming, tool calls, request-error retry,
+step caps) for free — no second LLM path to maintain.
+
+```ts
+// third-party plugin (e.g. cos-plugins/memory) delegating a digest job:
+export const inject = ['subagents']  // ...plus whatever else the plugin needs
+
+const result = await ctx.subagents.run({
+  label: 'memory-digest',
+  task: '…摘要正文…',
+  system: '你是记忆消化 worker：必须用工具写记忆，不要输出 JSON…',
+  toolNames: ['remember', 'recall', 'inventory', 'demote', 'memory_update_card'],
+  tools: [{ name: 'memory_update_card', executor: async (args) => ({ content: '…' }), options: {…} }],
+  provider, model, maxTokens: 900,
+})
+// result: { sessionId, text, transcript[], toolCalls[], reason }
+```
+
+Per run the service:
+
+- creates one agent with a unique session id and `meta.ephemeral = true` —
+  ephemeral sessions are **never persisted** (see `@cos/persistence`), so a
+  digest worker leaves no JSONL artifacts and never appears in resumed history;
+- replaces the assembled **system prompt** with `system` and filters the
+  advertised **tool set** to `toolNames` (a `system-prompt/assemble`
+  waterfall participant; every other caller's assembly is untouched);
+- registers the inline `tools` executors into `ctx.tools` **for the run only**
+  (unregistered on settle) — worker-only operations never leak into the main
+  agent's tool surface;
+- feeds `task` via `agent.followup`, waits `agent.whenIdle()` (tool loops
+  settled), projects the transcript, then disposes the agent + session.
+
+Caveats: worker system prompts must not reference unknown prompt variables
+(only `{{provider}}` / `{{model}}` / `{{cwd}}` exist, registered by
+`@cos/agent-loop`); the default wall-clock cap is `defaultTimeoutMs`
+(`cordis.yml`, 120s default) with per-run `timeoutMs` overrides — on expiry the
+worker is cancelled like a parent-cancelled turn.
+
+### Running workers as a parallel background line
+
+`run({ ..., signal })` accepts an external `AbortSignal`: aborting it cancels
+the worker immediately (the real DeepSeek adapter threads the signal into its
+HTTP request, so an in-flight generation stops). That is an *optional* kill
+switch (teardown, operator intervention) — background work does not have to be
+interleaved with the user's session. Because a worker is a fully independent
+agent (own ephemeral session, own driver, own LLM request), the natural shape
+is **parallel lines**: `@diver/memory`'s digest scheduler dispatches a worker
+the moment material appears and never waits for the main agent to be idle, and
+new user messages never cancel it — conversation and digestion simply proceed
+concurrently (LLM concurrency stays at main + 1 worker; digests serialize
+among themselves so they never fight over the same memory store).
+
 ## Sidecar consumption
 
 The harness ships as an independent process: `@cos/sidecar/server` boots the
@@ -223,7 +280,7 @@ hooks the same typed event surface — and, because the profile manifest uses th
 untouched (kit: `dsh.profile.bundles`, `dsh.bundle.patch` are recognized).
 
 Verified in this repository: in diver direct-path mode the companion mounts
-`@diver/memory` + `@diver/backend` from `cos-plugins/` by path with zero
+`@diver/memory` + `@diver/backend` + `@diver/basic-tools` from `cos-plugins/` by path with zero
 changes to the harness code; the generic profile flow (reconcile +
 two-anchor + install-less junctions) is covered by the compatibility suite
 (`scripts/compat-test.ts`, 17/17: T1–T4 diver direct-path, T5 profile).

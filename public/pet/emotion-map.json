@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "description": "Diver 桌宠：聊天气泡文本 → 情绪 → Live2D 动作组 映射",
+  "motions": {
+    "happy": ["Happy", "Nod", "Wave"],
+    "excited": ["Happy", "Wave"],
+    "sad": ["Sad", "Nod"],
+    "angry": ["Angry"],
+    "surprised": ["Surprised", "Shy"],
+    "shy": ["Shy", "Happy"],
+    "love": ["Shy", "Happy"],
+    "grateful": ["Nod", "Happy"],
+    "greeting": ["Wave", "Happy"],
+    "farewell": ["Wave", "Sad"],
+    "agree": ["Nod"],
+    "neutral": ["Nod", "Idle"]
+  },
+  "emotions": {
+    "happy": {
+      "keywords": ["哈哈", "嘿嘿", "嘻嘻", "开心", "高兴", "喜欢", "太棒", "好耶", "真好", "好开心", "爱你", "好喜欢", "棒极了", "太好了", "haha", "hehe", "lol", "happy", "glad", "yay", "awesome", "love it", "great"]
+    },
+    "excited": {
+      "keywords": ["兴奋", "激动", "哇", "天哪", "太厉害", "牛逼", "好强", "awesome", "amazing", "wow", "exciting", "so cool"]
+    },
+    "sad": {
+      "keywords": ["难过", "伤心", "难过死了", "好难过", "哭了", "呜呜", "想哭", "失望", "沮丧", "孤独", "好累", "唉", "sad", "cry", "upset", "lonely", "tired", "depressed"]
+    },
+    "angry": {
+      "keywords": ["生气", "气死", "可恶", "混蛋", "讨厌", "烦死", "受不了", "滚", "愤怒", "火大", "angry", "mad", "hate", "annoyed", "damn", "wtf", "烦"]
+    },
+    "surprised": {
+      "keywords": ["惊讶", "居然", "竟然", "真的吗", "不可能", "骗人", "吓到", "震惊", "surprised", "shocked", "really", "no way", "what", "wait what"]
+    },
+    "shy": {
+      "keywords": ["害羞", "不好意思", "脸红", "尴尬", "羞羞", "难为情", "害羞死了", "shy", "embarrassed", "blush"]
+    },
+    "love": {
+      "keywords": ["我爱你", "喜欢你", "亲亲", "抱抱", "想你", "宝贝", "亲爱的", "love you", "miss you", "kiss", "hug"]
+    },
+    "grateful": {
+      "keywords": ["谢谢", "感谢", "辛苦了", "多谢", "thanks", "thank you", "appreciate"]
+    },
+    "greeting": {
+      "keywords": ["你好", "早上好", "中午好", "晚上好", "嗨", "哈喽", "hello", "hi", "hey", "good morning", "good evening"]
+    },
+    "farewell": {
+      "keywords": ["再见", "拜拜", "晚安", "下次见", "bye", "goodbye", "good night", "see you"]
+    },
+    "agree": {
+      "keywords": ["对", "没错", "同意", "赞成", "嗯嗯", "是啊", "确实", "有道理", "right", "yes", "agree", "correct", "true", "indeed"]
+    }
+  }
+}

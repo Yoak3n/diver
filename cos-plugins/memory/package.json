@@ -3,12 +3,12 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Diver companion memory plugin (third-party, outside the harness workspace): relation-layer memory backed by the Rust SQLite RPC backend.",
+  "description": "Diver companion memory plugin (third-party, outside the harness workspace): relation-layer memory backed by the Rust SQLite RPC backend; memory digestion is delegated to harness-core subagents (ctx.subagents) that write memory through tools.",
   "main": "./src/index.ts",
   "exports": {
     ".": "./src/index.ts",
     "./store-rpc": "./src/store-rpc.ts",
-    "./extract": "./src/extract.ts",
+    "./digest": "./src/digest.ts",
     "./session": "./src/session.ts"
   },
   "scripts": {

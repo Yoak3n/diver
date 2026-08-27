@@ -192,6 +192,8 @@ impl Manager {
             }
 
             // dev 调试辅助：WebView2 远程调试端口（诊断桌宠页面问题用，release 无影响）
+            // 仅 debug 构建下会 push_str 追加调试参数；release 中 mut 无用，故 allow 掉该警告
+            #[allow(unused_mut)]
             let mut args = String::from("--enable-features=msWebView2EnableDraggableRegions --disable-features=OverscrollHistoryNavigation,msExperimentalScrolling");
             #[cfg(debug_assertions)]
             if window_type == WindowType::Pet {

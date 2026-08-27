@@ -1,9 +1,15 @@
-//! MCP 服务配置：`mcp-servers.json`（app 配置目录）。
+//! MCP 服务配置：`mcp-servers.json`（cos 数据家园 `$COS_HOME` 下）。
 //!
 //! 该文件是 MCP 客户端（sidecar 内 `@diver/mcp` registry 插件）连接哪些
 //! 外部 MCP server 的唯一来源。Tauri 壳负责读写本文件，并在启动 sidecar 时
 //! 以 `DIVER_MCP_CONFIG_FILE` 环境变量把绝对路径注入 sidecar 进程；
 //! 插件读取该文件、逐个连接，UI 保存后热重载生效（无需重启 sidecar）。
+//!
+//! 文件必须放在 `$COS_HOME`（与 `diver-settings.json` 同目录）下：sidecar 插件
+//! 默认按 `$COS_HOME/mcp-servers.json` 解析（见 `@diver/mcp` 的
+//! `config-file.ts`），Tauri 壳的 [cos_home] 与 sidecar 注入的 `COS_HOME` 完全一致。
+//! 早期版本误写在 `app_config_dir`（`$COS_HOME` 的父目录），已提供迁移
+//! （见 [ensure_initial]）。
 //!
 //! 文件格式：
 //! ```json
@@ -27,7 +33,7 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
 
-use super::{config_dir, load, save};
+use super::{config_dir, cos_home, load_at, save_at};
 
 /// 配置文件名称。
 pub const FILE_NAME: &str = "mcp-servers.json";
@@ -72,28 +78,51 @@ pub struct McpConfig {
     pub servers: Vec<McpServerConfig>,
 }
 
-/// 配置文件绝对路径：`<app_config_dir>/mcp-servers.json`。
+/// 配置文件绝对路径：`<cos_home>/mcp-servers.json`（与 `diver-settings.json` 同目录）。
 pub fn config_path(app: &AppHandle) -> PathBuf {
-    config_dir(app).join(FILE_NAME)
+    cos_home(app).join(FILE_NAME)
 }
 
 /// 读取 MCP 配置（文件缺失/解析失败返回空配置，保证应用始终可用）。
 pub fn load_config(app: &AppHandle) -> McpConfig {
-    load(app, FILE_NAME)
+    load_at(&cos_home(app), FILE_NAME)
 }
 
 /// 保存 MCP 配置，返回是否写盘成功。
 pub fn save_config(app: &AppHandle, config: &McpConfig) -> bool {
-    save(app, FILE_NAME, config)
+    save_at(&cos_home(app), FILE_NAME, config)
 }
 
-/// 首次运行初始化：文件不存在时写入默认配置（work-review 示例），
+/// 首次运行初始化 + 旧位置迁移。
+///
+/// 早期版本把 `mcp-servers.json` 写在 `app_config_dir`（`$COS_HOME` 的父目录），
+/// 而 sidecar 插件按 `$COS_HOME/mcp-servers.json` 读取，导致 registry 读到空列表。
+/// 这里把既有文件迁移到新位置（仅当目标缺失时，避免覆盖已有配置）；
+/// 目标存在或迁移失败时，若仍无配置则写入默认示例（work-review），
 /// 使 sidecar 的 registry 插件在启动时就有可读的 server 列表。
 pub fn ensure_initial(app: &AppHandle) {
     let path = config_path(app);
     if path.exists() {
         return;
     }
+
+    // 旧位置迁移：`<app_config_dir>/mcp-servers.json` → `<cos_home>/mcp-servers.json`。
+    let legacy = config_dir(app).join(FILE_NAME);
+    if legacy.exists() {
+        if let Some(dir) = path.parent() {
+            let _ = std::fs::create_dir_all(dir);
+        }
+        match std::fs::rename(&legacy, &path) {
+            Ok(()) => {
+                log::info!("已迁移 MCP 配置文件: {} -> {}", legacy.display(), path.display());
+                return;
+            }
+            Err(e) => {
+                log::warn!("迁移 MCP 配置文件失败（保留旧文件，将写入默认配置）: {e}");
+            }
+        }
+    }
+
     let config = McpConfig {
         servers: vec![McpServerConfig {
             transport: "stdio".into(),

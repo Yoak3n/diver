@@ -20,6 +20,12 @@
  *
  * Run: `pnpm build:sea` (core only) or `pnpm build:sea --profile companion
  * --home <cos-home>` (core + the profile's third-party plugins).
+ *
+ * Packaged companion mode: `pnpm build:sea --companion --bundle
+ * ../cos-plugins/bundle-companion --plugin-root ../cos-plugins` builds the
+ * resident HTTP companion (companion-sea.ts) with the diver third-party
+ * plugins baked in — the same entry the Tauri shell spawns in release builds
+ * (see src-tauri/src/base/sidecar.rs).
  */
 import { execFileSync } from 'node:child_process'
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
@@ -104,6 +110,7 @@ function parseArgv(argv) {
     else if (argv[index] === '--home') { out.home = argv[index + 1]; index += 1 }
     else if (argv[index] === '--bundle') { out.bundle = argv[index + 1]; index += 1 }
     else if (argv[index] === '--plugin-root') { out.pluginRoot = argv[index + 1]; index += 1 }
+    else if (argv[index] === '--companion') { out.companion = true }
   }
   return out
 }
@@ -145,10 +152,11 @@ function collectPathPlugins(bundleSpec, pluginRoot) {
   return out
 }
 
-const { profile, home: homeArg, bundle, pluginRoot } = parseArgv(process.argv.slice(2))
+const { profile, home: homeArg, bundle, pluginRoot, companion } = parseArgv(process.argv.slice(2))
 
 // 1) Generate the SEA entry: sidecar main + core registry, plus the profile's
 // third-party plugins baked into the same graph.
+const companionEntry = join(root, 'packages/sidecar/src/companion-sea.ts').replace(/\\\\/g, '/')
 const sidecarMain = join(root, 'packages/sidecar/src/sidecar.ts').replace(/\\\\/g, '/')
 const corePlugins = join(root, 'packages/sidecar/src/plugins.ts').replace(/\\\\/g, '/')
 let extra = []
@@ -165,9 +173,10 @@ if (bundle !== undefined) {
   bakeLabel = `profile ${profile} (${extra.length} third-party plugin(s) baked)`
   if (extra.length === 0) console.log(`build:sea: profile ${profile} exposes no bakeable third-party plugins (bundles resolved: see profile manifest)`)
 }
+const mainEntry = companion ? companionEntry : sidecarMain
 const imports = [
   `import { syncBuiltinESMExports } from 'node:module'`,
-  `import { main } from ${JSON.stringify(sidecarMain)}`,
+  `import * as sidecarEntry from ${JSON.stringify(mainEntry)}`,
   `import { plugins as corePlugins } from ${JSON.stringify(corePlugins)}`,
   ...extra.map((p, index) => `import * as plugin${index} from ${JSON.stringify(p.entry.replace(/\\/g, '/'))}`),
 ]
@@ -181,7 +190,7 @@ const entrySource = `${imports.join('\n')}
 ${registry.join('')}
 
 syncBuiltinESMExports()
-void main({ watchRoots: [], plugins: registry })
+void sidecarEntry.main({ watchRoots: [], plugins: registry })
 `
 writeFileSync(ENTRY, entrySource, 'utf8')
 
@@ -189,6 +198,34 @@ writeFileSync(ENTRY, entrySource, 'utf8')
 // requires a CJS main. plugin-loader reads `import.meta.url` for
 // createRequire, which is undefined in CJS, so shim it to the current file
 // URL.
+//
+// The MCP SDK (@modelcontextprotocol/sdk) declares its exports with a `./*`
+// subpath wildcard (`./dist/esm/*`) but esbuild cannot resolve extensionless
+// subpath imports (`sdk/client/stdio` → `./dist/esm/client/stdio.js`) through
+// that wildcard. Resolve them explicitly against the installed package dir.
+const sdkResolvePlugin = {
+  name: 'mcp-sdk-subpaths',
+  setup(build) {
+    build.onResolve({ filter: /^@modelcontextprotocol\/sdk\// }, (args) => {
+      const sub = args.path.slice('@modelcontextprotocol/sdk/'.length)
+      // Locate the installed package dir by walking up from the importer.
+      let dir = dirname(args.importer)
+      let pkgDir
+      while (dir !== dirname(dir)) {
+        const candidate = join(dir, 'node_modules', '@modelcontextprotocol', 'sdk')
+        if (existsSync(join(candidate, 'package.json'))) { pkgDir = candidate; break }
+        dir = dirname(dir)
+      }
+      if (pkgDir === undefined) return undefined
+      const esm = join(pkgDir, 'dist', 'esm', `${sub}.js`)
+      if (existsSync(esm)) return { path: esm }
+      const index = join(pkgDir, 'dist', 'esm', sub, 'index.js')
+      if (existsSync(index)) return { path: index }
+      return undefined
+    })
+  },
+}
+
 await build({
   entryPoints: [ENTRY],
   bundle: true,
@@ -197,6 +234,7 @@ await build({
   define: { 'import.meta.url': '"file:///C:/"' },
   outfile: OUT,
   logLevel: 'info',
+  plugins: [sdkResolvePlugin],
 })
 
 // 3) Generate the SEA blob from the bundled CJS main.
@@ -211,4 +249,4 @@ execFileSync(process.execPath, ['--experimental-sea-config', SEA_CONFIG], { cwd:
 copyFileSync(process.execPath, EXE)
 await inject(EXE, 'NODE_SEA_BLOB', readFileSync(BLOB), { sentinelFuse: FUSE })
 
-console.log(`\nbuilt ${EXE}${bakeLabel !== '' ? ` (${bakeLabel})` : ''}`)
+console.log(`\nbuilt ${EXE} (${companion ? 'companion (HTTP/SSE)' : 'JSON-RPC'}${bakeLabel !== '' ? `, ${bakeLabel}` : ''})`)

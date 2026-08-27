@@ -45,22 +45,13 @@ impl WindowType {
         }
     }
 
-    /// 窗口加载的 UI 地址：dev 为 Vite 开发服务器，release 为 sidecar 自带的 UI。
+    /// 窗口加载的 UI 地址：Tauri 内置静态托管（dev 为 Vite dev server，
+    /// release 为打包的 frontendDist）。vue-router hash 模式：主界面 /、
+    /// 桌宠 /#/pet。UI 不再依赖 sidecar 的 HTTP 端口（sidecar 只提供 /api）。
     pub fn url(&self) -> String {
-        let base = crate::base::sidecar::SidecarManager::global().ui_url();
         match self {
-            WindowType::Main => base,
-            WindowType::Pet => {
-                // dev：Vite 按源码相对路径提供页面；release：构建产物 dist/pet.html
-                #[cfg(debug_assertions)]
-                {
-                    format!("{}/src/pet/pet.html", base)
-                }
-                #[cfg(not(debug_assertions))]
-                {
-                    format!("{}/pet.html", base)
-                }
-            }
+            WindowType::Main => "/".to_string(),
+            WindowType::Pet => "/#/pet".to_string(),
         }
     }
 

@@ -41,7 +41,7 @@ import { Service } from 'cordis'
 import type { Context } from 'cordis'
 import type { Session, SessionEvent, SessionId } from '@cos/types'
 
-import { StandardReader, StandardWriter, isStandardLine } from './codec'
+import { StandardReader, StandardWriter, isStandardLine } from './codec.ts'
 
 declare module 'cordis' {
   interface Context {

@@ -45,8 +45,8 @@ Diver 是三层架构的桌面陪伴 agent：Rust 负责壳与原生扩展，Web
 
 | 进程 | 端口 | 说明 |
 |---|---|---|
-| Node sidecar（dsh） | `DIVER_PORT`（默认 **3620**） | HTTP/SSE 服务；`DIVER_READY` 标志行报告就绪 |
-| Vite dev server | **1420**（strictPort） | 仅 dev 构建；`/api` 代理到 3620 |
+| Node sidecar（dsh） | `DIVER_PORT`（默认 **53620**） | HTTP/SSE 服务；`DIVER_READY` 标志行报告就绪 |
+| Vite dev server | **1420**（strictPort） | 仅 dev 构建；`/api` 代理到 53620 |
 | Rust 本地服务（axum） | 随机端口（绑定 127.0.0.1:0） | 端口通过 `DIVER_MEMORY_PORT` 环境变量注入 sidecar |
 
 ## 启动时序（Tauri `setup`）

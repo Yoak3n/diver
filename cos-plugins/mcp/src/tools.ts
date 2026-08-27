@@ -7,7 +7,7 @@
 
 import { createHash } from 'node:crypto'
 import type { Client } from '@modelcontextprotocol/sdk/client'
-import { CallToolResultSchema, ListToolsResultSchema } from '@modelcontextprotocol/sdk/types'
+import { CallToolResultSchema, ListToolsResultSchema } from '@modelcontextprotocol/sdk/types.js'
 import type { Context } from 'cordis'
 
 /** 每个 MCP 工具的模型面公共名：mcp__<serverName>__<rawName>。 */

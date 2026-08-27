@@ -5,7 +5,7 @@ import { join } from 'node:path'
 const exe = join(process.cwd(), 'dist', 'cos-sidecar.exe')
 const child = spawn(exe, ['--bundles', '../cos-plugins/bundle-companion', '--plugin-root', '../cos-plugins'], {
   cwd: process.cwd(),
-  env: { ...process.env, DIVER_PORT: '3620' },
+  env: { ...process.env, DIVER_PORT: '53620' },
   stdio: ['pipe', 'pipe', 'pipe'],
 })
 let out = ''
@@ -14,7 +14,7 @@ child.stderr.on('data', (d) => { out += d.toString() })
 
 await new Promise((r) => setTimeout(r, 9000))
 try {
-  const res = await fetch('http://127.0.0.1:3620/api/health')
+  const res = await fetch('http://127.0.0.1:53620/api/health')
   const body = await res.text()
   console.log(`HTTP ${res.status} ${body.slice(0, 160)}`)
 } catch (err) {

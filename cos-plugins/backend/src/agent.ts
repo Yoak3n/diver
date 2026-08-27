@@ -11,9 +11,9 @@ import type { Context } from 'cordis'
 import { SessionId, createUserMessage } from '@cos/types'
 import type { Agent, AgentHandle } from '@cos/types'
 
-import { cosHome, readDiverSettings } from './session-helpers'
-import { firstModelOf } from './providers'
-import type { WebState } from './state'
+import { cosHome, readDiverSettings } from './session-helpers.ts'
+import { firstModelOf } from './providers.ts'
+import type { WebState } from './state.ts'
 
 export const SESSION_ID = 'diver-companion'
 const WORKSPACE_DIR = () => join(cosHome(), 'workspace')

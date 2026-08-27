@@ -21,4 +21,5 @@ Diver 是基于 **Tauri 2 + Vue 3 + DeepSeek Harness** 的桌面陪伴 agent。
 
 ## 规划
 
+- [Windows 分发](distribution.md) - NSIS 安装包构建、SEA sidecar 打包、运行时布局、常见问题
 - [打包与路线图](roadmap.md) - 已知限制、打包分发策略、后续方向

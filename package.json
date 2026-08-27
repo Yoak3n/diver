@@ -8,7 +8,8 @@
     "build": "vue-tsc --noEmit && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "pet:fetch": "node scripts/pet-fetch.mjs"
+    "pet:fetch": "node scripts/pet-fetch.mjs",
+    "bundle:release": "node scripts/bundle-release.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",
@@ -16,7 +17,8 @@
     "live2dcubismcore": "^1.0.2",
     "pixi-live2d-display": "^0.4.0",
     "pixi.js": "^7.4.3",
-    "vue": "^3.5.13"
+    "vue": "^3.5.13",
+    "vue-router": "^5.2.0"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2",

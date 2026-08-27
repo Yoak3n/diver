@@ -37,7 +37,7 @@
 |---|---|---|---|
 | T1.1 | 初始化加载 | boot 组合树（bundle 组装第三方插件） | 启动成功，无未捕获异常 |
 | T1.2 | 初始化加载 | memory `apply()` 执行 | 5 个记忆工具（remember/recall/inventory/demote/identity）注册成功 |
-| T1.3 | 初始化加载 | backend `apply()` 执行 | HTTP server 监听 3620，health 端点可达 |
+| T1.3 | 初始化加载 | backend `apply()` 执行 | HTTP server 监听 53620，health 端点可达 |
 | T2.1 | 核心功能 | memory 常驻注入 | `memory:relation-card` systemPrompt section 已注册 |
 | T2.2 | 核心功能 | backend `/api/health` | 返回 200，含 provider/model/memoryPort 等字段 |
 | T2.3 | 核心功能 | backend `/api/settings` | 返回 200 |
@@ -68,7 +68,7 @@ pnpm tsx scripts/compat-test.ts   # 自动断言，退出码 0 = 全部通过
 |---|---|---|---|
 | T1.1 | boot 组合树（bundle 组装） | ✅ PASS | `cordis.yml` + `@diver/bundle-companion` 组合树就绪 |
 | T1.2 | memory apply() | ✅ PASS | 已注册: remember, recall, inventory, demote, identity |
-| T1.3 | backend apply() | ✅ PASS | health 端点可达（`127.0.0.1:3620`） |
+| T1.3 | backend apply() | ✅ PASS | health 端点可达（`127.0.0.1:53620`） |
 | T2.1 | memory 常驻注入 | ✅ PASS | `memory:relation-card` 已注册 |
 | T2.2 | backend /api/health | ✅ PASS | `{"ok":true,"persona":"","provider":"mock","model":"mock-1","modelConfigured":true,...}` |
 | T2.3 | backend /api/settings | ✅ PASS | 返回 200 |
@@ -82,7 +82,7 @@ pnpm tsx scripts/compat-test.ts   # 自动断言，退出码 0 = 全部通过
 
 ### 2. 运行状态记录
 
-- **插件加载日志**：`[memory] 关系层记忆插件就绪`、`[diver] companion backend listening on 127.0.0.1:3620`、`DIVER_READY http://127.0.0.1:3620`。
+- **插件加载日志**：`[memory] 关系层记忆插件就绪`、`[diver] companion backend listening on 127.0.0.1:53620`、`DIVER_READY http://127.0.0.1:53620`。
 - **bundle 组装**：`--bundles @diver/bundle-companion` 经 `node_modules` 解析第三方 bundle，`requires` 校验通过后 insert memory + backend 两行。
 - **会话持久化**：`/api/history` 正确返回跨重启的持久化消息（含上一轮测试会话），证明 `diver-companion` 会话 resume 生效。
 - **类型检查**：harness 根 `pnpm typecheck` 与两个插件独立 `tsc --noEmit` 均通过。

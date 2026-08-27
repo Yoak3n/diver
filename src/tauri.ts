@@ -36,6 +36,23 @@ export function getSidecarStatus(): Promise<SidecarStatus> {
 }
 
 /**
+ * sidecar API 基址（不含 /api 后缀），如 `http://127.0.0.1:53620`。
+ *
+ * UI 由 Tauri 内置静态托管（dev 为 Vite、release 为 frontendDist）后，
+ * 页面 origin 不再是 sidecar —— `/api` 相对路径不指向 sidecar，必须显式
+ * 用 Rust 侧的 get_sidecar_url 拿绝对地址。非 Tauri 环境（纯浏览器 dev）
+ * 返回空串，由 api.ts 回退相对路径（Vite proxy 转发）。
+ */
+export async function getSidecarApiBase(): Promise<string> {
+  if (!tauriAvailable()) return "";
+  try {
+    return await invoke<string>("get_sidecar_url");
+  } catch {
+    return "";
+  }
+}
+
+/**
  * 等待 sidecar 后端就绪（可安全发起 /api 请求）。
  *
  * 信号来源：Rust 侧在 sidecar 打印 DIVER_READY 时发出 `backend://ready` 事件。

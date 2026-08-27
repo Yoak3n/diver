@@ -1,7 +1,7 @@
 // Diver memory E2E：喂事实 → 问 recall 型问题 → 调 /rpc 验证 SQLite 落库
 const BASE = process.env.DIVER_PORT
   ? `http://127.0.0.1:${process.env.DIVER_PORT}`
-  : 'http://127.0.0.1:3620'
+  : 'http://127.0.0.1:53620'
 
 async function post(path, body) {
   const res = await fetch(BASE + path, {

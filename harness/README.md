@@ -150,6 +150,31 @@ dist/cos-sidecar.exe --bundles ../cos-plugins/bundle-companion --plugin-root ../
 - 二进制运行时从**当前工作目录**读取 `cordis.yml` / `secrets.yml`（真实 DeepSeek 仍需配套密钥文件）。
 - 构建产物在 `dist/`（已 gitignore）。构建管线见 `scripts/build-sea.mjs`（生成入口 → esbuild → blob → postject）。
 
+### companion（HTTP/SSE）直接运行形态
+
+Diver 桌面端用的常驻 HTTP/SSE companion 入口是
+`packages/sidecar/src/companion-bundle.ts`（随包 Node 形态，直接运行，非 SEA）：
+引擎核心（`@cos/*`）从 `--harness` 目录的磁盘源码加载（`pluginPaths` 显式映射），
+第三方插件（`@diver/*`）从 `--plugin-root` 目录加载（开放，可改/删/加）：
+
+```sh
+node --import tsx --expose-internals packages/sidecar/src/companion-bundle.ts \
+     --bundles <sidecar>/bundles/bundle-companion \
+     --plugin-root <sidecar>/plugins \
+     --harness <sidecar>/harness
+# 启动 HTTP/SSE，打印 DIVER_READY
+```
+
+- **为什么用 tsx**：Node 22 原生 type-strip 不支持 TS 参数属性
+  （`constructor(private x: string)`），`@cos/*` 引擎大量使用；tsx 完整编译。
+- **为什么核心包用 pluginPaths 映射**：随包布局下 pnpm 的 node_modules 链接链
+  会断裂，显式映射到 `harness/packages/<pkg>/src/index.ts` 最稳。
+- 运行时由外层程序（Tauri 壳）注入 `COS_HOME`（用户数据目录）与 `DIVER_PORT`。
+- Diver 的打包编排见仓库根 `scripts/bundle-release.mjs` 与 `docs/distribution.md`。
+
+（旧的 `companion-sea.ts` 是 SEA 单文件形态的入口，保留供 `build-sea.mjs
+--companion` 使用。）
+
 ## 常用命令
 
 ```sh

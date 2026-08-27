@@ -6,9 +6,9 @@ import type { ServerResponse } from 'node:http'
 import type { AdapterConfigField, ProviderConfigDecl } from '@cos/llm'
 import type { Agent } from '@cos/types'
 
-import type { WebState } from './state'
+import type { WebState } from './state.ts'
 
-export type { WebState } from './state'
+export type { WebState } from './state.ts'
 
 /** provider 声明 + 每个字段的当前状态（secret 字段只回传布尔，供设置面板渲染）。 */
 export interface ProviderDeclView extends Omit<ProviderConfigDecl, 'fields'> {

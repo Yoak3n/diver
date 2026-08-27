@@ -50,6 +50,9 @@ importers:
       '@cos/persona':
         specifier: workspace:*
         version: link:packages/persona
+      '@cos/profile':
+        specifier: workspace:*
+        version: link:packages/profile
       '@cos/scope':
         specifier: workspace:*
         version: link:packages/scope
@@ -156,6 +159,9 @@ importers:
       '@cordisjs/plugin-timer':
         specifier: 1.1.2
         version: 1.1.2(cordis@4.0.0-rc.7)
+      '@cos/profile':
+        specifier: workspace:*
+        version: link:../profile
       '@cos/types':
         specifier: workspace:*
         version: link:../types
@@ -404,6 +410,9 @@ packages:
 
   '@diver/memory@file:../cos-plugins/memory':
     resolution: {directory: ../cos-plugins/memory, type: directory}
+
+  '@diver/voice@file:../cos-plugins/voice':
+    resolution: {directory: ../cos-plugins/voice, type: directory}
 
   '@esbuild/aix-ppc64@0.28.2':
     resolution: {integrity: sha512-XExcO+dvLKvVtNTibSTBej1NCAbaGhWn9Ww1ZPx80qsahhPFe/8jgWP0IchNe0F3HwkU7n8ejhH8bjonqht8mQ==}
@@ -1215,6 +1224,7 @@ snapshots:
       '@diver/backend': file:../cos-plugins/backend(@cordisjs/plugin-include@1.0.4)(@cordisjs/plugin-loader@1.0.0-rc.5)
       '@diver/llm-commandcode': file:../cos-plugins/llm-commandcode(@cordisjs/plugin-include@1.0.4)(@cordisjs/plugin-loader@1.0.0-rc.5)
       '@diver/memory': file:../cos-plugins/memory(@cordisjs/plugin-include@1.0.4)(@cordisjs/plugin-loader@1.0.0-rc.5)
+      '@diver/voice': file:../cos-plugins/voice(@cordisjs/plugin-include@1.0.4)(@cordisjs/plugin-loader@1.0.0-rc.5)
     transitivePeerDependencies:
       - '@cordisjs/plugin-include'
       - '@cordisjs/plugin-loader'
@@ -1242,6 +1252,14 @@ snapshots:
       - zod
 
   '@diver/memory@file:../cos-plugins/memory(@cordisjs/plugin-include@1.0.4)(@cordisjs/plugin-loader@1.0.0-rc.5)':
+    dependencies:
+      '@cos/types': file:packages/types
+      cordis: 4.0.0-rc.7(@cordisjs/plugin-include@1.0.4)(@cordisjs/plugin-loader@1.0.0-rc.5)
+    transitivePeerDependencies:
+      - '@cordisjs/plugin-include'
+      - '@cordisjs/plugin-loader'
+
+  '@diver/voice@file:../cos-plugins/voice(@cordisjs/plugin-include@1.0.4)(@cordisjs/plugin-loader@1.0.0-rc.5)':
     dependencies:
       '@cos/types': file:packages/types
       cordis: 4.0.0-rc.7(@cordisjs/plugin-include@1.0.4)(@cordisjs/plugin-loader@1.0.0-rc.5)

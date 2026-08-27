@@ -4,8 +4,8 @@
 import { createServer } from 'node:http'
 import type { Context } from 'cordis'
 
-import { handleRequest } from './handlers'
-import type { WebHandlerDeps } from './types'
+import { handleRequest } from './handlers.ts'
+import type { WebHandlerDeps } from './types.ts'
 
 export function mountServer(ctx: Context, deps: WebHandlerDeps) {
   const server = createServer((req, res) => {

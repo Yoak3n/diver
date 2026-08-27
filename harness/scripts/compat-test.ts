@@ -19,8 +19,8 @@ import type { Context } from 'cordis'
 
 const results: Array<{ id: string; name: string; pass: boolean; detail: string }> = []
 
-/** 后端端口（默认 3620，可用 `DIVER_PORT` 覆盖，避免与正在运行的 dev 应用冲突）。 */
-const PORT = Number(process.env.DIVER_PORT ?? 3620)
+/** 后端端口（默认 53620，可用 `DIVER_PORT` 覆盖，避免与正在运行的 dev 应用冲突）。 */
+const PORT = Number(process.env.DIVER_PORT ?? 53620)
 
 function record(id: string, name: string, pass: boolean, detail: string) {
   results.push({ id, name, pass, detail })

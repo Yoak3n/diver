@@ -97,10 +97,18 @@ class DeepSeekLlmAdapter extends LlmAdapter {
     this.defaultModel = config.defaultModel ?? 'deepseek-v4-flash'
     this.apiKeyRef = config.apiKeyKey ?? API_KEY_REF
     this.apiKeyEnv = config.apiKeyEnv ?? 'DEEPSEEK_API_KEY'
-    // Fail-loud credential resolution: unresolved key surfaces here with a
-    // diagnostic naming the setting (never the secret). The value stays in
-    // this instance and is never logged.
-    this.apiKey = credentials.get(this.apiKeyRef)
+    // Credential resolution is deliberately NON-fail-loud at construction:
+    // the adapter must be mountable before the user has configured an API key
+    // (packaged first-run). An unresolved key yields '' here; the backend's
+    // isConfigured() guard blocks chat until it is set, and stream() surfaces
+    // a provider error if a request somehow goes out keyless.
+    let key = ''
+    try {
+      key = credentials.get(this.apiKeyRef)
+    } catch {
+      key = process.env[this.apiKeyEnv ?? ''] ?? ''
+    }
+    this.apiKey = key
   }
 
   providerInfo(provider: string): LlmProviderInfo {

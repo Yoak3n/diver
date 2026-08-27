@@ -97,9 +97,9 @@ Key 存入本地凭据库（`harness/.cos-home/.credentials.yaml`），模型默
 
 ```bash
 cd harness
-$env:COS_HOME = "$PWD\.cos-home"; $env:DIVER_PORT = "3620"
+$env:COS_HOME = "$PWD\.cos-home"; $env:DIVER_PORT = "53620"
 node --import tsx --expose-internals packages/sidecar/src/companion.ts
-# 然后访问 http://127.0.0.1:3620/api/health
+# 然后访问 http://127.0.0.1:53620/api/health
 ```
 
 ### 修改第三方插件（cos-plugins）

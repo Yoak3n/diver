@@ -13,7 +13,7 @@ Rust `base/sidecar.rs` 以 `node --import tsx .../companion.ts` 拉起（详见
 
 - sidecar 由 Rust `base/sidecar.rs` 启动：`node --import tsx packages/sidecar/src/companion.ts`（diver 直连 cos-plugins）
   - `COS_HOME` → `harness/.cos-home`（仓库本地，gitignore）
-  - `DIVER_PORT` → sidecar HTTP 端口（默认 3620）
+  - `DIVER_PORT` → sidecar HTTP 端口（默认 53620）
   - `DIVER_MEMORY_PORT` → Rust 本地服务端口（统一本地 RPC：记忆 + grep 搜索）
   - stdout 检测 `DIVER_READY` 标志行 → 状态置 Running，UI 开始连接
 - 主窗口隐藏/销毁不影响它；应用退出时由 Rust 主动 stop（记忆保留在磁盘）

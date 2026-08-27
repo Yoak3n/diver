@@ -144,6 +144,8 @@ export interface CliOptions {
   profile: string | undefined
   /** Diver plugin root dir (`--plugin-root`). */
   pluginRoot: string | undefined
+  /** Harness (engine) dir for the bundled companion (`--harness`). */
+  harness: string | undefined
   /** Agent prompt (CLI application flag). */
   prompt: string | undefined
   /** Agent provider/model (CLI application flags). */
@@ -169,6 +171,7 @@ export function parseCliArgs(argv: string[]): CliOptions {
     cosHome: undefined,
     profile: undefined,
     pluginRoot: undefined,
+    harness: undefined,
     prompt: undefined,
     provider: undefined,
     model: undefined,
@@ -185,6 +188,7 @@ export function parseCliArgs(argv: string[]): CliOptions {
     else if (flag === '--cos-home') { out.cosHome = value; index += 1 }
     else if (flag === '--profile') { out.profile = value; index += 1 }
     else if (flag === '--plugin-root') { out.pluginRoot = value; index += 1 }
+    else if (flag === '--harness') { out.harness = value; index += 1 }
     else if (flag === '--config') { out.configPath = value ?? out.configPath; index += 1 }
     else if (flag === '--prompt') { out.prompt = value; index += 1 }
     else if (flag === '--provider') { out.provider = value; index += 1 }
@@ -307,6 +311,18 @@ function resolveBundle(spec: string | Bundle, registry: Map<string, Bundle>): Bu
   }
 }
 
+/** Read a package.json manifest, stripping a UTF-8 BOM if present (editors
+ * such as Notepad/PowerShell may save with one; JSON.parse rejects it). */
+function readManifest(file: string): { main?: string } | undefined {
+  try {
+    let raw = readFileSync(file, 'utf8')
+    if (raw.charCodeAt(0) === 0xFEFF) raw = raw.slice(1)
+    return JSON.parse(raw) as { main?: string }
+  } catch {
+    return undefined
+  }
+}
+
 /**
  * Resolve a plugin row name from a plugin root directory: `@scope/pkg` maps
  * to `<root>/pkg` (unscoped), then the package entry is resolved from its
@@ -317,13 +333,10 @@ function entryFromPluginRoot(root: string, name: string): string | undefined {
   const pkg = slash >= 0 ? name.slice(slash + 1) : name
   const dir = join(resolve(process.cwd(), root), pkg)
   if (!existsSync(join(dir, 'package.json'))) return undefined
-  try {
-    const manifest = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')) as { main?: string }
-    const entry = resolve(dir, manifest.main ?? 'index.js')
-    return existsSync(entry) ? entry : undefined
-  } catch {
-    return undefined
-  }
+  const manifest = readManifest(join(dir, 'package.json'))
+  if (manifest === undefined) return undefined
+  const entry = resolve(dir, manifest.main ?? 'index.js')
+  return existsSync(entry) ? entry : undefined
 }
 
 /**
@@ -340,13 +353,10 @@ function entryFromPluginPath(value: string): string | undefined {
     return undefined
   }
   if (stat.isDirectory()) {
-    try {
-      const manifest = JSON.parse(readFileSync(join(abs, 'package.json'), 'utf8')) as { main?: string }
-      const entry = resolve(abs, manifest.main ?? 'index.js')
-      return existsSync(entry) ? entry : undefined
-    } catch {
-      return undefined
-    }
+    const manifest = readManifest(join(abs, 'package.json'))
+    if (manifest === undefined) return undefined
+    const entry = resolve(abs, manifest.main ?? 'index.js')
+    return existsSync(entry) ? entry : undefined
   }
   return abs
 }
@@ -369,13 +379,10 @@ function resolveProfilePackage(
     const dir = join(searchPath, name)
     const manifestPath = join(dir, 'package.json')
     if (!existsSync(manifestPath)) continue
-    try {
-      const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as { main?: string }
-      const entry = resolve(dir, manifest.main ?? 'index.js')
-      if (existsSync(entry)) return entry
-    } catch {
-      // Unreadable manifest — skip this candidate.
-    }
+    const manifest = readManifest(manifestPath)
+    if (manifest === undefined) continue
+    const entry = resolve(dir, manifest.main ?? 'index.js')
+    if (existsSync(entry)) return entry
   }
   return undefined
 }

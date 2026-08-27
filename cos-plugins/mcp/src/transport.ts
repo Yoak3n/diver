@@ -4,8 +4,8 @@
 // subprocess seam（无环境清理服务），直接用 SDK 的 StdioClientTransport + 父进程
 // 环境 + 显式 env 覆盖。stdin/stdout 由 SDK 的 transport 管理（MCP stdio 协议）。
 
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio'
-import type { Transport } from '@modelcontextprotocol/sdk/shared/transport'
+import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
+import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
 import type { StdioConfig } from './index.ts'
 
 /**

@@ -29,6 +29,8 @@ harness/node_modules
 harness/.dsh-home
 harness/*/node_modules
 
+# Diver release 打包产物（SEA sidecar 运行时目录，体积大，不入库）
+src-tauri/resources/sidecar/
 
 # Live2D 模型文件（体积大，不入库）
 public/pet/models/

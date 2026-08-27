@@ -1,7 +1,7 @@
 // 桌宠轻量聊天：只保留最近几条消息 + 发送 + SSE 事件流（与主窗口并存）
 
 import { computed, onBeforeUnmount, ref } from "vue";
-import { answerQuestion, getSettings, health, sendChat, streamEvents } from "../api";
+import { answerQuestion, getHistory, getSettings, health, sendChat, streamEvents } from "../api";
 import type { ChatMessage, StreamEvent, UserQuestion, UserQuestionAnswerItem } from "../types";
 import { onTauriEvent, tauriAvailable, waitForSidecarReady } from "../tauri";
 
@@ -36,9 +36,7 @@ export function usePetChat() {
   async function loadHistory() {
     if (historyLoaded) return;
     try {
-      const res = await fetch("/api/history");
-      if (!res.ok) return;
-      const data = (await res.json()) as { messages: ChatMessage[] };
+      const data = await getHistory();
       // 仅当本地还没有消息时填充，避免覆盖正在进行的会话
       if (messages.value.length === 0) {
         // 历史消息标记 fromHistory：气泡/朗读等"新消息到达提示"不得重放上次会话末尾。
@@ -99,10 +97,12 @@ export function usePetChat() {
               time: e.time,
               streaming: false,
             };
-          } else {
+          } else if (e.content !== "") {
             push({ id: e.messageId, kind: "assistant", content: e.content, origin: e.origin, time: e.time });
           }
         } else {
+          // 无占位消息的最终消息：跳过空内容（纯工具步骤等），避免空气泡
+          if (e.content === "") break;
           push({ id: e.messageId, kind: "assistant", content: e.content, origin: e.origin, time: e.time });
         }
         break;

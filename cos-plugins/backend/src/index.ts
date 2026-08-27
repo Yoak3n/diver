@@ -31,13 +31,13 @@
 import { resolve } from 'node:path'
 import type { Context } from 'cordis'
 
-import { applyModelChange, ensureAgent } from './agent'
-import { healthInfo } from './health'
-import { applyProviderConfigs, catalogModels, isConfigured, persistedProvider, providerDecls } from './providers'
-import { mountServer } from './server'
-import { attachEventListeners, createBroadcast, sseWrite } from './sse'
-import { createWebState } from './state'
-import type { WebHandlerDeps } from './types'
+import { applyModelChange, ensureAgent } from './agent.ts'
+import { healthInfo } from './health.ts'
+import { applyProviderConfigs, catalogModels, isConfigured, persistedProvider, providerDecls } from './providers.ts'
+import { mountServer } from './server.ts'
+import { attachEventListeners, createBroadcast, sseWrite } from './sse.ts'
+import { createWebState } from './state.ts'
+import type { WebHandlerDeps } from './types.ts'
 
 export const name = 'backend'
 
@@ -45,7 +45,7 @@ export const name = 'backend'
 export const inject = ['agents', 'agentLoop', 'llm', 'credentials', 'sessionPersistence']
 
 export function apply(ctx: Context, config: { uiDist?: string }) {
-  const port = Number(process.env.DIVER_PORT ?? 3620)
+  const port = Number(process.env.DIVER_PORT ?? 53620)
   const uiDist = config?.uiDist ?? process.env.DIVER_UI_DIST ?? resolve(process.cwd(), '..', 'dist')
 
   const state = createWebState()

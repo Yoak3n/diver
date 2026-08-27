@@ -55,12 +55,12 @@ diver 直连模式（默认）直接以路径引用 `cos-plugins/` 源码，零�
 cd harness
 pnpm install
 # 启动自研 cos 的常驻 HTTP sidecar（Rust 壳即以此方式拉起）：
-$env:COS_HOME = "$PWD\.cos-home"; $env:DIVER_PORT = "3620"
+$env:COS_HOME = "$PWD\.cos-home"; $env:DIVER_PORT = "53620"
 node --import tsx --expose-internals packages/sidecar/src/companion.ts
-# 然后访问 http://127.0.0.1:3620/api/health
+# 然后访问 http://127.0.0.1:53620/api/health
 ```
 
-也可以：`pnpm start:companion`（等价于上面 node 命令，不设端口则用默认 3620）。
+也可以：`pnpm start:companion`（等价于上面 node 命令，不设端口则用默认 53620）。
 
 ### 修改第三方插件（cos-plugins）
 
@@ -106,6 +106,6 @@ node scripts/opencode-test.mjs # opencode-go provider 直测
 | 现象 | 处理 |
 |---|---|
 | 启动报 "harness 未安装" | 根目录执行 `pnpm install`（sidecar 入口 `node_modules/@deepseek-ai/dsh/lib/bin.js`） |
-| 端口被占 | `DIVER_PORT` 覆盖默认 3620；Vite 1420 为 strictPort。3620 若被上一会话残留的 sidecar 占用，`tauri dev` 启动前会自动回收（命令行匹配 `companion.ts`/`cos-sidecar.exe`）；被其他进程占用则中止并提示释放 |
+| 端口被占 | `DIVER_PORT` 覆盖默认 53620；Vite 1420 为 strictPort。53620 若被上一会话残留的 sidecar 占用，`tauri dev` 启动前会自动回收（命令行匹配 `companion.ts`/`cos-sidecar.exe`）；被其他进程占用则中止并提示释放 |
 | 改了 bundle 不生效 | 确认重启了 sidecar（不是只刷新窗口）；bundle 是符号链接，直接生效 |
 | 桌宠不显示 | 检查启动配置 `auto_open_pet`（设置面板可改）；`pnpm tauri dev` 下默认全开 |

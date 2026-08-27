@@ -1,9 +1,9 @@
-use tauri::{AppHandle, Builder, Manager, RunEvent, generate_handler};
-use tauri_plugin_log::{Target, TargetKind};
 use crate::base::cmd::*;
+use tauri::{generate_handler, AppHandle, Builder, Manager, RunEvent};
+use tauri_plugin_log::{Target, TargetKind};
 
-
-pub fn generate_handlers() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync + 'static{
+pub fn generate_handlers() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync + 'static
+{
     generate_handler![
         get_sidecar_status,
         restart_sidecar,
@@ -20,7 +20,6 @@ pub fn generate_handlers() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + 
     ]
 }
 
-
 pub fn configure(builder: Builder<tauri::Wry>) -> Builder<tauri::Wry> {
     let builder = builder.plugin(tauri_plugin_opener::init());
 
@@ -33,7 +32,10 @@ pub fn configure(builder: Builder<tauri::Wry>) -> Builder<tauri::Wry> {
                 Target::new(TargetKind::Webview),
                 // 输出到日志文件
                 Target::new(TargetKind::Folder {
-                    path: dirs::data_dir().unwrap_or_default().join("diver").join("logs"),
+                    path: dirs::data_dir()
+                        .unwrap_or_default()
+                        .join("diver")
+                        .join("logs"),
                     file_name: Some("app".into()),
                 }),
             ])
@@ -61,8 +63,9 @@ pub fn configure(builder: Builder<tauri::Wry>) -> Builder<tauri::Wry> {
             None => log::error!("本地服务启动失败，记忆功能不可用"),
         }
 
-        // 初始化 MCP 服务配置：首次运行写入默认配置（work-review 示例），
+        // 初始化 MCP 服务配置：迁移旧位置（如有）并写入默认配置，
         // 之后由设置面板「MCP 服务」页直接编辑，保存即热重载生效。
+        // 配置文件位于 $COS_HOME/mcp-servers.json（与 diver-settings.json 同目录）。
         crate::config::mcp::ensure_initial(app.handle());
 
         // 启动 Node sidecar（dsh 框架 + 陪伴 bundle，agent 常驻）。
@@ -151,8 +154,10 @@ pub fn app_event_handle(app_handle: &AppHandle, event: RunEvent) {
                     // 状态缓存同步：X 关闭 = 隐藏。否则缓存停留 VisibleFocused，
                     // 托盘/桌宠的"打开主窗口"会误判为已可见而无操作（打不开）。
                     if let Some(wt) = crate::base::window::schema::WindowType::from_label(&label) {
-                        crate::base::window::manager::Manager::global()
-                            .update_window_state(wt, crate::base::window::schema::WindowState::Hidden);
+                        crate::base::window::manager::Manager::global().update_window_state(
+                            wt,
+                            crate::base::window::schema::WindowState::Hidden,
+                        );
                     }
                 }
                 // 桌宠实时限位：拖动时窗口始终被限制在"大部分面积所在显示器"

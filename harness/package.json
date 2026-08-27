@@ -24,6 +24,7 @@
     "@cos/mock-llm": "workspace:*",
     "@cos/persistence": "workspace:*",
     "@cos/persona": "workspace:*",
+    "@cos/profile": "workspace:*",
     "@cos/scope": "workspace:*",
     "@cos/session": "workspace:*",
     "@cos/sidecar": "workspace:*",

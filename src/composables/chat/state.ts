@@ -125,11 +125,13 @@ export function createChatState() {
               time: e.time,
               streaming: false,
             };
-          } else {
+          } else if (e.content !== "") {
             upsertMessage({ id: e.messageId, kind: "assistant" as const, content: e.content, origin: e.origin, time: e.time });
           }
           maybeSpeak(messages.value[messages.value.length - 1]);
         } else {
+          // 无占位消息的最终消息：跳过空内容（纯工具步骤等），避免空气泡
+          if (e.content === "") break;
           const msg = { id: e.messageId, kind: "assistant" as const, content: e.content, origin: e.origin, time: e.time };
           upsertMessage(msg);
           maybeSpeak(msg);

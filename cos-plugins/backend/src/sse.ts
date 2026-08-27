@@ -2,9 +2,9 @@
 
 import type { ServerResponse } from 'node:http'
 import type { Context } from 'cordis'
-import { textOf } from './session-helpers'
-import { SESSION_ID } from './agent'
-import type { WebState } from './state'
+import { textOf } from './session-helpers.ts'
+import { SESSION_ID } from './agent.ts'
+import type { WebState } from './state.ts'
 
 export function sseWrite(res: ServerResponse, event: unknown) {
   if (res.writableEnded || res.destroyed) return
@@ -58,6 +58,9 @@ export function attachEventListeners(
         const text = textOf(ev.data.message.content)
         const origin = state.presencePending ? 'presence' : 'assistant'
         state.presencePending = false
+        // 纯工具调用步骤（模型只发 tool-call、无文本）也会产出 assistant/message：
+        // 无文本内容时前端只会渲染一个空气泡，这里跳过广播（工具活动另有 tool 事件展示）。
+        if (text === '') break
         broadcast({
           type: 'message', kind: 'assistant', sessionId: String(session.id),
           messageId: ev.data.message.id, turnMessageId: `turn-${ev.data.turn}-${ev.data.step}`,

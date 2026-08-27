@@ -13,9 +13,9 @@
 import type { Context } from 'cordis'
 import type { AdapterConfigField } from '@cos/llm'
 
-import { readDiverSettings, writeDiverSettings } from './session-helpers'
-import { secretsFileOf, writeSecret } from './secrets'
-import type { ProviderDeclView } from './types'
+import { readDiverSettings, writeDiverSettings } from './session-helpers.ts'
+import { secretsFileOf, writeSecret } from './secrets.ts'
+import type { ProviderDeclView } from './types.ts'
 
 /**
  * 激活 provider：持久化选择直接采用（即使已不在注册表——让配置错位显式暴露，

@@ -6,7 +6,7 @@
   "build": {
     "beforeDevCommand": "pnpm dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "pnpm build",
+    "beforeBuildCommand": "pnpm build && node scripts/bundle-release.mjs --assemble-only --skip-frontend",
     "frontendDist": "../dist"
   },
   "app": {
@@ -17,9 +17,10 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": ["nsis"],
     "resources": {
-      "resources/speak.ps1": "resources/speak.ps1"
+      "resources/speak.ps1": "resources/speak.ps1",
+      "resources/sidecar": "resources/sidecar"
     },
     "icon": [
       "icons/32x32.png",
@@ -27,6 +28,16 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser",
+        "displayLanguageSelector": true,
+        "languages": ["SimpChinese", "English"],
+        "installerIcon": "icons/icon.ico",
+        "uninstallerIcon": "icons/icon.ico",
+        "startMenuFolder": "Diver"
+      }
+    }
   }
 }

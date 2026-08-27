@@ -2,8 +2,8 @@
 
 import type { Context } from 'cordis'
 
-import { activeProvider, firstModelOf, isConfigured } from './providers'
-import type { WebState } from './state'
+import { activeProvider, firstModelOf, isConfigured } from './providers.ts'
+import type { WebState } from './state.ts'
 
 export async function healthInfo(ctx: Context, state: WebState) {
   const provider = (await activeProvider(ctx)) ?? ''

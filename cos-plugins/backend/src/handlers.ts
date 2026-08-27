@@ -5,9 +5,9 @@ import { extname, join, normalize, resolve } from 'node:path'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { SessionId } from '@cos/types'
 
-import { readDiverSettings, writeDiverSettings, textOf } from './session-helpers'
-import { SESSION_ID, userMessage } from './agent'
-import type { WebHandlerDeps } from './types'
+import { readDiverSettings, writeDiverSettings, textOf } from './session-helpers.ts'
+import { SESSION_ID, userMessage } from './agent.ts'
+import type { WebHandlerDeps } from './types.ts'
 
 const MIME: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
@@ -164,9 +164,15 @@ export async function handleRequest(
               messages.push({ id: ev.data.id, kind: 'user', content: text, origin: 'user', time })
             }
           } else if (ev.type === 'assistant/message') {
+            // 纯工具调用步骤（无文本）不进入历史，避免前端渲染空气泡
+            const text = textOf(ev.data.message.content)
+            if (text === '') {
+              presencePending = false
+              continue
+            }
             messages.push({
               id: ev.data.message.id, kind: 'assistant',
-              content: textOf(ev.data.message.content),
+              content: text,
               origin: presencePending ? 'presence' : 'assistant', time,
             })
             presencePending = false

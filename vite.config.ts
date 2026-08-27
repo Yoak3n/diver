@@ -1,10 +1,9 @@
 import { defineConfig } from "vite";
 import vue from "@vitejs/plugin-vue";
-import { resolve } from "node:path";
 
 // @ts-expect-error process is a nodejs global
 const host = process.env.TAURI_DEV_HOST;
-const sidecarPort = Number(process.env.DIVER_PORT ?? 3620);
+const sidecarPort = Number(process.env.DIVER_PORT ?? 53620);
 
 // https://vite.dev/config/
 export default defineConfig(async () => ({
@@ -39,12 +38,7 @@ export default defineConfig(async () => ({
     },
   },
   build: {
-    rollupOptions: {
-      input: {
-        main: resolve(__dirname, "index.html"),
-        // 输出文件名由 key 决定：构建产物仍为 dist/pet.html
-        pet: resolve(__dirname, "src/pet/pet.html"),
-      },
-    },
+    // 单入口 SPA：主界面与桌宠通过 vue-router 路由（/#/ 和 /#/pet）区分，
+    // 不再需要 pet.html 独立入口。public/pet/ 下的 Live2D 静态资源仍复制到 dist/pet/。
   },
 }));

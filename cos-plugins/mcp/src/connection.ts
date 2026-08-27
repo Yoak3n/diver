@@ -5,7 +5,7 @@
 // @deepseek-ai/dsh-timeout 的依赖（直接用常量），其余机制对齐。
 
 import { Client } from '@modelcontextprotocol/sdk/client'
-import { ToolListChangedNotificationSchema } from '@modelcontextprotocol/sdk/types'
+import { ToolListChangedNotificationSchema } from '@modelcontextprotocol/sdk/types.js'
 import type { Context } from 'cordis'
 import { createTransport } from './transport.ts'
 import { syncTools } from './tools.ts'

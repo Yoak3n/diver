@@ -34,6 +34,11 @@ export const NATIVE_RPC_METHODS = [
     service: 'grep',
     description: 'ripgrep 文件内容搜索（diver-search crate）',
   },
+  {
+    method: 'notify::show',
+    service: 'notify',
+    description: '原生托盘通知（agent 主动消息 / 日程提醒到达时弹通知）',
+  },
 ] as const
 
 /** `http://127.0.0.1:{DIVER_MEMORY_PORT}/rpc`，未配置时返回 null。 */

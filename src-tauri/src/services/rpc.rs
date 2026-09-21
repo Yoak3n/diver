@@ -9,7 +9,7 @@ use axum::{extract::State, Json};
 use serde::Deserialize;
 use serde_json::{json, Value};
 
-use super::{grep, memory, ServiceState};
+use super::{grep, memory, notify, ServiceState};
 
 #[derive(Deserialize)]
 pub struct RpcRequest {
@@ -45,6 +45,10 @@ async fn route(state: &ServiceState, method: &str, params: &Value) -> Result<Val
         return tokio::task::spawn_blocking(move || grep::dispatch(&method, &params, &workdir))
             .await
             .map_err(|join_err| grep::RpcFailure::new(format!("grep task failed: {join_err}")))?
+    }
+    if method.starts_with("notify::") {
+        // 通知是壳能力：Node 主动消息/日程提醒到达时弹系统通知。
+        return notify::dispatch(method, params).map_err(grep::RpcFailure::new);
     }
     // memory 方法保持无前缀（零迁移）；错误无 code。
     memory::dispatch(&state.memory_db, method, params).map_err(grep::RpcFailure::new)

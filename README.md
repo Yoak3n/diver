@@ -36,11 +36,11 @@
 │  · @deepseek-ai/dsh-base（仅框架：agent loop、    │
 │    会话、LLM 适配器、工具、persona、持久化）        │
 │  · cos-plugins/bundle-companion（自研，路径直连）：  │
-│    - 陪伴人设 patch（system-prompt 覆盖）          │
-│    - companion-web：自有 node:http 传输层          │
-│      （静态 UI + JSON/SSE API，不用 dsh 交互层）    │
-│    - companion-presence：定时主动问候/提醒          │
-│    - companion-memory：关系层记忆（提取/注入/工具） │
+│    - backend：自有 node:http 传输层 + 日程提醒      │
+│      （静态 UI + JSON/SSE API；presence 调度并入，  │
+│       到点主动问候 + 原生通知，配置在 schedule）     │
+│    - memory：关系层记忆（提取/注入/工具）            │
+│    - voice / mcp / llm-commandcode / native-bridge │
 │  · 单会话「diver-companion」JSONL 持久化            │
 │    （跨重启陪伴记忆）                              │
 └──────────────────────────────────────────────────┘

@@ -7,6 +7,7 @@ import SystemTab from "./settings/SystemTab.vue";
 import McpTab from "./settings/McpTab.vue";
 import PluginsTab from "./settings/PluginsTab.vue";
 import ShortcutsTab from "./settings/ShortcutsTab.vue";
+import ScheduleTab from "./settings/ScheduleTab.vue";
 
 defineProps<{
   open: boolean;
@@ -75,6 +76,13 @@ defineEmits<{
           </button>
           <button
             class="tab"
+            :class="{ active: state.activeTab === 'schedule' }"
+            @click="state.activeTab = 'schedule'"
+          >
+            日程
+          </button>
+          <button
+            class="tab"
             :class="{ active: state.activeTab === 'system' }"
             @click="state.activeTab = 'system'"
           >
@@ -98,6 +106,7 @@ defineEmits<{
           />
           <PluginsTab v-if="state.activeTab === 'plugins'" />
           <ShortcutsTab v-if="state.activeTab === 'shortcuts'" />
+          <ScheduleTab v-if="state.activeTab === 'schedule'" />
           <SystemTab
             v-if="state.activeTab === 'system'"
             :state="state"

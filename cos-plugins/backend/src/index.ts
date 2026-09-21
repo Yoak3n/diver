@@ -35,6 +35,7 @@ import type {} from '@cos/plugin-api'
 import { applyModelChange, ensureAgent } from './agent.ts'
 import { healthInfo } from './health.ts'
 import { applyProviderConfigs, catalogModels, isConfigured, persistedProvider, providerDecls } from './providers.ts'
+import { startPresenceScheduler } from './presence.ts'
 import { mountServer } from './server.ts'
 import { attachEventListeners, createBroadcast, sseWrite } from './sse.ts'
 import { createWebState } from './state.ts'
@@ -70,4 +71,10 @@ export function apply(ctx: Context, config: { uiDist?: string }) {
   }
 
   mountServer(ctx, deps)
+
+  // presence 日程调度：到点主动问候 + 原生通知（配置存 $COS_HOME/presence-schedule.json）。
+  startPresenceScheduler(ctx, state, {
+    isModelConfigured: () => isConfigured(ctx, persistedProvider(ctx)),
+    ensureAgent: () => ensureAgent(ctx, state),
+  })
 }

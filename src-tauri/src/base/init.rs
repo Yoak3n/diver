@@ -24,6 +24,7 @@ pub fn generate_handlers() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + 
         uninstall_profile_plugin,
         speak,
         list_voices,
+        notify,
         get_window_startup_config,
         set_window_startup_config,
         get_mcp_config,
@@ -55,6 +56,9 @@ pub fn configure(builder: Builder<tauri::Wry>) -> Builder<tauri::Wry> {
             })
             .build(),
     );
+
+    // 原生通知：agent 主动消息 / 日程提醒到达时托盘通知（见 base/notify.rs）。
+    let builder = builder.plugin(tauri_plugin_notification::init());
 
     let builder = builder.plugin(
         tauri_plugin_log::Builder::new()

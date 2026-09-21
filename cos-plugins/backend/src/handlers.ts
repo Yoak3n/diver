@@ -7,6 +7,7 @@ import { SessionId } from '@cos/plugin-api'
 
 import { readDiverSettings, writeDiverSettings, textOf } from './session-helpers.ts'
 import { SESSION_ID, userMessage } from './agent.ts'
+import { loadSchedule, saveSchedule } from './presence.ts'
 import type { WebHandlerDeps } from './types.ts'
 import {
   ensureProfile,
@@ -333,6 +334,28 @@ export async function handleRequest(
     // GET /api/native/status
     if (pathname === '/api/native/status' && req.method === 'GET') {
       sendJson(res, 200, await nativeStatus())
+      return
+    }
+
+    // GET /api/presence —— 日程提醒配置（presence schedule，持久化于 $COS_HOME）
+    if (pathname === '/api/presence' && req.method === 'GET') {
+      sendJson(res, 200, loadSchedule())
+      return
+    }
+
+    // POST /api/presence —— 保存日程配置（整个数组替换，热生效无需重启）
+    if (pathname === '/api/presence' && req.method === 'POST') {
+      const body = await readBody(req)
+      const raw = Array.isArray(body.entries) ? body.entries : Array.isArray(body) ? body : []
+      const entries = raw
+        .filter((e) => e && typeof e === 'object')
+        .map((e: Record<string, unknown>) => ({
+          id: String(e.id ?? ''),
+          time: String(e.time ?? ''),
+          prompt: String(e.prompt ?? ''),
+          enabled: e.enabled !== false,
+        }))
+      sendJson(res, 200, saveSchedule(entries))
       return
     }
 

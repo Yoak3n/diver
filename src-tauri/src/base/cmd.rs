@@ -130,6 +130,12 @@ pub fn speak(app: AppHandle, text: String, voice: Option<String>) -> bool {
     tts::speak(&app, &text, voice.as_deref())
 }
 
+/// 弹出原生通知（托盘通知；前端可直接调用，Node 侧经 /rpc notify::show）。
+#[tauri::command]
+pub fn notify(app: AppHandle, title: String, body: String) {
+    crate::base::notify::show(&app, &title, &body);
+}
+
 /// 列出系统已安装的 TTS 语音。
 #[tauri::command]
 pub fn list_voices(app: AppHandle) -> Vec<String> {

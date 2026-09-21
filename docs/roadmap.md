@@ -25,6 +25,11 @@
 - [ ] **原生通知**：agent 主动消息到达时托盘通知（`tauri-plugin-notification`）
 - [x] **全局快捷键**唤起窗口（`tauri-plugin-global-shortcut`，热插拔：运行时注册/注销，
       设置页「快捷键」Tab 编辑，保存立即生效，无需重启）
+- [x] **原生通知**：agent 主动消息/日程提醒到达时托盘通知（`tauri-plugin-notification`；
+      Node 侧经 `/rpc notify::show` 触发，前端亦可 invoke `notify`）
+- [x] **日程提醒的持久化配置界面**：presence 调度并入 `@diver/backend`（`src/presence.ts`），
+      配置存 `$COS_HOME/presence-schedule.json`（不再硬编码 patch）；设置页「日程」Tab
+      编辑，30s tick 热生效；到点注入 `[presence]` 主动问候 + 原生通知
 - [ ] **语音输入**（麦克风，STT）
 - [ ] **日程提醒的持久化配置界面**（presence schedule 目前硬编码在 patch 里）
 - [ ] **模型供应商扩展**：自定义 base URL / 自定义 provider

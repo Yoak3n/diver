@@ -11,7 +11,10 @@ Diver 是基于 **Tauri 2 + Vue 3 + DeepSeek Harness** 的桌面陪伴 agent。
 ## 架构
 
 - [总体架构](architecture.md) - 三层架构（Rust 壳 / Vue UI / Node sidecar）、进程拓扑、启动时序、窗口管理
-- [Node sidecar 与 dsh 接入](sidecar.md) - DeepSeek Harness 框架接入、bundle patch 机制、会话持久化、上下文压缩
+- [Node sidecar 与 cos 接入](sidecar.md) - cos harness 进程生命周期、loader 参数、会话持久化
+- [插件体系与生命周期](plugins.md) - **插件权威契约**：loader 组合、profile 启停、壳端管理、深水区分期
+- [对照 DSH / harness-desktop](plugins-upstream-comparison.md) - 概念映射、生命周期操作差、有意差异与各期借鉴清单
+- [通信通道收敛](channels.md) - invoke / backend SSE / `/rpc` 分工；能否用事件面替代 RPC
 
 ## 功能模块
 
@@ -21,5 +24,5 @@ Diver 是基于 **Tauri 2 + Vue 3 + DeepSeek Harness** 的桌面陪伴 agent。
 
 ## 规划
 
-- [Windows 分发](distribution.md) - NSIS 安装包构建、SEA sidecar 打包、运行时布局、常见问题
-- [打包与路线图](roadmap.md) - 已知限制、打包分发策略、后续方向
+- [Windows 分发](distribution.md) - NSIS 安装包、随包 Node（非 SEA）运行时布局、插件开放目录
+- [打包与路线图](roadmap.md) - 已知限制、打包分发策略、后续方向（插件深水区见 plugins.md）

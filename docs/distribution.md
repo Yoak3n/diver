@@ -74,33 +74,33 @@ src-tauri/resources/sidecar/                                      # 打进安装
 ## 插件开放（核心设计）
 
 引擎（`harness/packages/`）与插件（`plugins/`）**全部是 TS 源码**，运行时由
-`companion-bundle.ts` 加载：
+`companion-bundle.ts` + `companion-boot.ts` 加载：
 
-- **核心行**（`@cos/*`）：`pluginPaths` 显式映射到 `harness/packages/<pkg>/src/index.ts`
-- **第三方行**（`@diver/*`）：`pluginRoot` 从 `plugins/` 目录解析
+- **核心行**（`@cos/*`）：`pluginPaths` → `harness/packages/<pkg>/src/index.ts`
+- **第三方/内部行**（`@diver/*`）：`pluginRoot` → `plugins/<name>`
+- **组合层**：`bundles/bundle-companion/cordis.patch.yml`（mount 真相）
+- **启停**：`$COS_HOME/profiles/companion/cordis.patch.yml`（壳设置页写入）
 
 | 操作 | 做法 | 生效方式 |
 |---|---|---|
+| **启停** | 设置 → 插件；或改 profile patch | 重启 sidecar |
 | **修改** | 编辑 `plugins/<name>/src/*.ts`（或 `harness/packages/*`） | 重启应用即生效 |
-| **删除** | 删 `plugins/<name>/` 目录 + patch 对应行 | 重启应用即生效 |
-| **新增** | 插件放 `plugins/<name>/` + patch 加一行 | 重启应用即生效 |
+| **删除包体** | 删 `plugins/<name>/` + 从 bundle/catalog 移除 | 重启应用即生效（P4 前需手动） |
+| **新增** | 目录 + bundle insert + `plugins.json` catalog | 重启应用即生效 |
 | **装依赖** | 在 sidecar 目录跑 `node install-deps.mjs` | 用随包 npm 安装 |
 | **诊断** | 在 sidecar 目录跑 `node plugin-doctor.mjs` | 检查一致性 |
+
+> 完整生命周期契约与深水区分期见仓库内 [docs/plugins.md](plugins.md)。
 
 ### 新增插件约定
 
 1. 目录 `plugins/<name>/`：`package.json`（`main` → `src/index.ts`，`name` 形如
    `@diver/<name>`）+ `src/index.ts`（导出 `name`/`inject`/`apply`）
 2. 相对导入**必须带 `.ts` 扩展名**（Node ESM + tsx 要求）
-3. 依赖：在 sidecar 目录跑 `node install-deps.mjs`（随包 npm 自动装到
-   `plugins/node_modules/`）；import `@cos/*` 不需要（引擎提供）
-4. 装配：`bundles/bundle-companion/cordis.patch.yml` 的 `insert` 加：
-   ```yaml
-   - insert:
-       - id: <name>
-         name: '@diver/<name>'
-   ```
-5. 重启应用生效
+3. 依赖：在 sidecar 目录跑 `node install-deps.mjs`；import `@cos/*` 不需要（引擎提供）
+4. 装配：`bundles/bundle-companion/cordis.patch.yml` 的 `insert` 加一行；
+   同步 `plugins.json` catalog（显示名/描述）
+5. 重启应用生效；设置 → 插件 应出现新行
 
 ## release 启动链
 
@@ -108,6 +108,7 @@ src-tauri/resources/sidecar/                                      # 打进安装
 Diver.exe
  └─ spawn: resources/sidecar/node.exe --import file:///.../harness/node_modules/tsx/dist/loader.mjs
             --expose-internals resources/sidecar/harness/packages/sidecar/src/companion-bundle.ts
+            --profile companion
             --bundles resources/sidecar/bundles/bundle-companion
             --plugin-root resources/sidecar/plugins
             --harness resources/sidecar/harness
@@ -115,7 +116,7 @@ Diver.exe
     COS_HOME = %APPDATA%\com.diver.companion\cos
     DIVER_PORT = 53620
     DIVER_UI_DIST = resources/sidecar/dist
-    └─ @cos/boot 组装 → 核心从 harness 磁盘源码加载、插件从 plugins 加载
+    └─ @cos/boot 组装 → pluginPaths(@cos/*) + pluginRoot(plugins/) + profile 启停
        → @diver/backend HTTP/SSE :53620 → WebView 加载 http://127.0.0.1:53620
 ```
 
@@ -134,7 +135,8 @@ Node 22 的原生 type-strip 是"纯剥离"模式，**不支持 TS 参数属性*
 ### 安装包体积
 
 node.exe（~82MB）+ npm（~11MB）+ 引擎源码 + 插件 + 依赖 ≈ 解压后 ~100MB，
-NSIS 压缩后 ~40-50MB。相比 SEA 方案（~34MB）大一些，换来的是完全开放 + 无签名问题。
+NSIS 压缩后 ~40–50MB。**已放弃 SEA 烘焙**（体积更小但插件不可启停/不可开放编辑）；
+随包 Node + 开放 `plugins/` 换来可插拔与无 postject 签名问题。
 
 ### 用户改了插件但没生效？
 
@@ -162,6 +164,7 @@ NSIS 压缩后 ~40-50MB。相比 SEA 方案（~34MB）大一些，换来的是�
   $env:DIVER_PORT = "3699"
   .\node.exe --import file:///$((Get-Location).Path -replace '\\','/')/harness/node_modules/tsx/dist/loader.mjs `
     --expose-internals .\harness\packages\sidecar\src\companion-bundle.ts `
+    --profile companion `
     --bundles .\bundles\bundle-companion --plugin-root .\plugins --harness .\harness
   # 观察 stdout：应出现 DIVER_READY http://127.0.0.1:3699
   ```

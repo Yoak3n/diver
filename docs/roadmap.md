@@ -4,18 +4,22 @@
 
 - 版本 0.1.0，`pnpm tauri dev` 全链路可用（sidecar + 本地服务 + 主窗口 + 桌宠）
 - Windows 分发：`pnpm bundle:release` 产出 NSIS 安装包
-  （SEA 单文件 sidecar + perUser 安装，详见 [分发](distribution.md)）
+  （**随包 Node + 开放 plugins/**，非 SEA；详见 [分发](distribution.md)、
+  插件契约 [plugins.md](plugins.md)）
 
 ## 已知限制 / 后续方向
 
 - [x] **打包分发**：随包 Node 方案（node.exe + 引擎/插件全源码，已落地）
-      - 安装包含 node.exe + npm + harness 引擎源码（@cos/*）+ cos-plugins 插件源码
-        （@diver/*）；`pnpm bundle:release` 一键产出 NSIS 安装包。
-      - **完全开放**：引擎与插件都是磁盘 TS 源码，用户可改/删/加；随包 npm 支持
-        `node install-deps.mjs` 一键装插件依赖、`node plugin-doctor.mjs` 诊断。
-      - release 启动链：`Diver.exe` → 随包 node + tsx 跑 companion-bundle.ts
-        （--bundles/--plugin-root/--harness），COS_HOME 指向用户数据目录。
-      - 无 SEA 烘焙、无 postject、无签名损坏。
+      - 安装包含 node.exe + npm + harness 引擎源码（@cos/*）+ plugins 插件源码
+      - **完全开放**：引擎与插件都是磁盘 TS 源码；设置页可启停插件
+      - release 启动链：随包 node + `companion-bundle.ts`
+        （`--profile companion --bundles --plugin-root --harness`）
+      - **已放弃 SEA 烘焙**（无 postject、无签名损坏）
+- [x] **插件深水区 P1–P5**（契约见 [plugins.md](plugins.md)）
+      - P1 类型边界（`@cos/plugin-api`）✅
+      - P3 safe profile + preflight + 自动降级 ✅
+      - P4 profile 安装/卸载（internal 不可卸）✅
+      - P5 `@diver/native-bridge` 原生 RPC 收口 ✅
 - [ ] **代码签名**：安装包与 `Diver.exe` 未签名，Windows SmartScreen 会提示；
       分发前建议用 EV 证书签名（或接受提示）。
 - [ ] **原生通知**：agent 主动消息到达时托盘通知（`tauri-plugin-notification`）
@@ -27,7 +31,7 @@
 
 ## 技术债 / 注意事项
 
-- `crates/diver-memory` 的 `server.rs` 已迁移（HTTP 传输层在 `src-tauri/src/services`），
-  仅保留注释说明
-- 记忆存储已从 JSON 文件迁到 SQLite，旧的 `$COS_HOME/memory/*.json` 布局文档已废弃
-- persona / 工具策略 / schedule 等配置集中在 `cordis.patch.yml`，改动后需重启 sidecar
+- 插件 mount 双清单：bundle `cordis.patch.yml` + `plugins.json` catalog（见 plugins.md）
+- include 同批 insert 的 disable 依赖 boot 过滤（plugins.md §2.5），改 patch 引擎需回归
+- persona / 工具策略 / schedule 等配置在 bundle/profile patch，改动后需重启 sidecar
+- 记忆存储在 SQLite；禁用记忆插件不删除数据文件

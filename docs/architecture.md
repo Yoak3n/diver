@@ -1,7 +1,7 @@
 # 总体架构
 
 Diver 是三层架构的桌面陪伴 agent：Rust 负责壳与原生扩展，WebView 承载 Vue 3
-陪伴 UI，agent 大脑常驻于 Node sidecar（DeepSeek Harness 框架）。
+陪伴 UI，agent 大脑常驻于 Node sidecar（自研 cos harness，借鉴 DeepSeek Harness）。
 
 借鉴 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 的架构理念
 （append-only 会话日志、turn/step agent 循环、工具注册表、persona 组装、事件驱动），
@@ -13,6 +13,7 @@ Diver 是三层架构的桌面陪伴 agent：Rust 负责壳与原生扩展，Web
 ┌──────────────────────────────────────────────────┐
 │ Tauri 壳（Rust）                                  │
 │  · sidecar 生命周期管理（spawn/就绪检测/日志/重启） │
+│  · 插件启停（profile 补丁 + 重启，见 plugins.md）   │
 │  · 托盘 / 窗口管理 / 轻量模式 / 开机自启            │
 │  · 本地 TTS（Windows SAPI 语音朗读）               │
 │  · 本地服务（axum）：SQLite 记忆后端 JSON-RPC      │
@@ -20,26 +21,22 @@ Diver 是三层架构的桌面陪伴 agent：Rust 负责壳与原生扩展，Web
 ├──────────────────────────────────────────────────┤
 │ WebView：Vue 3 陪伴 UI（单会话连续聊天）            │
 │  · 流式渲染 / 主动问候横幅 / 设置面板 / 桌宠窗口    │
+│  · 设置含「插件」页（list / enable / disable）      │
 │  · dev: Vite (localhost:1420) 代理 /api           │
 │  · release: sidecar 同源服务静态 UI               │
 ├──────────────────────────────────────────────────┤
-│ Node sidecar（agent 大脑，常驻进程）               │
-│  · @deepseek-ai/dsh-base（仅框架：agent loop、    │
-│    会话、LLM 适配器、工具、persona、持久化）        │
-│  · @diver/companion bundle（自研）：               │
-│    - companion-web：自有 node:http 传输层          │
-│      （静态 UI + JSON/SSE API，不用 dsh 交互层）    │
-│    - companion-presence：定时主动问候/提醒          │
-│    - companion-memory：关系层记忆（提取/注入/工具） │
-│    - companion-mcp：MCP 客户端（stdio transport）， │
-│      从 mcp-servers.json（设置面板「MCP 服务」页    │
-│      直接编辑）读取 server 列表，把外部 MCP server   │
-│      工具以 mcp__<server>__<工具> 注册进 ctx.tools  │
-│    - llm-opencode：opencode.ai 网关 provider       │
-│  · 单会话「diver-companion」JSONL 持久化            │
-│    （跨重启陪伴记忆）                              │
+│ Node sidecar（agent 大脑，常驻 cos harness）        │
+│  · loader 契约：pluginPaths=@cos/*、              │
+│    pluginRoot=开放插件目录、profile=companion      │
+│  · 引擎：@cos/*（agent-loop / llm / tools / …）   │
+│  · 陪伴插件 @diver/*（cos-plugins/ 或 plugins/）   │
+│    backend / memory / basic-tools / mcp / voice   │
+│    / llm-commandcode …（bundle insert 组装）       │
+│  · 单会话「diver-companion」JSONL 持久化           │
 └──────────────────────────────────────────────────┘
 ```
+
+插件组合、启停状态与壳端管理的完整契约见 **[插件体系与生命周期](plugins.md)**。
 
 ## 进程拓扑与端口
 
@@ -58,10 +55,12 @@ configure(builder)
     1. app.manage(AppState) + Handle::init + 创建托盘
     2. services::start() → axum /rpc（SQLite 记忆后端），
        端口写入 DIVER_MEMORY_PORT
-    3. SidecarManager::start() → node --import tsx packages/sidecar/src/companion.ts（diver 直连 cos-plugins/bundle-companion）
-       （COS_HOME=harness/.cos-home；stdout 日志实时转发到
-       Rust 控制台；检测到 DIVER_READY 置 Running 并发事件）
-    4. 按 window_startup 配置打开主窗口 / 桌宠窗口
+     3. plugins::ensure_profile() + SidecarManager::start()
+        → node --import tsx companion.ts
+        （统一契约：--profile companion --plugin-root cos-plugins
+          --bundles .../bundle-companion --harness harness；
+          COS_HOME=harness/.cos-home；检测 DIVER_READY）
+     4. 按 window_startup 配置打开主窗口 / 桌宠窗口
 ```
 
 退出时（`RunEvent::Exit`）主动 `stop()` sidecar；主窗口关闭只隐藏不退出
@@ -72,7 +71,7 @@ configure(builder)
 2. 超时/失败 → `Child::kill()` 强制终止
 3. Windows Job Object（KILL_ON_JOB_CLOSE）→ 应用退出/被强杀时整进程树兜底清理
 
-详见 [Node sidecar 与 dsh 接入](sidecar.md)。
+详见 [Node sidecar 与 cos 接入](sidecar.md)、[插件体系与生命周期](plugins.md)。
 
 ## 窗口管理
 
@@ -113,6 +112,7 @@ SQLite 文件 `diver-memory.sqlite3`。
 | command | 说明 |
 |---|---|
 | `get_sidecar_status` / `restart_sidecar` / `get_sidecar_url` | sidecar 状态 / 重启 / UI 地址 |
+| `list_plugins` / `set_plugin_enabled` / `toggle_plugin` / `get_plugin_paths` | 插件启停（见 [plugins.md](plugins.md)） |
 | `speak` / `list_voices` | TTS 朗读（`resources/speak.ps1` 调 SAPI）/ 枚举语音 |
 | `show_main_window` | 从托盘/桌宠唤起主窗口 |
 | `get/set_window_startup_config` | 窗口启动配置读写 |
@@ -123,12 +123,12 @@ sidecar 状态变更通过事件 `sidecar://status` 推给前端。
 
 | 理念 | Diver 实现 |
 |---|---|
-| append-only 会话日志 | dsh 的 SessionEvent 日志 + JSONL 持久化，UI/模型历史都从日志派生 |
-| turn/step agent 循环 | dsh agent-loop：流式 chunk、工具调用闭环、max-tokens 粘性等 |
-| 工具注册表 + 执行管线 | dsh-base 的 tools 服务（web_search 等），工具 schema 进请求 |
-| persona 组装 | bundle patch 覆盖 `system-prompt` 行 |
-| 一切皆可 patch | profile = dsh-base + companion 两个 bundle 层 + 用户 cordis.patch.yml |
-| 事件驱动 UI | session/event + agent/* 事件 → 自有 SSE 协议 → Vue |
+| append-only 会话日志 | cos persistence JSONL，UI/模型历史都从日志派生 |
+| turn/step agent 循环 | `@cos/agent-loop`：流式 chunk、工具闭环等 |
+| 工具注册表 + 执行管线 | `@cos/tools`；能力面由 `@diver/*` 插件注册 |
+| persona 组装 | bundle / profile patch 覆盖 `system-prompt` 行 |
+| 一切皆可 patch / 可插拔 | profile + bundle + 壳端启停（[plugins.md](plugins.md)） |
+| 事件驱动 UI | session/event + agent/* → SSE → Vue |
 
 ## 前端通信
 

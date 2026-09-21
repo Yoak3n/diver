@@ -49,25 +49,33 @@ diver/
 
 ## 独立调试 sidecar
 
-diver 直连模式（默认）直接以路径引用 `cos-plugins/` 源码，零安装：
+dev 与壳使用**同一 loader 契约**（profile + pluginRoot + bundle + harness）：
 
 ```powershell
 cd harness
 pnpm install
-# 启动自研 cos 的常驻 HTTP sidecar（Rust 壳即以此方式拉起）：
-$env:COS_HOME = "$PWD\.cos-home"; $env:DIVER_PORT = "53620"
-node --import tsx --expose-internals packages/sidecar/src/companion.ts
+$env:COS_HOME = "$PWD\.cos-home"
+$env:DIVER_PORT = "53620"
+node --import tsx --expose-internals packages/sidecar/src/companion.ts `
+  --profile companion `
+  --plugin-root ..\cos-plugins `
+  --bundles ..\cos-plugins\bundle-companion `
+  --harness .
 # 然后访问 http://127.0.0.1:53620/api/health
 ```
 
-也可以：`pnpm start:companion`（等价于上面 node 命令，不设端口则用默认 53620）。
+也可以：`pnpm start:companion`（脚本若未传参，以 `companion-boot.ts` 默认布局为准）。
+
+### 插件启停（设置页 / profile）
+
+- UI：设置 → **插件** → 开关（写 `$COS_HOME/profiles/companion/cordis.patch.yml` 并重启 sidecar）
+- 手动：在 profile patch 中写 `- id: <行id>` + `disabled: true`，重启 sidecar 生效
+- 契约、catalog、坑位见 [plugins.md](plugins.md)
 
 ### 修改第三方插件（cos-plugins）
 
-`@diver/*` 源码在仓库根 `cos-plugins/`，companion 以
-`pluginPaths` 直连加载（bundle 路径 = `../cos-plugins/bundle-companion`）。
-改 `cos-plugins/` 下的文件后**重启 sidecar 即生效**，无需任何安装步骤。
-（通用 profile 形态仍可用：`pnpm plugin --profile <name> -- add <pkg>`。）
+`@diver/*` 源码在 `cos-plugins/`，经 `pluginRoot` 解析。改文件后**重启 sidecar 即生效**。
+新增插件需同时改 bundle `cordis.patch.yml` insert 与 `plugins.json` catalog（见 plugins.md §7）。
 
 ### 本地服务（Rust 记忆后端 + grep 搜索）
 
@@ -82,7 +90,15 @@ node --import tsx --expose-internals packages/sidecar/src/companion.ts
 
 Rust 侧单测：`cargo test -p diver-search`（引擎）与 `cargo test -p diver services::grep`（RPC 层）。
 
-## 冒烟测试
+## 类型检查
+
+```bash
+pnpm typecheck              # harness + 全部 cos-plugins（根目录）
+cd cos-plugins/memory && npx tsc --noEmit   # 单插件独立检查
+```
+
+插件类型面见 `@cos/plugin-api`（`harness/packages/plugin-api`）；契约与 P1 说明见
+[plugins.md](plugins.md)。
 
 ```bash
 node scripts/smoke.mjs        # 基础对话 + 流式
@@ -106,7 +122,7 @@ node scripts/opencode-test.mjs # opencode-go provider 直测
 | 现象 | 处理 |
 |---|---|
 | 启动报 "harness 未安装" | 根目录执行 `pnpm install`（sidecar 入口 `node_modules/@deepseek-ai/dsh/lib/bin.js`） |
-| 端口被占 | `DIVER_PORT` 覆盖默认 53620；Vite 1420 为 strictPort。53620 若被上一会话残留的 sidecar 占用，`tauri dev` 启动前会自动回收（命令行匹配 `companion.ts`/`cos-sidecar.exe`）；被其他进程占用则中止并提示释放 |
+| 端口被占 | `DIVER_PORT` 覆盖默认 53620；Vite 1420 为 strictPort。53620 若被上一会话残留的 sidecar 占用，`tauri dev` 启动前会自动回收（命令行匹配 `companion.ts` / `companion-bundle.ts`）；被其他进程占用则中止并提示释放 |
 | 退出后有残留 sidecar 进程 | 正常退出走三级清理（`/api/shutdown` 优雅退出 → `kill()` → Job Object 兜底），不应残留；若强杀应用后仍有残留，下次启动会自动回收。手动清理：`Stop-Process -Name node -Force`（先确认没有别的 node 任务） |
 | 改了 bundle 不生效 | 确认重启了 sidecar（不是只刷新窗口）；bundle 是符号链接，直接生效 |
 | 桌宠不显示 | 检查启动配置 `auto_open_pet`（设置面板可改）；`pnpm tauri dev` 下默认全开 |

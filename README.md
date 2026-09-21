@@ -9,7 +9,8 @@
 |---|---|
 | [docs/index.md](docs/index.md) | 文档中心（分类导航） |
 | [docs/architecture.md](docs/architecture.md) | 三层架构、进程拓扑、启动时序、窗口管理、本地服务 |
-| [docs/sidecar.md](docs/sidecar.md) | Node sidecar 与 dsh 框架接入、bundle patch 机制、会话持久化与压缩 |
+| [docs/plugins.md](docs/plugins.md) | **插件体系与生命周期**（loader 契约、profile 启停、壳端管理、深水区分期） |
+| [docs/sidecar.md](docs/sidecar.md) | Node sidecar 与 cos harness 接入、会话持久化与压缩 |
 | [docs/live2d-pet.md](docs/live2d-pet.md) | Live2D 桌宠渲染/交互/口型同步/窗口技术 |
 | [docs/providers.md](docs/providers.md) | 模型提供商插件体系、端点路由 |
 | [docs/memory.md](docs/memory.md) | 关系层记忆（Node 提取插件 + Rust SQLite 后端 + JSON-RPC） |
@@ -60,21 +61,21 @@
 
 ```
 diver/
-├─ src/                    # Vue 3 陪伴 UI（聊天、设置、TTS）
+├─ src/                    # Vue 3 陪伴 UI（聊天、设置含插件页、TTS）
 │  └─ pet/                 # Live2D 桌宠（PetApp/live2d/pet.html）
-├─ src-tauri/              # Rust 壳（sidecar 管理、托盘、TTS、本地服务）
-│  ├─ src/base/            # sidecar / tts / tray / window / lightweight / timer 等
+├─ src-tauri/              # Rust 壳（sidecar 管理、插件启停、托盘、TTS、本地服务）
+│  ├─ src/plugins/         # 壳端插件管理（profile 启停）
+│  ├─ src/base/            # sidecar / tts / tray / window / lightweight 等
 │  ├─ src/services/        # 本地服务：axum /rpc（SQLite 记忆后端）
 │  └─ resources/speak.ps1  # TTS 脚本
 ├─ crates/diver-memory/    # Rust 记忆后端 crate（SQLite 存储 + 确定性逻辑）
 ├─ crates/diver-search/    # Rust grep 搜索后端 crate（ripgrep 引擎库）
 ├─ harness/                # Node sidecar workspace（pnpm，自研 cos）
-│  ├─ packages/profile/    # DSH 对齐的 profile 模型（通用；diver 用直连模式）
-│  ├─ cos-plugins/         # 第三方 @diver/*（本仓库实际在仓库根 ../cos-plugins）
-│  │                       # diver 直连：bundle 路径 = ../cos-plugins/bundle-companion
-│  └─ .cos-home/           # 仓库本地 cos home（凭据、会话、设置、记忆；gitignore）
-├─ docs/                   # 项目文档（本仓库的文档中心）
-└─ scripts/                # 冒烟测试脚本（smoke/smoke2/presence/readlog/memory-test/opencode-test）
+│  ├─ packages/            # @cos/* 引擎（boot/sidecar/profile/…）
+│  └─ .cos-home/           # 仓库本地 cos home（含 profiles/companion；gitignore）
+├─ cos-plugins/            # @diver/* 插件源码 + bundle-companion
+├─ docs/                   # 文档中心（插件契约见 docs/plugins.md）
+└─ scripts/                # 冒烟测试脚本
 ```
 
 ## 运行
@@ -104,9 +105,9 @@ node --import tsx --expose-internals packages/sidecar/src/companion.ts
 
 ### 修改第三方插件（cos-plugins）
 
-`@diver/*` 源码在仓库根 `cos-plugins/`，companion 以 `pluginPaths` 直连加载
-（bundle 路径 = `../cos-plugins/bundle-companion`）。改 `cos-plugins/` 下的
-文件后**重启 sidecar 即生效**，无需安装。
+`@diver/*` 源码在仓库根 `cos-plugins/`，经 `pluginRoot` + companion bundle 组装。
+改文件后**重启 sidecar 即生效**。启停用设置面板「插件」页（写 profile 补丁）。
+契约见 [docs/plugins.md](docs/plugins.md)。
 
 ### 冒烟测试
 

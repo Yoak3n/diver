@@ -1,100 +1,73 @@
-# Node sidecar 与 dsh 框架接入
+# Node sidecar 与 cos harness 接入
 
-agent 大脑是一个**常驻 Node 进程**。运行时核心已迁移为仓库内自研的 cos harness
-（`harness/`，`@cos/*` 工作区插件，DSH profile 模型：`<home>/profiles/<name>` 自带
-package.json + node_modules + cordis.patch.yml），陪伴场景的第三方插件
-（`@diver/backend` / `@diver/memory`，源码在 `cos-plugins/`）以 **diver 直连
-模式**加载：bundle 路径 = `../cos-plugins/bundle-companion`，插件按
-`pluginPaths` 从 cos-plugins 源码解析，由 `@diver/bundle-companion` 组装。
-Rust `base/sidecar.rs` 以 `node --import tsx .../companion.ts` 拉起（详见
-`docs/development.md`）。本页说明接入方式。
+agent 大脑是一个**常驻 Node 进程**，运行仓库内自研 **cos harness**（`harness/`，`@cos/*`）。
+陪伴插件 `@diver/*` 源码在 `cos-plugins/`（dev）或安装包 `plugins/`（release），
+以**统一 loader 契约**挂载；启停状态由壳写在 profile 补丁层。
+
+> **插件组合、启停、壳端管理、深水区分期的权威文档见 [plugins.md](plugins.md)。**
+> 本页只保留 sidecar 进程生命周期与 harness 能力接入摘要。
 
 ## 角色与生命周期
 
-- sidecar 由 Rust `base/sidecar.rs` 启动：`node --import tsx packages/sidecar/src/companion.ts`（diver 直连 cos-plugins）
-  - `COS_HOME` → `harness/.cos-home`（仓库本地，gitignore）
-  - `DIVER_PORT` → sidecar HTTP 端口（默认 53620）
-  - `DIVER_MEMORY_PORT` → Rust 本地服务端口（统一本地 RPC：记忆 + grep 搜索）
-  - `DIVER_SHUTDOWN_TOKEN` → 优雅退出令牌（`/api/shutdown` 校验用）
-  - stdout 检测 `DIVER_READY` 标志行 → 状态置 Running，UI 开始连接
-- 主窗口隐藏/销毁不影响它；应用退出时由 Rust 主动 stop（记忆保留在磁盘）
+- sidecar 由 Rust `base/sidecar.rs` 启动，**dev / release 同一契约**：
 
-## 退出清理（防孤儿进程）
+  | 参数 | dev | release |
+  |---|---|---|
+  | 入口 | `companion.ts` | `companion-bundle.ts` |
+  | Node | 系统 `node` + `tsx` | 随包 `resources/sidecar/node.exe` + tsx loader |
+  | `--profile` | `companion` | `companion` |
+  | `--plugin-root` | `<repo>/cos-plugins` | `resources/sidecar/plugins` |
+  | `--bundles` | `cos-plugins/bundle-companion` | `resources/sidecar/bundles/bundle-companion` |
+  | `--harness` | `<repo>/harness` | `resources/sidecar/harness` |
+  | `COS_HOME` | `harness/.cos-home` | `%APPDATA%/com.diver.companion/cos` |
 
-退出时 Rust `SidecarManager::stop()` 按三级兜底清理 sidecar 进程树：
+- 环境变量：`DIVER_PORT`（默认 53620）、`DIVER_MEMORY_PORT`、`DIVER_SHUTDOWN_TOKEN`、
+  `DIVER_UI_DIST`、`DIVER_MCP_CONFIG_FILE`
+- stdout 检测 `DIVER_READY` → 状态 Running；主窗口隐藏不影响 sidecar
+- 退出：`POST /api/shutdown` → `Child::kill` → Windows Job Object 三级兜底
 
-1. **优雅退出**：向 `POST /api/shutdown`（携带 `DIVER_SHUTDOWN_TOKEN`）发请求，
-   Node 侧复用 `settle()`（与 Ctrl+C 同一路径）——关闭 HTTP/SSE、`fiber.dispose()`
-   完整释放 agent 树后 `process.exit(0)`。Rust 侧轮询子进程退出，超时 2.5s。
-2. **强制终止**：优雅退出超时/失败则 `Child::kill()`（Windows `TerminateProcess`）。
-3. **Job Object 兜底**（Windows）：sidecar 启动时即被放入
-   `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` 的 Job 中，应用退出（含被任务管理器强杀、
-   崩溃）时 Job 句柄关闭 → 系统终止 Job 内**全部**进程（含 agent 经 sh 工具拉起的
-   powershell 等孙进程），杜绝孤儿进程常驻内存。
+## 模块解析（摘要）
 
-启动预检（`reclaim_stale_sidecar`）仍保留：上一会话若因强杀留下残留 sidecar，
-按端口命令行匹配自研入口回收后再启动。
+```text
+@cos/*     pluginPaths → harness/packages/<pkg>/src/index.ts
+@diver/*   pluginRoot  → <pluginsRoot>/<name>
+bundle     --bundles   → cordis.patch.yml insert（mount 真相）
+启停        --profile   → $COS_HOME/profiles/companion/cordis.patch.yml
+```
+
+共享实现：`harness/packages/sidecar/src/companion-boot.ts`。  
+**SEA 已退出 release 路径**（随包 Node + 开放插件目录）。
 
 ## dsh 只取框架、不搬交互层
 
-| dsh 能力 | Diver 用法 |
+| dsh / cos 能力 | Diver 用法 |
 |---|---|
-| agent loop（turn/step、流式 chunk、工具闭环、max-tokens 粘性） | 原样使用 |
-| SessionEvent 日志 + JSONL 持久化 | 原样使用（`session-persistence-jsonl`，明文） |
-| tools 服务（web_search 等） | 原样使用，工具 schema 进请求 |
-| persona（system-prompt） | companion patch 覆盖 |
-| 交互层 / Web UI | **不用**，自研 `web.ts`（node:http 静态 UI + JSON/SSE API） |
-| bundle / patch 机制 | profile = dsh-base + companion bundle + 用户 cordis.patch.yml |
+| agent loop（turn/step、流式、工具闭环） | 使用 `@cos/agent-loop` |
+| SessionEvent 日志 + JSONL | `@cos/persistence`（通用事件流） |
+| tools / systemPrompt / credentials / llm | `@cos/*` 核心行 |
+| persona / 传输层 | `@diver/*` 插件（voice / backend） |
+| Web UI 交互层 | **不用**，自研 Vue + `@diver/backend` HTTP/SSE |
+| profile / bundle / patch | companion profile + `@diver/bundle-companion` |
 
-## Profile 组装
+## Profile 组成
 
-`harness/.cos-home/profiles/companion/` 是运行时组装出的 profile：
-cos 核心（`cordis.yml` 基础行）与 `cos-plugins/bundle-companion`（路径直连）两层
-+ profile/用户 `cordis.patch.yml`。
-顺序：base 行 → companion bundle 覆盖/插入行 → 用户 patch。
+```text
+$COS_HOME/profiles/companion/
+  package.json          # dsh.profile.bundles（diver 默认空，bundle 经 CLI 显式传入）
+  cordis.patch.yml      # 壳管理的 disabled 覆盖（plugins.md §3）
+```
 
-## cordis.patch.yml 要点
-
-| 节 | 配置 | 说明 |
-|---|---|---|
-| `system-prompt` | `includeHarnessIdentity: false` + 精简 persona | 覆盖 base 身份行；persona 只保留运行环境事实，不预设身份；身份形成期引导由 `@diver/memory` 动态注入（卡片为空时提示用 identity 工具，成型后消失） |
-| `approval` | `policy: never` | 陪伴场景免审批（工具面已裁剪） |
-| `permission` | `presets: workspace-write` / `defaultPreset: workspace-write` | 与 approval 保持一致 |
-| `tool-bash` | `disabled: true` | Windows 下 bash 无 PTY 持久化 |
-| `tool-pwsh` | 仅 Windows 启用 | dsh-pwsh-sandbox 执行器，每次调用新进程 |
-| `fs-sandbox` | `disabled: true` | 换成无沙箱的 `fs-local`（用户确认的决策，安全边界放宽） |
-| `sandbox-policy` | `mode: workspace-write` | shell 仍受工作区沙箱约束 |
-| 开发向工具 | subagent/workflow/ralph/todo/goal/jobs/skill/plan-mode/编辑器 全禁用 | 陪伴场景裁剪，省 token |
-| `compaction-basic` | `thresholdRatio: 0.38` / `retainTokens: 32768` / `maxTokens: 4096` | 窗口 1M token，达到 40 万压缩为摘要 |
-
-服务行（`insert`）：
-
-| id | 模块 | 说明 |
-|---|---|---|
-| `fs-local` | `@deepseek-ai/dsh-fs-local` | 本地文件系统（无沙箱） |
-| `tool-ask-user` | `@deepseek-ai/dsh-tool-ask-user` | 对话中向用户提问/选择 |
-| `diver-companion-web` | `@diver/companion/web` | 自有传输层：静态 UI + JSON/SSE API（`DIVER_UI_DIST` 指向构建产物） |
-| `diver-companion-presence` | `@diver/companion/presence` | 主动问候：启动问候 + 9:00 / 13:30 / 21:00 定时 |
-| `diver-companion-memory` | `@diver/companion/memory` | 关系层记忆（见 [记忆](memory.md)），digest 节流 10 分钟 |
-| `diver-companion-voice` | `@diver/voice` | 对话风格提示词节（`diver:voice`）：引导输出口语化/短句/情绪色彩明确，与桌宠情绪动作闭环 |
-| `diver-llm-opencode` | `@diver/companion/llm-opencode` | opencode.ai Zen Go 网关 provider |
-
-## companion bundle 插件
-
-`harness/companion/lib/`（TypeScript 直接运行，零构建）：
-
-| 文件 | 职责 |
-|---|---|
-| `web.ts` | HTTP 传输层：静态 UI、`/api/health` `/api/chat`（SSE 流式）、`/api/settings`、`/api/question-answer`；模型/provider 切换、SSE 广播、provider 声明聚合 |
-| `presence.ts` | 定时主动问候（boot greeting + schedule），有会话才触发 |
-| `session.ts` | cosHome/workspace 定位、`diver-settings.json` 读写、`ensureCompanionAgent` |
-| `settings-registry.ts` | provider 配置插件注册表（驱动设置面板动态渲染） |
-| `memory/` | 关系层记忆：`index.ts`（插件主体）、`extract.ts`（LLM 提取/digest）、`store-rpc.ts`（Rust 后端客户端 + 同步视图缓存） |
-| `llm-opencode/` | opencode-go provider 适配器（chat/responses/anthropic 三端点） |
+组合顺序：`base cordis.yml → bundle insert（boot 过滤 disabled）→ profile patch → …`
 
 ## 会话持久化与压缩
 
-- 会话：单会话 `diver-companion` JSONL（`$COS_HOME/sessions/`，通用事件流格式：`id`/`parentId` 链 + `message` 块，明文），跨重启陪伴记忆
-- 压缩：`compaction-basic` 达到阈值把早期消息压缩为摘要、保留最近 32k token 完整
-  （约最近三四十轮），请求规模稳定在 ~40k~400k 有界区间；产生的
-  `compaction/summary` 事件由 memory 插件监听并内化为长期记忆
+- 会话：单会话 `diver-companion` JSONL（`$COS_HOME/sessions/`，明文事件流）
+- 压缩：`compaction-basic` 阈值摘要；`compaction/summary` 事件由 `@diver/memory` 内化
+
+## 相关文档
+
+- [plugins.md](plugins.md) — 插件契约与生命周期
+- [architecture.md](architecture.md) — 三层架构与启动时序
+- [development.md](development.md) — 独立调试 sidecar
+- [distribution.md](distribution.md) — 随包 Node 布局
+- harness 侧：[../harness/docs/plugins.md](../harness/docs/plugins.md)

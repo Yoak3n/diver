@@ -3,27 +3,46 @@
 This document is about how third-party plugins join the harness and how layers
 compose — the two halves of delivering `cos` as a sidecar to an outer program.
 
-## Diver direct-path mode (this repo's default)
+> **Diver product contract:** the companion app's loader contract, profile
+> enable/disable, shell plugin manager, and phased roadmap live in the repo
+> doc [`docs/plugins.md`](../../docs/plugins.md). Prefer that document when
+> changing diver behavior. This file stays focused on generic cos/DSH
+> profile semantics.
 
-In the diver project the third-party plugins ARE this repo's own
-`cos-plugins/` sources, so they are resolved **by path** — no profile install,
-no harness dependency changes. The companion entry
-(`packages/sidecar/src/companion.ts`) locates the repo root from its own module
-position and boots:
+## Diver unified loader contract (current default)
 
-- bundle: `cos-plugins/bundle-companion` (a bundle **path**, read for its
-  `cordis.patch.yml` / `bundle.yml` / `dsh.bundle.patch`);
-- plugin rows: `@diver/memory` / `@diver/backend` / `@diver/basic-tools` resolve by `pluginPaths`
-  (explicit map) or `pluginRoot` (a directory where a row's unscoped package
-  resolves, e.g. `--plugin-root ../cos-plugins`).
+In the diver project both `companion.ts` (dev) and `companion-bundle.ts`
+(release) share `companion-boot.ts`:
 
-So `pnpm start:companion` (or the Tauri shell spawning
-`packages/sidecar/src/companion.ts`) works with zero setup: editing
-`cos-plugins/` takes effect on restart. `--bundles <spec>` / `--profile
-<name>` / `--plugin-root <dir>` override or complement the defaults — this is
-also how the SEA binary is driven at runtime (`dist/cos-sidecar.exe --bundles
-../cos-plugins/bundle-companion --plugin-root ../cos-plugins`; and baked at
-build via `scripts/build-sea.mjs --bundle ... --plugin-root ...`).
+- **pluginPaths**: `@cos/*` core → `<harness>/packages/<pkg>/src/index.ts`
+- **pluginRoot**: open plugin dir (`@diver/<name>` → `<pluginsRoot>/<name>`)
+- **bundles**: companion bundle directory (`cordis.patch.yml` inserts)
+- **profile**: `companion` under `$COS_HOME/profiles/companion/` — the shell
+  writes `disabled: true` overrides here for enable/disable
+
+`@cos/boot` filters bundle `insert` rows against those disable ids before
+handing patches to `@cordisjs/plugin-include` (same-batch inserts are not
+indexed by the include entry map, so a later `disabled` patch would miss them).
+
+```sh
+# dev (repo)
+node --import tsx --expose-internals packages/sidecar/src/companion.ts \
+  --profile companion \
+  --plugin-root ../cos-plugins \
+  --bundles ../cos-plugins/bundle-companion \
+  --harness .
+
+# release (install dir)
+node.exe --import file:///.../tsx/dist/loader.mjs \
+  --expose-internals harness/packages/sidecar/src/companion-bundle.ts \
+  --profile companion \
+  --plugin-root plugins \
+  --bundles bundles/bundle-companion \
+  --harness harness
+```
+
+Shell module: `src-tauri/src/plugins/mod.rs`. Catalog metadata:
+`cos-plugins/bundle-companion/plugins.json`.
 
 ## Profile model (generic DSH-aligned form, optional)
 
@@ -202,24 +221,15 @@ among themselves so they never fight over the same memory store).
 
 ## Sidecar consumption
 
-The harness ships as an independent process: `@cos/sidecar/server` boots the
-same composed tree and serves newline-delimited JSON-RPC over stdin/stdout
-(`--profile <name>` selects a profile tree; `--cos-home` overrides the home).
-An outer program spawns it and drives agents without importing this codebase:
+**Stdin/stdout JSON-RPC (`@cos/sidecar/client` / `server` / `sidecar.ts`) has been
+removed.** Outer programs consume cos through the resident **HTTP/SSE** entry:
 
-```ts
-import { SidecarClient } from '@cos/sidecar/client'
+- `packages/sidecar/src/companion.ts` (dev) or `companion-bundle.ts` (packaged)
+- `@diver/backend` serves HTTP/SSE on `DIVER_PORT` and prints `DIVER_READY`
+- The Tauri shell spawns exactly this entry (see `src-tauri/src/base/sidecar.rs`)
 
-const client = new SidecarClient({ cwd: process.cwd(), configPath: 'cordis.yml', args: ['--profile', 'companion'] })
-await client.ready                                   // handshake
-await client.request('agent.create', { sessionId: 'ext-1', agentOptions: { provider: 'deepseek-official' } })
-...
-client.dispose()
-```
-
-Methods: `ping` / `system.listProviders` / `agent.create` / `agent.followup` /
-`agent.whenIdle` / `agent.status` / `session.events`. Logs go to stderr; stdout
-carries protocol lines only.
+Product channels: **backend HTTP/SSE + thin Tauri invoke** — see `docs/channels.md`
+at the repo root.
 
 There is also a resident **HTTP** sidecar for in-process outer programs:
 `packages/sidecar/src/companion.ts` boots the diver direct-path composition
@@ -228,23 +238,8 @@ generic profile form — and stays resident while `@diver/backend` serves
 HTTP/SSE on `DIVER_PORT` (prints `DIVER_READY` on stdout). The Tauri shell
 spawns exactly this entry (see `src-tauri/src/base/sidecar.rs`).
 
-The sidecar can also be compiled into a single-file Node SEA. See
-`scripts/build-sea.mjs`: 1) esbuild bundles `@cos/sidecar/sea` — which supplies
-`packages/sidecar/src/plugins.ts` as the loader's in-process plugin registry
-and disables source watching — plus, with `--profile <name>`, the profile's
-third-party plugins baked into the same module graph; 2) `node
---experimental-sea-config` produces the blob; 3) postject injects it into the
-binary.
-
-> **SEA + third-party plugins**: the SEA runtime (embedded CJS) cannot
-> type-strip TypeScript under `node_modules`
-> (`ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING`), so profile plugins cannot be
-> `import()`'d at runtime. `pnpm build:sea --bundle ../cos-plugins/bundle-companion
-> --plugin-root ../cos-plugins` (diver) — or `--profile <name>` (generic) —
-> compiles the plugin packages with esbuild and
-> registers them in the in-process registry — the profile's bundle **layers**
-> are still read from disk at runtime, so mounting follows the profile; adding
-> a new plugin package requires a rebuild.
+Production Diver release uses **bundled Node + `companion-bundle.ts`**, not
+Node SEA (see repo `docs/distribution.md` and root `docs/plugins.md`).
 
 ## Bundles (profile composition)
 

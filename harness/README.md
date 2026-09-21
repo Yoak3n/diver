@@ -16,7 +16,8 @@ packages/              # 所有 @cos/* 工作区插件包
   mock-llm/            #   本地 mock 模型（可选，测试用）
   credentials/         #   凭据无缝（读取 secrets.yml）
   session/ persistence/ agent-loop/ tools/ ...
-main.ts                # 启动器 + 命令行驱动
+  sidecar/             #   companion HTTP/SSE 入口（桌面集成）
+main.ts                # 一次性 CLI（--prompt）
 secrets.example.yml    # 密钥文件模板（gitignored）
 ```
 
@@ -44,57 +45,21 @@ cp secrets.example.yml secrets.yml
 
 `secrets.yml` 已被 gitignore，不会提交。
 
-### 2. 运行
+### 2. 一次性对话（CLI）
 
 ```sh
 pnpm start --prompt "你好"
 # 等价：pnpm dev -- --prompt "你好"
 ```
 
-不带 `--prompt` 时，进程**常驻**并作为 **JSON-RPC 服务**在 `stdin/stdout` 上服务（与 `@cos/sidecar` 共用同一套新行分隔 JSON-RPC 协议，实现只有一份），供上一层应用驱动 agent，直到 `stdin` 关闭（EOF）才退出：
+不带 `--prompt` 会打印用法并退出。  
+**stdin/stdout JSON-RPC 已移除**；桌面/上层 UI 请用下面的 companion HTTP/SSE。
 
-```sh
-pnpm start    # 启动 JSON-RPC sidecar，等上一层应用通过 stdin/stdout 通信
-```
-
-### 3. 通过 JSON-RPC 与上一层应用通信
-
-这是与上层应用集成的标准通道。协议基于 **新行分隔的 JSON-RPC 2.0**：每一行一个请求/响应，一行一个 `sidecar-ready` 通知（启动后先发）。上层应用可以直接用 `@cos/sidecar/client`（负责 spawn 进程并收发消息），也可以自己按协议用任意语言实现客户端：
-
-- 启动后服务端先输出一行 `sidecar-ready`（含 providers）。
-- 请求方法（每行 `{"jsonrpc":"2.0","id":N,"method":"…","params":{…}}`）：
-  - `ping` → `{ ok, providers }`
-  - `system.listProviders` / `system.model`
-  - `agent.create`（可指定 `sessionId` / `agentOptions` / `meta` / `resume`）
-  - `agent.followup`（向 agent 发一条用户消息）
-  - `agent.whenIdle` / `agent.status`
-  - `session.events`（读取会话事件流，含间隔 `since`）
-- 示例（TypeScript，用内置客户端）：
-
-```ts
-import { SidecarClient } from '@cos/sidecar/client'
-
-const sidecar = new SidecarClient({ cwd: 'E:/Project/VueProject/cos' })
-await sidecar.ready
-const { agent } = await sidecar.request('agent.create', {
-  agentOptions: { provider: 'mock', model: 'mock-1' },
-})
-sidecar.request('agent.followup', { sessionId: agent, text: '你好', source: 'cli' })
-await sidecar.request('agent.whenIdle', { sessionId: agent })
-const { events } = await sidecar.request('session.events', { sessionId: agent })
-console.log(events.at(-1))
-sidecar.dispose()
-```
-
-> 同一套 JSON-RPC 服务也会被 `pnpm run build:sea` 打包进单文件可执行（见下文），两种入口协议完全一致。
-
-## 模型选择：真实 DeepSeek（默认）vs mock
+### 3. 模型选择：真实 DeepSeek（默认）vs mock
 
 默认 `cordis.yml` 挂载的是 **真实 DeepSeek 适配器**（provider `deepseek-official`，模型 `deepseek-v4-flash`）。只要配置好 `secrets.yml` 里的 API key 即可直接用——默认就是真实模型，无需任何额外参数。
 
 想用本地 **mock 模型**（本地回显、无需密钥、可离线调试）来测试，用 `overlays/mock.yml` 覆盖层切换即可：
-
-通过环境变量（项目级默认）：
 
 ```sh
 # PowerShell
@@ -121,47 +86,29 @@ pnpm start --config path/to/cordis.yml                          # 指定基础�
 pnpm start --bundles <bundle>...                                # 命名 bundle 层（flat 模式）
 pnpm start --patch path/to/cordis.patch.yml                     # 指定用户补丁层
 pnpm start --profile <name> --cos-home <home>                   # DSH 对齐的 profile 模式（通用）
-pnpm start:companion                                            # diver 直连模式：cos-plugins/bundle-companion 路径直连
-pnpm plugin --profile <name> -- add <package>                   # pnpm 转发：通用 profile 插件管理（bundle 自动进 layers）
+pnpm start:companion                                            # companion HTTP/SSE（cos-plugins 路径）
+pnpm plugin --profile <name> -- add <package>                   # pnpm 转发：通用 profile 插件管理
 ```
 
-**diver 直连模式（本仓库默认）**：`start:companion` 直接把 bundle 指向
-`../cos-plugins/bundle-companion`，`@diver/memory` / `@diver/backend` 经
-`pluginPaths` / `--plugin-root ../cos-plugins` 从源码加载——零安装、改
-`cos-plugins/` 重启即生效。**profile 模式（通用 DSH 形态）**：第三方插件装在
-`<home>/profiles/<name>/`（自带 package.json + node_modules + cordis.patch.yml，
-与 DSH 完全同构），harness 自身的 package.json 依赖只读；层级顺序为
+**companion / diver 模式**：`start:companion` 把 bundle 指向
+`../cos-plugins/bundle-companion`，`@diver/*` 经 `--plugin-root ../cos-plugins`
+从源码加载——零安装、改 `cos-plugins/` 重启即生效。**profile 模式（通用 DSH 形态）**：
+第三方插件装在 `<home>/profiles/<name>/`，层级顺序为
 `cordis.yml → overlays → profile bundles → --bundles → profile patch → home/--patch`。
-详见 `docs/plugins.md`。
+详见 `docs/plugins.md` 与仓库根 `docs/channels.md`。
 
-## 编译成单文件可执行（Node SEA）
+## companion（HTTP/SSE）— 唯一常驻集成面
 
-可以把整个 sidecar（含全部 `@cos/*` 插件）打包成一个**真正单文件、无需 node_modules** 的可执行程序，适合作为对外交付的 sidecar：
-
-```sh
-pnpm run build:sea                                   # 产出 dist/cos-sidecar.exe（仅框架核心）
-pnpm run build:sea --bundle ../cos-plugins/bundle-companion --plugin-root ../cos-plugins   # 把 diver 的第三方插件烤进二进制
-dist/cos-sidecar.exe --bundles ../cos-plugins/bundle-companion --plugin-root ../cos-plugins # 直接运行：diver 路径 boot 后走 JSON-RPC（stdin/stdout）
-```
-
-- 框架核心插件通过 `packages/sidecar/src/plugins.ts` 的注册表静态打包进二进制；`--profile` 构建时，
-  该 profile 的第三方插件（如 `@diver/backend`、`@diver/memory`）也被 esbuild 编译进**同一个模块图**
-  并注册（SEA 运行时无法对 node_modules 下的 TS 做 type-strip，故构建期烘焙；profile 的 bundle 分层仍在运行时读盘）。
-- 二进制运行时从**当前工作目录**读取 `cordis.yml` / `secrets.yml`（真实 DeepSeek 仍需配套密钥文件）。
-- 构建产物在 `dist/`（已 gitignore）。构建管线见 `scripts/build-sea.mjs`（生成入口 → esbuild → blob → postject）。
-
-### companion（HTTP/SSE）直接运行形态
-
-Diver 桌面端用的常驻 HTTP/SSE companion 入口是
-`packages/sidecar/src/companion-bundle.ts`（随包 Node 形态，直接运行，非 SEA）：
-引擎核心（`@cos/*`）从 `--harness` 目录的磁盘源码加载（`pluginPaths` 显式映射），
-第三方插件（`@diver/*`）从 `--plugin-root` 目录加载（开放，可改/删/加）：
+Diver 桌面端与上层 UI 使用常驻 HTTP/SSE 入口
+`packages/sidecar/src/companion.ts`（dev）或 `companion-bundle.ts`（随包 Node）。
+**不使用** stdin/stdout JSON-RPC（已移除）。
 
 ```sh
-node --import tsx --expose-internals packages/sidecar/src/companion-bundle.ts \
-     --bundles <sidecar>/bundles/bundle-companion \
-     --plugin-root <sidecar>/plugins \
-     --harness <sidecar>/harness
+node --import tsx --expose-internals packages/sidecar/src/companion.ts \
+     --profile companion \
+     --plugin-root ../cos-plugins \
+     --bundles ../cos-plugins/bundle-companion \
+     --harness .
 # 启动 HTTP/SSE，打印 DIVER_READY
 ```
 
@@ -169,24 +116,20 @@ node --import tsx --expose-internals packages/sidecar/src/companion-bundle.ts \
   （`constructor(private x: string)`），`@cos/*` 引擎大量使用；tsx 完整编译。
 - **为什么核心包用 pluginPaths 映射**：随包布局下 pnpm 的 node_modules 链接链
   会断裂，显式映射到 `harness/packages/<pkg>/src/index.ts` 最稳。
-- 运行时由外层程序（Tauri 壳）注入 `COS_HOME`（用户数据目录）与 `DIVER_PORT`。
+- 运行时由外层程序（Tauri 壳）注入 `COS_HOME` 与 `DIVER_PORT`。
 - Diver 的打包编排见仓库根 `scripts/bundle-release.mjs` 与 `docs/distribution.md`。
-
-（旧的 `companion-sea.ts` 是 SEA 单文件形态的入口，保留供 `build-sea.mjs
---companion` 使用。）
 
 ## 常用命令
 
 ```sh
-pnpm run typecheck   # 类型检查（TS7 原生编译器）
-pnpm run build:sea   # 打包 sidecar 为单文件可执行
+pnpm run typecheck   # 类型检查
+pnpm start:companion # companion HTTP/SSE
 pnpm run scaffold    # 生成新插件骨架
 ```
 
 ## 故障排查
 
 - **`deepseek.apiKey is required and unresolved`**：`secrets.yml` 缺失或未配置 `deepseek.apiKey`（或 `credentials.config.file` 指向的文件里没有该 key）。
-- **真实模型没有输出 / 只有推理内容**：请先更新 `packages/llm` 与 `packages/credentials`（较旧版本存在文本组装与凭据读取的 bug，已修复）。
 - **想关掉 system-prompt 调试打印**：应用 `overlays/quiet.yml`，或把 `cordis.yml` 中 agent-loop 行的 `debugSystemPrompt` 设为 `false`。
 
 ## 说明

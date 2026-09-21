@@ -391,6 +391,47 @@ function resolveProfilePackage(
  * Boot the Loader tree and return only after the whole tree settles.
  * @param options - composition root, overlay layers, bundles, required services.
  */
+/** Collect row ids explicitly disabled by any override patch layer. */
+function collectDisabledIds(layers: ReadonlyArray<readonly PatchOptions[]>): Set<string> {
+  const ids = new Set<string>()
+  for (const layer of layers) {
+    for (const patch of layer) {
+      if (patch === null || typeof patch !== 'object' || Array.isArray(patch)) continue
+      const entry = patch as Record<string, unknown>
+      if (entry['disabled'] && typeof entry['id'] === 'string') {
+        ids.add(entry['id'])
+      }
+    }
+  }
+  return ids
+}
+
+/**
+ * Drop insert rows whose id is disabled by a later override layer.
+ *
+ * `@cordisjs/plugin-include` builds its entry index from the base tree only;
+ * rows inserted in the same patch batch are not yet addressable, so a later
+ * `{ id, disabled: true }` would miss them. Filtering inserts here keeps the
+ * DSH “disable = profile patch” contract without requiring a loader change.
+ */
+function filterDisabledInserts(
+  patches: readonly PatchOptions[],
+  disabled: ReadonlySet<string>,
+): PatchOptions[] {
+  if (disabled.size === 0) return patches.map((patch) => patch)
+  return patches.map((patch) => {
+    if (patch === null || typeof patch !== 'object' || Array.isArray(patch)) return patch
+    const entry = patch as Record<string, unknown>
+    const insert = entry['insert']
+    if (!Array.isArray(insert)) return patch
+    const kept = insert.filter((row) => {
+      const id = (row as { id?: unknown } | null)?.id
+      return !(typeof id === 'string' && disabled.has(id))
+    })
+    return { ...entry, insert: kept } as PatchOptions
+  })
+}
+
 export async function boot(options: BootOptions): Promise<ContextType> {
   const {
     configPath,
@@ -568,9 +609,18 @@ export async function boot(options: BootOptions): Promise<ContextType> {
     ? parsePatchFile(effectiveUserPatch)
     : []
   const homePatches = existsSync(effectiveHomePatch) ? parsePatchFile(effectiveHomePatch) : []
+  // Profile/user/home layers may disable rows that bundles only insert in this
+  // same batch — filter those inserts so disable actually takes effect.
+  const disabledIds = collectDisabledIds([
+    overlayPatches,
+    profilePatches,
+    userPatches,
+    homePatches,
+    extraPatches,
+  ])
   const patches = [
-    ...overlayPatches,
-    ...bundlePatches,
+    ...filterDisabledInserts(overlayPatches, disabledIds),
+    ...filterDisabledInserts(bundlePatches, disabledIds),
     ...profilePatches,
     ...userPatches,
     ...homePatches,

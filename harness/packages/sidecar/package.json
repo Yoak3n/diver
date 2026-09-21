@@ -2,15 +2,14 @@
   "name": "@cos/sidecar",
   "private": true,
   "type": "module",
-  "main": "./src/index.ts",
+  "main": "./src/companion-boot.ts",
   "exports": {
-    ".": "./src/index.ts",
-    "./server": "./src/server.ts",
-    "./client": "./src/client.ts",
-    "./sidecar": "./src/sidecar.ts",
+    ".": "./src/companion-boot.ts",
+    "./companion-boot": "./src/companion-boot.ts",
     "./companion": "./src/companion.ts",
-    "./plugins": "./src/plugins.ts",
-    "./sea": "./src/sea.ts"
+    "./companion-bundle": "./src/companion-bundle.ts",
+    "./profile-plugins": "./src/profile-plugins.ts",
+    "./plugins": "./src/plugins.ts"
   },
   "dependencies": {
     "@cos/agent-loop": "workspace:*",

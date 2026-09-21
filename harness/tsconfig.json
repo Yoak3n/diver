@@ -11,11 +11,8 @@
     "skipLibCheck": true,
     "paths": {
       "@cos/*": ["./packages/*/src/index.ts"],
-      "cordis": ["./node_modules/cordis"],
-      "@diver/backend/*": ["../cos-plugins/backend/src/*.ts"],
-      "@diver/memory/*": ["../cos-plugins/memory/src/*.ts"],
-      "@diver/*": ["../cos-plugins/*/src/index.ts"]
+      "cordis": ["./node_modules/cordis"]
     }
   },
-  "include": ["main.ts", "scripts/**/*.ts", "packages/**/*.ts", "../cos-plugins/**/*.ts"]
+  "include": ["main.ts", "scripts/**/*.ts", "packages/**/*.ts"]
 }

@@ -18,6 +18,7 @@
 //   cordis.patch.yml: - insert: [{ id: voice, name: '@diver/voice' }]
 
 import type { Context } from 'cordis'
+import type {} from '@cos/plugin-api'
 
 export const name = 'voice'
 

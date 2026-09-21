@@ -9,7 +9,10 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "pet:fetch": "node scripts/pet-fetch.mjs",
-    "bundle:release": "node scripts/bundle-release.mjs"
+    "bundle:release": "node scripts/bundle-release.mjs",
+    "typecheck": "pnpm run typecheck:harness && pnpm run typecheck:plugins",
+    "typecheck:harness": "pnpm --dir harness typecheck",
+    "typecheck:plugins": "pnpm -r --filter \"./cos-plugins/*\" --filter \"!./cos-plugins/bundle-companion\" typecheck"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",
@@ -21,6 +24,7 @@
     "vue-router": "^5.2.0"
   },
   "devDependencies": {
+    "@types/node": "^26.2.0",
     "@tauri-apps/cli": "^2",
     "@vitejs/plugin-vue": "^5.2.1",
     "typescript": "~5.6.2",

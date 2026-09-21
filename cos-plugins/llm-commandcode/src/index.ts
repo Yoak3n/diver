@@ -21,10 +21,19 @@
 // @module @diver/llm-commandcode
 
 import type { Context } from 'cordis'
-import { LlmAdapter } from '@cos/llm'
-import type { LlmProviderInfo, ProviderConfigDecl, ResolvedModelInfo } from '@cos/llm'
-import type { GenerateOptions, MessageContent, ModelMessage, StreamChunk } from '@cos/types'
-import { LlmError } from '@cos/types'
+import {
+  LlmAdapter,
+  LlmError,
+} from '@cos/plugin-api'
+import type {
+  GenerateOptions,
+  LlmProviderInfo,
+  MessageContent,
+  ModelMessage,
+  ProviderConfigDecl,
+  ResolvedModelInfo,
+  StreamChunk,
+} from '@cos/plugin-api'
 
 /** Cordis 插件名（loader 诊断用）。 */
 export const name = 'llm-commandcode'

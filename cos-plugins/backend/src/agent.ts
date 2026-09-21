@@ -8,8 +8,8 @@
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Context } from 'cordis'
-import { SessionId, createUserMessage } from '@cos/types'
-import type { Agent, AgentHandle } from '@cos/types'
+import { SessionId, createUserMessage } from '@cos/plugin-api'
+import type { Agent, AgentHandle } from '@cos/plugin-api'
 
 import { cosHome, readDiverSettings } from './session-helpers.ts'
 import { firstModelOf } from './providers.ts'

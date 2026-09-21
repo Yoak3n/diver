@@ -5,6 +5,8 @@
 // - 本模块维护一份视图缓存，供 system prompt section 的同步 provider 使用
 //   （section text 只允许同步返回字符串）
 
+import { nativeRpc } from '@diver/native-bridge/rpc'
+
 export const DECAY = {
   episodic: { rate: 0.05, forget: 0.02 },
   trivia: { rate: 0.15, forget: 0.1 },
@@ -75,32 +77,11 @@ export interface MemoryStats {
   openPromises: number
 }
 
-interface RpcEnvelope<T> {
-  ok: boolean
-  data: T | null
-  error?: string
-}
-
 const DAY_MS = 24 * 60 * 60 * 1000
 const SNAPSHOT_LIMIT = 200
 
-function memoryUrl(): string | null {
-  const port = process.env.DIVER_MEMORY_PORT
-  if (!port) return null
-  return `http://127.0.0.1:${port}/rpc`
-}
-
 async function rpc<T>(method: string, params: Record<string, unknown> = {}): Promise<T> {
-  const url = memoryUrl()
-  if (!url) throw new Error('memory: DIVER_MEMORY_PORT 未配置')
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ method, params }),
-  })
-  const body = (await res.json()) as RpcEnvelope<T>
-  if (!body.ok) throw new Error(body.error ?? `memory rpc failed: ${method}`)
-  return body.data as T
+  return nativeRpc<T>(method, params, { label: `memory:${method}` })
 }
 
 const EMPTY_CARD: RelationCard = { profile: '', agent_model: '', relationship: '', updatedAt: 0 }

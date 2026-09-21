@@ -11,7 +11,7 @@
 // 因此新增 provider 只需注册适配器并声明 providerConfig，本插件与设置面板零改动。
 
 import type { Context } from 'cordis'
-import type { AdapterConfigField } from '@cos/llm'
+import type { AdapterConfigField } from '@cos/plugin-api'
 
 import { readDiverSettings, writeDiverSettings } from './session-helpers.ts'
 import { secretsFileOf, writeSecret } from './secrets.ts'

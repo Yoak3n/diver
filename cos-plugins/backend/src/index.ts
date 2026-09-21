@@ -30,6 +30,7 @@
 
 import { resolve } from 'node:path'
 import type { Context } from 'cordis'
+import type {} from '@cos/plugin-api'
 
 import { applyModelChange, ensureAgent } from './agent.ts'
 import { healthInfo } from './health.ts'

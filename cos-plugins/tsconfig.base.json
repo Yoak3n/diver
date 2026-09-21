@@ -1,0 +1,22 @@
+{
+  "compilerOptions": {
+    "target": "es2022",
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "allowImportingTsExtensions": true,
+    "types": ["node"],
+    "noEmit": true,
+    "verbatimModuleSyntax": true,
+    "skipLibCheck": true,
+    "baseUrl": ".",
+    "paths": {
+      "@cos/plugin-api": ["../harness/packages/plugin-api/src/index.ts"],
+      "@diver/native-bridge": ["../native-bridge/src/index.ts"],
+      "@diver/native-bridge/*": ["../native-bridge/src/*.ts"],
+      "@diver/native-bridge/rpc": ["../native-bridge/src/rpc.ts"],
+      "cordis": ["../harness/node_modules/cordis"],
+      "cordis/*": ["../harness/node_modules/cordis/*"]
+    }
+  }
+}

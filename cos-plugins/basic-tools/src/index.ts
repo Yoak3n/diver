@@ -12,6 +12,7 @@
 
 import { join } from 'node:path'
 import type { Context } from 'cordis'
+import type {} from '@cos/plugin-api'
 
 import { applyReadTool } from './read.ts'
 import { applyWriteTool } from './write.ts'

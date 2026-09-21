@@ -23,6 +23,8 @@
 
 import { join } from 'node:path'
 import type { Context } from 'cordis'
+// Load Cordis Context service-key declarations (ctx.tools / llm / subagents …).
+import type {} from '@cos/plugin-api'
 
 import { cosHome, SESSION_ID, textOf } from './session.ts'
 import { MemoryStore } from './store-rpc.ts'

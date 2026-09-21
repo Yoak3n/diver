@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Diver companion voice plugin: one system-prompt section that steers the LLM's output toward natural spoken dialogue (short lines, no customer-service tone, no markdown laundry lists) and makes the emotional register of each reply explicit enough for the pet's front-end emotion inference (src/pet/emotion.ts) to pick up.",
+  "description": "Diver companion voice plugin: spoken-dialogue system-prompt section for pet emotion inference.",
   "main": "./src/index.ts",
   "exports": {
     ".": "./src/index.ts"
@@ -12,7 +12,11 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@cos/types": "file:../../harness/packages/types",
+    "@cos/plugin-api": "file:../../harness/packages/plugin-api",
     "cordis": "4.0.0-rc.7"
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "typescript": "~5.6.2"
   }
 }

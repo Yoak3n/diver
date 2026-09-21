@@ -107,7 +107,7 @@ pnpm tsx scripts/compat-test.ts   # 自动断言，退出码 0 = 全部通过
 - 两个第三方插件以独立目录（`cos-plugins/`）部署、经 `@diver/bundle-companion` 组装挂载后，**初始化加载、核心功能、跨模块交互、异常场景** 四个维度全部通过（13/13）。
 - 插件与框架核心完全解耦：`@cos/sidecar/plugins.ts` 不再静态导入插件；插件经 `node_modules` 裸包名解析，可独立版本迭代。
 - bundle 组装：`@diver/bundle-companion` 声明 `requires`（8 个核心行）并 insert memory + backend，`--bundles` 一键应用；`cordis.patch.yml` 用户补丁层保持干净，仅用于外层程序最终覆盖。
-- 已知边界：SEA 单文件构建（`pnpm build:sea`）目前只内联框架核心插件；第三方插件在 SEA 形态下需另行打包（dev/sidecar 形态不受影响）。
+- 已知边界：SEA / `build:sea` 路径已移除；release 使用随包 Node + companion-bundle（开放 plugins/）。
 
 ### 5. 复现方式
 

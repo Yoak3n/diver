@@ -6,6 +6,7 @@
 // 仅 stdio transport，无附件/结构化输出投影）。
 
 import type { Context, Plugin } from 'cordis'
+import type {} from '@cos/plugin-api'
 import { resolveReconnectPolicy, startConnection } from './connection.ts'
 import type { ReconnectConfig } from './connection.ts'
 import { startRegistry } from './registry.ts'

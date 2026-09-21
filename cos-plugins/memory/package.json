@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Diver companion memory plugin (third-party, outside the harness workspace): relation-layer memory backed by the Rust SQLite RPC backend; memory digestion is delegated to harness-core subagents (ctx.subagents) that write memory through tools.",
+  "description": "Diver companion memory plugin: relation-layer memory backed by the Rust SQLite RPC backend; digestion delegated to harness-core subagents.",
   "main": "./src/index.ts",
   "exports": {
     ".": "./src/index.ts",
@@ -15,7 +15,12 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@cos/types": "file:../../harness/packages/types",
+    "@cos/plugin-api": "file:../../harness/packages/plugin-api",
+    "@diver/native-bridge": "file:../native-bridge",
     "cordis": "4.0.0-rc.7"
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "typescript": "~5.6.2"
   }
 }

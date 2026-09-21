@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Diver companion backend connector plugin (third-party, outside the harness workspace): the HTTP/SSE service the outer program (Tauri UI) connects to, driving the companion agent and exposing health/settings/history; provider configuration is driven by the harness adapter registry (ctx.llm) and adapter-owned declarations.",
+  "description": "Diver companion backend connector plugin: HTTP/SSE service the Tauri UI drives the companion agent through.",
   "main": "./src/index.ts",
   "exports": {
     ".": "./src/index.ts",
@@ -21,9 +21,13 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@cos/llm": "file:../../harness/packages/llm",
-    "@cos/types": "file:../../harness/packages/types",
+    "@cos/plugin-api": "file:../../harness/packages/plugin-api",
+    "@diver/native-bridge": "file:../native-bridge",
     "cordis": "4.0.0-rc.7",
     "yaml": "2.4.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "typescript": "~5.6.2"
   }
 }

@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 1,
+  "note": "Companion plugin catalog for the shell UI. Mount truth remains cordis.patch.yml insert rows; this file only carries display metadata and toggle policy.",
+  "plugins": [
+    {
+      "id": "native-bridge",
+      "packageName": "@diver/native-bridge",
+      "displayName": "原生 RPC 桥",
+      "description": "Rust /rpc 共享客户端 + native_status；新增壳能力的固定插件位",
+      "toggleable": true,
+      "defaultEnabled": true,
+      "advisory": "禁用后 memory/grep 的 RPC 客户端仍可独立解析，但 native_status 不可用"
+    },
+    {
+      "id": "memory",
+      "packageName": "@diver/memory",
+      "displayName": "关系层记忆",
+      "description": "remember/recall 等工具 + digest 消化 + 关系卡注入",
+      "toggleable": true,
+      "defaultEnabled": true
+    },
+    {
+      "id": "basic-tools",
+      "packageName": "@diver/basic-tools",
+      "displayName": "基础工具",
+      "description": "read / write / edit / sh / grep",
+      "toggleable": true,
+      "defaultEnabled": true
+    },
+    {
+      "id": "mcp",
+      "packageName": "@diver/mcp",
+      "displayName": "MCP 客户端",
+      "description": "从 mcp-servers.json 挂载外部 MCP server 工具",
+      "toggleable": true,
+      "defaultEnabled": true
+    },
+    {
+      "id": "llm-commandcode",
+      "packageName": "@diver/llm-commandcode",
+      "displayName": "Command Code 模型",
+      "description": "Command Code Provider API 适配器",
+      "toggleable": true,
+      "defaultEnabled": true
+    },
+    {
+      "id": "voice",
+      "packageName": "@diver/voice",
+      "displayName": "对话风格",
+      "description": "口语化/短句提示词节，配合桌宠情绪",
+      "toggleable": true,
+      "defaultEnabled": true
+    },
+    {
+      "id": "backend",
+      "packageName": "@diver/backend",
+      "displayName": "后端连接服务",
+      "description": "HTTP/SSE 传输层（UI 依赖，建议保持启用）",
+      "toggleable": true,
+      "defaultEnabled": true,
+      "advisory": "禁用后主界面/桌宠将无法连接 agent"
+    }
+  ]
+}

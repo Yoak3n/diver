@@ -13,7 +13,7 @@
 // 新消息而取消它。
 
 import type { Context } from 'cordis'
-import type { ToolExecutor } from '@cos/tools'
+import type { ToolExecutor } from '@cos/plugin-api'
 
 import { readDiverSettings } from './session.ts'
 import type { MemoryStore, RelationCard } from './store-rpc.ts'
@@ -34,7 +34,7 @@ async function workerRoute(ctx: Context): Promise<{ provider: string; model: str
 function updateCardTool(store: MemoryStore): { name: string; executor: ToolExecutor; options: Record<string, unknown> } {
   return {
     name: 'memory_update_card',
-    executor: async (args) => {
+    executor: async (args: unknown) => {
       const a = (args ?? {}) as { profile?: unknown; agent_model?: unknown; relationship?: unknown }
       const facts: Partial<Pick<RelationCard, 'profile' | 'agent_model' | 'relationship'>> = {}
       const slot: Array<[keyof typeof facts, unknown]> = [

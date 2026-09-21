@@ -2,6 +2,10 @@
 # 经 --bundles @diver/bundle-companion 应用（或程序化 BootOptions.bundles）。
 # 插件位于工作区外 cos-plugins/，经 pnpm add file: 安装到 node_modules，按裸包名挂载。
 - insert:
+    # 原生 RPC 桥（P5 internal）：共享 /rpc 客户端 + native_status 探测
+    - id: native-bridge
+      name: '@diver/native-bridge'
+
     # 关系层记忆：直连 Rust SQLite 后端（DIVER_MEMORY_PORT HTTP RPC）
     - id: memory
       name: '@diver/memory'

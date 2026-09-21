@@ -12,6 +12,7 @@
 // 结果渲染（formatGrepMatches）与上游一致：每文件一段 `path\nLine N: text`。
 
 import type { Context } from 'cordis'
+import { nativeRpc } from '@diver/native-bridge/rpc'
 
 /** 默认保留在结果里的最大匹配数（与上游 GREP_MAX_MATCHES 一致）。 */
 export const GREP_MAX_MATCHES = 250
@@ -61,30 +62,9 @@ export function parseGrepArgs(args: GrepArgs): GrepArgs {
   }
 }
 
-/** 本地 RPC 通道（与 @diver/memory 的 store-rpc 同款）。 */
-function rpcUrl(): string | null {
-  const port = process.env.DIVER_MEMORY_PORT
-  if (!port) return null
-  return `http://127.0.0.1:${port}/rpc`
-}
-
-interface RpcEnvelope<T> {
-  ok: boolean
-  data: T | null
-  error?: string
-}
-
+/** 本地 RPC 通道（统一经 @diver/native-bridge）。 */
 async function rpc<T>(method: string, params: Record<string, unknown>): Promise<T> {
-  const url = rpcUrl()
-  if (!url) throw new Error('grep: Rust 本地服务未启动（DIVER_MEMORY_PORT 未配置）')
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ method, params }),
-  })
-  const body = (await res.json()) as RpcEnvelope<T>
-  if (!body.ok) throw new Error(body.error ?? `grep rpc failed: ${method}`)
-  return body.data as T
+  return nativeRpc<T>(method, params, { label: `grep:${method}` })
 }
 
 /** 单行预览按字节截断（UTF-8 边界安全），超长加后缀。 */

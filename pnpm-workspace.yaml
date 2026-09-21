@@ -1,18 +1,13 @@
 packages:
   - harness
-  # The harness is itself a workspace; expose its @cos/* workspace packages so
-  # a root-level `pnpm install` (e.g. the one `cargo tauri dev` triggers
-  # through pnpm's verifyDepsBeforeRun) can resolve harness's
-  # `"@cos/*": "workspace:*"` dependencies.
   - harness/packages/*
-  # Diver third-party plugins live outside the harness workspace but are
-  # repo-managed: registering them lets a root-level install create their own
-  # node_modules (file: links to @cos/*), so their runtime imports resolve by
-  # the ordinary parent-walk from cos-plugins/ sources (diver direct-path mode).
   - cos-plugins/backend
   - cos-plugins/basic-tools
   - cos-plugins/memory
   - cos-plugins/voice
+  - cos-plugins/mcp
+  - cos-plugins/llm-commandcode
+  - cos-plugins/native-bridge
   - cos-plugins/bundle-companion
 
 nodeLinker: hoisted

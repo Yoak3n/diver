@@ -56,15 +56,19 @@ export function attachEventListeners(
       }
       case 'assistant/message': {
         const text = textOf(ev.data.message.content)
+        // 纯工具调用步骤无文本 → 跳过空气泡（工具另有 tool 事件）。
+        if (text === '') break
         const origin = state.presencePending ? 'presence' : 'assistant'
         state.presencePending = false
-        // 纯工具调用步骤（模型只发 tool-call、无文本）也会产出 assistant/message：
-        // 无文本内容时前端只会渲染一个空气泡，这里跳过广播（工具活动另有 tool 事件展示）。
-        if (text === '') break
         broadcast({
-          type: 'message', kind: 'assistant', sessionId: String(session.id),
-          messageId: ev.data.message.id, turnMessageId: `turn-${ev.data.turn}-${ev.data.step}`,
-          content: text, origin, time,
+          type: 'message',
+          kind: 'assistant',
+          sessionId: String(session.id),
+          messageId: ev.data.message.id,
+          turnMessageId: `turn-${ev.data.turn}-${ev.data.step}`,
+          content: text,
+          origin,
+          time,
         })
         break
       }

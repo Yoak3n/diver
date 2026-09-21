@@ -1,12 +1,13 @@
 {
-  "name": "@diver/llm-commandcode",
+  "name": "@diver/native-bridge",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Diver companion Command Code LLM provider adapter for the @cos/llm registry.",
+  "description": "Diver native RPC bridge (internal): shared client for Rust /rpc services and the designated plug-in slot for shell-native capabilities.",
   "main": "./src/index.ts",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./rpc": "./src/rpc.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

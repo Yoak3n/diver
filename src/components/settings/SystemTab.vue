@@ -12,6 +12,7 @@ defineProps<{
 defineEmits<{
   restart: [];
   toggleWindowStartup: [key: "autoOpenMain" | "autoOpenPet", value: boolean];
+  changePetSize: [percent: number];
 }>();
 </script>
 
@@ -45,7 +46,23 @@ defineEmits<{
       <span class="slider"></span>
     </label>
   </div>
-  <p class="hint">配置保存在本机，下次启动时生效。</p>
+  <div class="sidecar-row">
+    <span>桌宠大小</span>
+    <span class="pet-size-val">{{ state.petSizePercent }}%</span>
+  </div>
+  <div class="pet-size-row">
+    <input
+      class="pet-size-slider"
+      type="range"
+      min="50"
+      max="200"
+      step="5"
+      :value="state.petSizePercent"
+      :disabled="!tauriAvailable()"
+      @input="$emit('changePetSize', Number(($event.target as HTMLInputElement).value))"
+    />
+  </div>
+  <p class="hint">配置保存在本机；桌宠位置与大小会记住，下次启动恢复。</p>
 
   <label class="group-title">Sidecar（agent 大脑）</label>
   <div class="sidecar-row">
@@ -129,6 +146,21 @@ details summary {
   color: #6f6b85;
   margin: 0;
   line-height: 1.7;
+}
+.pet-size-val {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+  color: #e8e6f0;
+  font-size: 12px;
+}
+.pet-size-row {
+  display: flex;
+  align-items: center;
+  margin: 2px 0 6px;
+}
+.pet-size-slider {
+  width: 100%;
+  accent-color: #c06ab3;
 }
 /* 开关 */
 .switch {

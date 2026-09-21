@@ -312,30 +312,48 @@ for (const pkg of ['cosmokit', '@standard-schema/spec']) {
   }
 }
 // @modelcontextprotocol/sdk + 其依赖（mcp 插件用）
+// SDK 直接声明了 express / hono / ajv / cors / eventsource / zod-to-json-schema
+// 等一整套 server transport 依赖，且这些包各自还有深层传递依赖（express → 
+// accepts/body-parser/qs/router…；ajv → fast-uri/json-schema-traverse/…）。
+// 只复制一层会导致插件加载时 `Cannot find module` 崩溃（如 ajv 缺
+// json-schema-traverse）。这里做递归 BFS：复制一个包后把它声明的依赖也入队，
+// 直到闭包完整，全部从根 node_modules 真实复制。
 const sdkSrc = join(COS_PLUGINS, 'mcp', 'node_modules', '@modelcontextprotocol', 'sdk')
 if (existsSync(sdkSrc) && !existsSync(join(pluginsNm, '@modelcontextprotocol', 'sdk'))) {
   mkdirSync(join(pluginsNm, '@modelcontextprotocol'), { recursive: true })
   copyReal(sdkSrc, join(pluginsNm, '@modelcontextprotocol', 'sdk'))
   console.log('  ✓ @modelcontextprotocol/sdk')
-  // SDK 的依赖：从 SDK package.json 递归收集（含 fast-deep-equal 等深层传递依赖）
-  const sdkPkgPath = join(pluginsNm, '@modelcontextprotocol', 'sdk', 'package.json')
-  const sdkDeps = []
-  try {
-    const sdkPkg = JSON.parse(readFileSync(sdkPkgPath, 'utf8'))
-    sdkDeps.push(...Object.keys(sdkPkg.dependencies ?? {}), ...Object.keys(sdkPkg.optionalDependencies ?? {}))
-  } catch { /* ignore */ }
-  // 额外需要（从 mcp 报错补充）
-  if (!sdkDeps.includes('fast-deep-equal')) sdkDeps.push('fast-deep-equal')
-  for (const d of sdkDeps) {
-    const [scope, name] = d.startsWith('@') ? d.split('/') : [null, d]
-    const src = scope ? join(ROOT, 'node_modules', scope, name) : join(ROOT, 'node_modules', d)
-    const dst = scope ? join(pluginsNm, scope, name) : join(pluginsNm, d)
-    if (existsSync(src) && !existsSync(dst)) {
+
+  // BFS 队列：初始为 SDK 自身（其依赖会展开）；复制到 plugins/node_modules 的
+  // 每个包都入队继续展开，直到没有新依赖。
+  const queue = [join(pluginsNm, '@modelcontextprotocol', 'sdk')]
+  const seen = new Set([join(pluginsNm, '@modelcontextprotocol', 'sdk')])
+  let copied = 0
+  while (queue.length > 0) {
+    const pkgDir = queue.shift()
+    const pkgPath = join(pkgDir, 'package.json')
+    if (!existsSync(pkgPath)) continue
+    let declared = []
+    try {
+      const j = JSON.parse(readFileSync(pkgPath, 'utf8'))
+      declared.push(
+        ...Object.keys(j.dependencies ?? {}),
+        ...Object.keys(j.optionalDependencies ?? {}),
+      )
+    } catch { /* ignore */ }
+    for (const d of declared) {
+      const [scope, name] = d.startsWith('@') ? d.split('/') : [null, d]
+      const src = scope ? join(ROOT, 'node_modules', scope, name) : join(ROOT, 'node_modules', d)
+      const dst = scope ? join(pluginsNm, scope, name) : join(pluginsNm, d)
+      if (!existsSync(src) || existsSync(dst)) continue
       if (scope) mkdirSync(join(pluginsNm, scope), { recursive: true })
       copyReal(src, dst)
+      copied++
+      queue.push(dst)
+      seen.add(dst)
     }
   }
-  console.log(`  ✓ SDK 依赖 (${sdkDeps.length} 个)`)
+  console.log(`  ✓ SDK 依赖闭包 (${copied} 个传递依赖)`)
 }
 
 // 2.6 companion bundle 层（patch 配置）

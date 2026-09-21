@@ -21,6 +21,7 @@ defineEmits<{
   save: [];
   restart: [];
   toggleWindowStartup: [key: "autoOpenMain" | "autoOpenPet", value: boolean];
+  changePetSize: [percent: number];
 }>();
 </script>
 
@@ -86,6 +87,7 @@ defineEmits<{
             :settings-info="settingsInfo"
             @restart="$emit('restart')"
             @toggle-window-startup="(key, value) => $emit('toggleWindowStartup', key, value)"
+            @change-pet-size="(p) => $emit('changePetSize', p)"
           />
 
           <div v-if="state.savingMsg" class="ok-msg">{{ state.savingMsg }}</div>

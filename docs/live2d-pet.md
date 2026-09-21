@@ -46,10 +46,35 @@
 
 ## 窗口技术
 
-- Vite 多页构建：`index.html`（主窗口）+ `pet.html`（桌宠，`src/pet/`）
-- Rust `WindowType::Pet`：透明 / `decorations: false` / 置顶 / `skip_taskbar` /
-  不抢焦点，右下角贴靠定位（`base/window/` 统一管理）
-- 常驻：主窗口关闭（隐藏到托盘）不影响桌宠；轻量模式下两者都持续运行
+- **入口**：Vite 单页 SPA + hash 路由 `/#/pet`（`src/router.ts`），窗口 URL 为
+  `WindowType::Pet.url()`；`public/pet/` 下 Live2D 静态资源仍打包到 `dist/pet/`
+- **窗口特性**：Rust `WindowType::Pet` — 透明 / `decorations: false` / 置顶 /
+  `skip_taskbar` / 不抢焦点（`base/window/` 统一管理）
+- **尺寸**：基准 600×560，支持 50%–200% 缩放（设置 → 系统 → 桌宠大小）。
+  常量双端同源：`base/window/pet_geom.rs` ↔ `src/pet/constants.ts`
+- **位置**：拖动后持久化到 `pet-window.json`；重启时校验是否落在可见显示器内，
+  无效则回退主屏工作区右下角
+- **跨窗口/跨屏拖动**（对齐 DSH）：系统 `startDragging` 负责移动；`Moved` 事件
+  **只落盘、不 set_position**（拖动中 clamp 会与原生拖动抢位置，导致跨屏闪动）。
+  拖动结束后前端调用 `move_pet_window(0,0)` 做软限位（按窗口中心选最近显示器），
+  位置调整带 **ease-out 过渡（约 200ms）**，避免归位瞬间跳变。
+  **结束判定**：Windows 拖动中鼠标仍按住时 Moved 会持续触发（正常）；
+  以「Moved 停歇约 1.5s」为拖动结束（webview 收不到 pointerup），再软限位并
+  恢复指针。再次拖动会取消过渡。WebView 层 `disable_drag_drop_handler`。
+- **显隐**：**收起 = 销毁窗口实例**（释放 WebView/Canvas，避免后台空转）。
+  创建/销毁必须走 async command（`show_pet_window` / `hide_pet_window`），
+  禁止主线程同步调用 build/destroy
+- **常驻**：主窗口关闭（隐藏到托盘）不影响桌宠
+
+## 点击穿透
+
+- 窗口默认 `setIgnoreCursorEvents(true)` + CSS `pointer-events` 双保险
+- **交互范围 = 角色包围盒**：`live2d.ts` 用可见图元顶点 bbox 计算模型真实尺寸，
+  生成 `.model-hitbox`（略外扩 8%/5% 以覆盖动作）；PIXI 画布铺满窗口但
+  `pointer-events: none`，桌宠两侧/头顶透明空白可穿透鼠标
+- **鼠标流**：Rust 独立线程轮询全局光标，16ms 节流 emit `device-mouse-move`；
+  前端只对命中框与气泡/面板/提问卡片解除穿透
+- 相关代码：`src-tauri/src/base/pet_mouse.rs`、`PetApp.vue` 穿透段、`live2d.ts` hitbox
 
 ## 会话共享
 
@@ -58,9 +83,11 @@
 
 ## 代码位置
 
-- `src/pet/`：`PetApp.vue`（气泡面板 + 情绪动作触发）、`live2d.ts`（pixi 渲染 + 口型同步 +
-  情绪动作播放控制）、`emotion.ts`（情绪推断）、`usePetChat.ts`（SSE 连接）、`pet.html`（入口）
-- `public/pet/emotion-map.json`：情绪 → 关键词 → 动作组映射（可编辑调参）
-- `scripts/gen-motions.mjs`：生成情绪动作文件；`scripts/patch-model3.mjs`：动作组声明补丁
-- `src-tauri/src/base/window/`：Pet 窗口的创建/定位/状态管理
-- `src-tauri/capabilities/pet.json`：桌宠窗口的权限声明
+- `src/pet/`：`PetApp.vue`（气泡面板 + 情绪动作 + 穿透）、`constants.ts`（几何常量）、
+  `live2d.ts`、`emotion.ts`、`usePetChat.ts`
+- `src-tauri/src/base/window/pet.rs`：桌宠生命周期 / 位置恢复 / 缩放 / 多屏
+- `src-tauri/src/base/window/pet_geom.rs`：尺寸公式（与前端 constants 同源）
+- `src-tauri/src/base/pet_mouse.rs`：全局鼠标流
+- `src-tauri/src/config/pet_window.rs`：`pet-window.json` 持久化
+- `src-tauri/capabilities/pet.json`：桌宠窗口权限
+

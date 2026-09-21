@@ -140,6 +140,25 @@ export async function handleRequest(
       return
     }
 
+    // /api/shutdown —— 优雅退出（仅限本应用：必须携带 DIVER_SHUTDOWN_TOKEN）。
+    // Tauri 壳退出时调用：触发 Node 侧 settle() 完整 dispose agent 树后 exit(0)，
+    // 避免强杀导致孤儿进程/未落盘的会话状态。令牌不匹配直接 403，静默返回。
+    if (pathname === '/api/shutdown' && req.method === 'POST') {
+      const body = await readBody(req)
+      const expected = process.env.DIVER_SHUTDOWN_TOKEN ?? ''
+      if (expected === '' || body.token !== expected) {
+        sendJson(res, 403, { error: 'forbidden' })
+        return
+      }
+      sendJson(res, 200, { ok: true })
+      // 延迟一瞬再退出：先把 200 响应 flush 给调用方，随后走 signal 路径
+      // 触发 companion 的 settle()（与 Ctrl+C / 任务结束一致，agent 树完整 dispose）。
+      setTimeout(() => {
+        process.kill(process.pid, 'SIGTERM')
+      }, 50)
+      return
+    }
+
     // /api/history —— 当前会话消息历史（重启后恢复界面）
     if (pathname === '/api/history' && req.method === 'GET') {
       const messages: Array<Record<string, unknown>> = []

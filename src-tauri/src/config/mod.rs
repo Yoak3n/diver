@@ -9,6 +9,7 @@
 //! 新增配置时，在此目录下添加一个子模块，并按读取方选择 [config_dir] / [cos_home]。
 
 pub mod mcp;
+pub mod pet_window;
 pub mod window_startup;
 
 use std::path::PathBuf;

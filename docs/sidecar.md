@@ -15,8 +15,25 @@ Rust `base/sidecar.rs` 以 `node --import tsx .../companion.ts` 拉起（详见
   - `COS_HOME` → `harness/.cos-home`（仓库本地，gitignore）
   - `DIVER_PORT` → sidecar HTTP 端口（默认 53620）
   - `DIVER_MEMORY_PORT` → Rust 本地服务端口（统一本地 RPC：记忆 + grep 搜索）
+  - `DIVER_SHUTDOWN_TOKEN` → 优雅退出令牌（`/api/shutdown` 校验用）
   - stdout 检测 `DIVER_READY` 标志行 → 状态置 Running，UI 开始连接
 - 主窗口隐藏/销毁不影响它；应用退出时由 Rust 主动 stop（记忆保留在磁盘）
+
+## 退出清理（防孤儿进程）
+
+退出时 Rust `SidecarManager::stop()` 按三级兜底清理 sidecar 进程树：
+
+1. **优雅退出**：向 `POST /api/shutdown`（携带 `DIVER_SHUTDOWN_TOKEN`）发请求，
+   Node 侧复用 `settle()`（与 Ctrl+C 同一路径）——关闭 HTTP/SSE、`fiber.dispose()`
+   完整释放 agent 树后 `process.exit(0)`。Rust 侧轮询子进程退出，超时 2.5s。
+2. **强制终止**：优雅退出超时/失败则 `Child::kill()`（Windows `TerminateProcess`）。
+3. **Job Object 兜底**（Windows）：sidecar 启动时即被放入
+   `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` 的 Job 中，应用退出（含被任务管理器强杀、
+   崩溃）时 Job 句柄关闭 → 系统终止 Job 内**全部**进程（含 agent 经 sh 工具拉起的
+   powershell 等孙进程），杜绝孤儿进程常驻内存。
+
+启动预检（`reclaim_stale_sidecar`）仍保留：上一会话若因强杀留下残留 sidecar，
+按端口命令行匹配自研入口回收后再启动。
 
 ## dsh 只取框架、不搬交互层
 

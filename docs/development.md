@@ -107,5 +107,6 @@ node scripts/opencode-test.mjs # opencode-go provider 直测
 |---|---|
 | 启动报 "harness 未安装" | 根目录执行 `pnpm install`（sidecar 入口 `node_modules/@deepseek-ai/dsh/lib/bin.js`） |
 | 端口被占 | `DIVER_PORT` 覆盖默认 53620；Vite 1420 为 strictPort。53620 若被上一会话残留的 sidecar 占用，`tauri dev` 启动前会自动回收（命令行匹配 `companion.ts`/`cos-sidecar.exe`）；被其他进程占用则中止并提示释放 |
+| 退出后有残留 sidecar 进程 | 正常退出走三级清理（`/api/shutdown` 优雅退出 → `kill()` → Job Object 兜底），不应残留；若强杀应用后仍有残留，下次启动会自动回收。手动清理：`Stop-Process -Name node -Force`（先确认没有别的 node 任务） |
 | 改了 bundle 不生效 | 确认重启了 sidecar（不是只刷新窗口）；bundle 是符号链接，直接生效 |
 | 桌宠不显示 | 检查启动配置 `auto_open_pet`（设置面板可改）；`pnpm tauri dev` 下默认全开 |

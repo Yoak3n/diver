@@ -28,6 +28,8 @@ export interface PetModelHandle {
   /** 面板打开让位：模型缩小 + 偏移到面板对侧（retreat=true 让位，false 恢复）。
    *  panelSide: 面板所在侧（'left' 面板在左 → 模型偏右；'right' 反之）。 */
   setRetreat: (retreat: boolean, panelSide?: "left" | "right") => void;
+  /** 角色命中框（相对模型容器的 CSS 像素）。用于点击穿透仅覆盖模型本体。 */
+  getHitbox: () => { left: number; top: number; width: number; height: number } | null;
   destroy: () => void;
 }
 
@@ -56,13 +58,16 @@ export async function createPetModel(
     autoStart: true,
   });
   const canvas = app.view as HTMLCanvasElement;
-  // 标记可交互（点击穿透命中检测 + CSS pointer-events opt-in）。
-  // 必须用内联样式：PetApp.vue 是 scoped CSS，data-v 选择器无法作用于
-  // PIXI 运行时创建的 canvas；内联 pointerEvents 不受 scoped 限制，
-  // 且 elementFromPoint 只会命中 pointer-events 非 none 的元素。
-  canvas.classList.add("interactive");
-  canvas.style.pointerEvents = "auto";
+  // 画布铺满窗口，但**不**参与命中：透明留白必须鼠标穿透。
+  // 可交互面是下面按角色包围盒生成的 .model-hitbox。
+  canvas.style.pointerEvents = "none";
   container.appendChild(canvas);
+
+  /** 角色命中框 DOM（仅覆盖模型本体，class interactive 供穿透检测） */
+  const hitboxEl = document.createElement("div");
+  hitboxEl.className = "model-hitbox interactive";
+  hitboxEl.style.pointerEvents = "auto";
+  container.appendChild(hitboxEl);
 
   // 注意：不能用 autoInteract —— pixi-live2d-display 0.4 依赖 renderer.plugins.interaction
   // 拿交互管理器（pixi 6 API），而 pixi 7.4 中它是 deprecated getter，返回的 EventSystem
@@ -217,6 +222,36 @@ export async function createPetModel(
     // 把"角色脚底到画布底边"的空白移出屏幕）。
     model.x = app.screen.width * currentAnchorX - charCenterOffsetX * currentScale;
     model.y = app.screen.height + charBottomOffset * currentScale;
+    updateHitbox();
+  }
+
+  /**
+   * 按角色包围盒（非整块画布）更新命中框。
+   *
+   * 屏幕坐标（容器 CSS 像素，与 PIXI screen 一致）：
+   * - 角色中心 X = screenW × currentAnchorX（applyLayout 已保证）
+   * - 角色脚底 Y = screenH（贴窗口底）
+   * - 显示宽/高 = charWidth/Height × currentScale
+   *
+   * 略放大命中框：动作/头发会略超出静态顶点包围盒，避免边缘点不中。
+   */
+  function updateHitbox() {
+    const scale = currentScale;
+    const charW = charWidth * scale;
+    const charH = charHeight * scale;
+    // 动作外扩：宽 +8%、高 +5%（左右发饰/抬手），仍远小于整窗画布留白
+    const padX = charW * 0.08;
+    const padY = charH * 0.05;
+    const centerX = app.screen.width * currentAnchorX;
+    const bottomY = app.screen.height;
+    const left = centerX - charW / 2 - padX;
+    const top = bottomY - charH - padY;
+    const width = charW + padX * 2;
+    const height = charH + padY * 2;
+    hitboxEl.style.left = `${left}px`;
+    hitboxEl.style.top = `${top}px`;
+    hitboxEl.style.width = `${width}px`;
+    hitboxEl.style.height = `${height}px`;
   }
 
   // ---------- 平滑过渡：分层缓动补间 ----------
@@ -446,6 +481,14 @@ export async function createPetModel(
     playEmotion: (group: string, opts?: { priority?: "normal" | "force" }) =>
       playEmotion(group, opts),
     isBusyMotion: () => hasActiveMotion() || emotionMotionActive,
+    getHitbox: () => {
+      const left = parseFloat(hitboxEl.style.left) || 0;
+      const top = parseFloat(hitboxEl.style.top) || 0;
+      const width = parseFloat(hitboxEl.style.width) || 0;
+      const height = parseFloat(hitboxEl.style.height) || 0;
+      if (width <= 0 || height <= 0) return null;
+      return { left, top, width, height };
+    },
     setAnchorX: (ratio: number) => {
       const clamped = Math.min(1, Math.max(0, Number(ratio) || 0));
       if (clamped === anchorXRatio) return;
@@ -489,6 +532,7 @@ export async function createPetModel(
       }
       PIXI.Ticker.shared.remove(syncTick);
       PIXI.Ticker.shared.remove(animTick);
+      hitboxEl.remove();
       app.destroy(true, { children: true, texture: true });
     },
   };

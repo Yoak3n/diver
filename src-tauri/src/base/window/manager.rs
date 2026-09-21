@@ -161,7 +161,13 @@ impl Manager {
         .always_on_top(config.always_on_top)
         .maximizable(config.maximizable)
         .transparent(config.transparent)
-        .shadow(config.shadow);
+        .shadow(config.shadow)
+        // 对齐 DSH builder：关掉 wry 的 drag_drop_handler，恢复 WebView 内
+        // HTML5 拖拽（Tauri 默认接管后 iframe/页面内拖动、跨窗口拖放会失效）。
+        // 注意不能用 .drag_and_drop(false)：那只影响 tao 窗口层，webview 层依旧禁用。
+        // 代价：AllowExternalDrop 防护一并关闭；页面内文本拖放异常时再补
+        // WebView2 SetAllowExternalDrop(false)（见 DSH desktop/window.rs）。
+        .disable_drag_drop_handler();
         if config.center {
             builder = builder.center();
         }
@@ -169,16 +175,10 @@ impl Manager {
             let (x, y) = adjust_float_window_position(&app_handle, config);
             builder = builder.position(x, y);  
         }
-        // 桌宠：常驻屏幕右下角（贴靠工作区边缘）
+        // 桌宠：尺寸按持久化缩放配置推导（创建后由 pet::restore 决定最终位置）
         if window_type == WindowType::Pet {
-            if let Some(monitor) = app_handle.primary_monitor().ok().flatten() {
-                let area = monitor.work_area();
-                let x = (area.position.x + area.size.width as i32 - config.inner_size.0 as i32 - 24) as f64;
-                let y = (area.position.y + area.size.height as i32 - config.inner_size.1 as i32 - 24) as f64;
-                let x = x.max(area.position.x as f64);
-                let y = y.max(area.position.y as f64);
-                builder = builder.position(x, y);
-            }
+            let (w, h) = super::pet::logical_size(&app_handle);
+            builder = builder.inner_size(w, h).min_inner_size(w, h);
         }
 
         #[cfg(target_os = "windows")]
@@ -191,10 +191,13 @@ impl Manager {
                 builder = builder.data_directory(data_dir);
             }
 
-            // dev 调试辅助：WebView2 远程调试端口（诊断桌宠页面问题用，release 无影响）
-            // 仅 debug 构建下会 push_str 追加调试参数；release 中 mut 无用，故 allow 掉该警告
+            // WebView2：原生可拖区域 + 对齐 DSH 的触摸/滚动特性集
+            // （ElasticOverscroll 会抢触摸手势，与 msWebView2EnableDraggableRegions 配套）。
             #[allow(unused_mut)]
-            let mut args = String::from("--enable-features=msWebView2EnableDraggableRegions --disable-features=OverscrollHistoryNavigation,msExperimentalScrolling");
+            let mut args = String::from(
+                "--enable-features=msWebView2EnableDraggableRegions \
+                 --disable-features=OverscrollHistoryNavigation,msExperimentalScrolling,ElasticOverscroll",
+            );
             #[cfg(debug_assertions)]
             if window_type == WindowType::Pet {
                 args.push_str(" --remote-debugging-port=9223");
@@ -224,7 +227,12 @@ impl Manager {
             self.purge_phantom_window(window_type);
             return Err(Error::FailedToReceiveMessage);
         }
-        window.set_focus()?;
+        if window_type == WindowType::Pet {
+            // 桌宠：恢复持久化位置（无效则默认右下角），且不抢焦点。
+            super::pet::restore_or_default_position(&window);
+        } else {
+            window.set_focus()?;
+        }
         add_window_listeners(window_type);
         Ok(window)
     }

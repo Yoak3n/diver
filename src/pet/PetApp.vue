@@ -3,8 +3,8 @@ import { nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { usePetChat } from "./usePetChat";
 import { inferEmotion, loadEmotionMap, motionGroupsFor } from "./emotion";
 import type { PetEmotion } from "./emotion";
-import { speakText, tauriAvailable, getCursorScreenPoint, listMonitors, movePetToMonitor } from "../tauri";
-import type { MonitorInfo } from "../tauri";
+import { speakText, tauriAvailable, onTauriEvent, startPetMouseStream, movePetWindow, cancelPetMoveAnimation, setPetDragging } from "../tauri";
+import { MODEL_HEIGHT_RATIO, PET_MOUSE_MOVE_EVENT } from "./constants";
 import type { PetModelHandle } from "./live2d";
 
 const modelHost = ref<HTMLElement | null>(null);
@@ -16,25 +16,16 @@ let pet: PetModelHandle | null = null;
 let stopMouth: (() => void) | null = null;
 let speaking = false;
 
-// ---------- 转移到指定屏幕（多屏场景下替代拖动限位，无跨屏闪动） ----------
-const monitors = ref<MonitorInfo[]>([]);
-const monitorMenuOpen = ref(false);
+// ---------- ⋯ 更多菜单（低频操作；跨屏拖动已恢复，无需「转到屏幕」） ----------
+const moreMenuOpen = ref(false);
 
-async function toggleMonitorMenu() {
-  monitorMenuOpen.value = !monitorMenuOpen.value;
-  if (monitorMenuOpen.value && monitors.value.length === 0) {
-    monitors.value = await listMonitors();
-  }
-}
-
-async function moveToMonitor(index: number) {
-  await movePetToMonitor(index);
-  monitorMenuOpen.value = false;
+function toggleMoreMenu() {
+  moreMenuOpen.value = !moreMenuOpen.value;
 }
 
 /** ⋯ 菜单里的"收起面板"：关闭面板 + 菜单。 */
 function closePanelFromMenu() {
-  monitorMenuOpen.value = false;
+  moreMenuOpen.value = false;
   panelOpen.value = false;
 }
 
@@ -81,13 +72,12 @@ function answerPending() {
   void submitQuestionAnswer(answers);
 }
 
-// ---------- 布局：模型全屏 + 消息流悬浮面板 ----------
-// 模型占满窗口（居中），消息流面板悬浮在窗口一侧（宽 ~383px）。
+/** 布局：模型全屏 + 消息流悬浮面板 */
+// 模型占满窗口（居中），消息流面板悬浮在窗口一侧。
 // 面板在屏幕中心一侧（bubbleSide）：窗口在屏幕左半 → 面板在右；右半 → 面板在左。
 // 面板打开时模型缩小让位（setRetreat），避免遮挡；关闭时恢复。
-/** 模型高度占窗口高度的比例（0.8 = 占 80%）。
- *  配合窗口高 560：模型 ≈ 448px，与之前 640×0.7 相同 —— 窗口变小但模型不缩水。 */
-const MODEL_HEIGHT_RATIO = 0.8;
+/** 模型高度占窗口高度的比例（常量见 constants.ts，与 Rust 几何同源）。 */
+const MODEL_HEIGHT_RATIO_VAL = MODEL_HEIGHT_RATIO;
 /** 面板相对模型的位置：'right' = 面板在右（窗口在屏幕左半时），'left' = 面板在左。 */
 const bubbleSide = ref<"left" | "right">("right");
 
@@ -199,17 +189,83 @@ watch(
 );
 
 // ---------- 交互模型：长按拖动 / 点按互动 / 右键呼出交互面板 ----------
+// 跨窗口/跨屏拖动（对齐 DSH）：系统 startDragging 负责移动窗口；
+// Rust 的 Moved 事件**只落盘、不 set_position**，避免与原生拖动抢位置导致
+// 跨屏闪动。拖动结束后再调用 move_pet_window(0,0) 做软限位（最近显示器）。
 const LONG_PRESS_MS = 350;
-/** 拖动状态：idle=默认 / arming=已按住未达阈值 / dragging=长按生效可移动 */
+/** 拖动状态：idle=默认 / arming=长按蓄力中（尚不可拖） / dragging=已可拖动 */
 const dragState = ref<"idle" | "arming" | "dragging">("idle");
+/** 蓄力指示器锚点（视口坐标，跟随按下的位置） */
+const chargePos = ref({ x: 0, y: 0 });
+/** 蓄力起始点：用于判定「按住未移动」；移动过大则取消蓄力 */
+let chargeOrigin: { x: number; y: number } | null = null;
+/** 按下后允许的最大漂移（px），超过则取消长按蓄力，避免误以为已在拖动 */
+const CHARGE_MOVE_TOLERANCE = 12;
 let pressTimer: number | null = null;
 let longPressDragging = false;
+/** 拖动会话：beginDrag 后置 true；Moved 停歇才做软限位 */
+let petDragSession = false;
+/** 拖动结束软限位定时器（Moved 防抖） */
+let dragIdleTimer: number | null = null;
+let unlistenPetMoved: (() => void) | null = null;
 
 function clearPressTimer() {
   if (pressTimer !== null) {
     window.clearTimeout(pressTimer);
     pressTimer = null;
   }
+}
+
+function clearDragIdleTimer() {
+  if (dragIdleTimer !== null) {
+    window.clearTimeout(dragIdleTimer);
+    dragIdleTimer = null;
+  }
+}
+
+/**
+ * 拖动结束判定（对齐 DSH use-window-draggable）：
+ *
+ * - Windows 上 startDragging 期间 **鼠标仍按住时 Moved 就会持续触发**，
+ *   这不是「误触发」，而是系统拖动仍在进行的信号。
+ * - 不能用很短的停歇（如 350ms）就当拖动结束：用户在拖动中停顿一下
+ *   （仍按住）会被误判，随后 move_pet_window 又与系统抢坐标。
+ * - webview 收不到 pointerup，只能以「Moved 停歇」为准；停歇阈值取
+ *   会话级超时（约 1.5s），与 DSH DRAG_SESSION_TIMEOUT 同量级。
+ */
+const DRAG_IDLE_MS = 1500;
+/** 长按后始终没有 Moved（未真正拖动）时的会话超时 */
+const DRAG_SESSION_MS = 1500;
+
+function endDragVisualState() {
+  petDragSession = false;
+  longPressDragging = false;
+  if (dragState.value !== "idle") {
+    dragState.value = "idle";
+  }
+}
+
+function armDragIdleRecovery() {
+  clearDragIdleTimer();
+  dragIdleTimer = window.setTimeout(() => {
+    dragIdleTimer = null;
+    // 先关「拖动会话」，再归位：否则 Rust 会因仍在拖动而跳过过渡动画
+    endDragVisualState();
+    void setPetDragging(false);
+    void movePetWindow(0, 0);
+    void updateBubbleSide();
+  }, DRAG_IDLE_MS);
+}
+
+/** beginDrag 后的兜底：长时间无 Moved 则退出拖动态（指针恢复 default）。 */
+function armDragSessionTimeout() {
+  clearDragIdleTimer();
+  dragIdleTimer = window.setTimeout(() => {
+    dragIdleTimer = null;
+    endDragVisualState();
+    void setPetDragging(false);
+    void updateBubbleSide();
+  }, DRAG_SESSION_MS);
 }
 
 /** 是否点击在面板/气泡区域内（这些区域不参与长按拖动与点按互动）。 */
@@ -220,33 +276,82 @@ function inPanelArea(target: EventTarget | null): boolean {
 async function beginDrag() {
   if (!tauriAvailable()) return;
   try {
+    cancelPetMoveAnimation();
+    // 打开 Rust 侧拖动会话：期间禁止归位动画/瞬时 set_position
+    void setPetDragging(true);
+    clearDragIdleTimer();
+    petDragSession = true;
+    longPressDragging = true;
+    dragState.value = "dragging";
     const { getCurrentWindow } = await import("@tauri-apps/api/window");
-    // startDragging 是异步系统拖动：发送拖动消息后立即返回（不代表拖动结束）。
-    // 拖动结束后按最新窗口位置刷新面板方向 —— 若面板开着且方向变化，
-    // 立即让模型换边（避免面板遮住模型）；3 秒定时器兜底。
     await getCurrentWindow().startDragging();
-    window.setTimeout(() => void updateBubbleSide(), 350);
+    armDragSessionTimeout();
   } catch {
-    /* 拖动失败时忽略（如非 Tauri 环境） */
+    endDragVisualState();
+    void setPetDragging(false);
+    clearDragIdleTimer();
   }
 }
+
+/** 监听桌宠窗口 Moved：拖动会话中用于防抖结束判定。 */
+async function bindPetMovedListener() {
+  if (!tauriAvailable() || unlistenPetMoved) return;
+  try {
+    const { getCurrentWindow } = await import("@tauri-apps/api/window");
+    const unlisten = await getCurrentWindow().onMoved(() => {
+      // Moved 在「鼠标仍按住的系统拖动」中就会触发 —— 说明拖动仍在进行，
+      // 保持 grabbing，并重置「停歇超时」；不要在这里做 set_position。
+      if (!petDragSession && !longPressDragging) return;
+      petDragSession = true;
+      if (dragState.value !== "dragging") {
+        dragState.value = "dragging";
+      }
+      armDragIdleRecovery();
+    });
+    unlistenPetMoved = unlisten;
+  } catch {
+    /* 忽略 */
+  }
+}
+
+/** 蓄力过程中因移动取消：松手时不再触发点按互动 */
+let chargeCancelled = false;
 
 function onPointerDown(e: PointerEvent) {
   if (e.button !== 0) return; // 仅左键
   if (inPanelArea(e.target)) return;
   longPressDragging = false;
+  chargeCancelled = false;
+  chargeOrigin = { x: e.clientX, y: e.clientY };
+  chargePos.value = { x: e.clientX, y: e.clientY };
+  // 蓄力中：不改 grab 指针，避免「已可拖动」的误导；进度环表达还需按住
   dragState.value = "arming";
   clearPressTimer();
   // 长按超过阈值 → 进入窗口拖动
   pressTimer = window.setTimeout(() => {
     longPressDragging = true;
+    chargeOrigin = null;
     dragState.value = "dragging";
     void beginDrag();
   }, LONG_PRESS_MS);
 }
 
+/** 蓄力过程中手指/鼠标移动过大 → 取消长按（用户并非「按住蓄力」） */
+function onPointerMove(e: PointerEvent) {
+  if (dragState.value !== "arming" || !chargeOrigin) return;
+  const dx = e.clientX - chargeOrigin.x;
+  const dy = e.clientY - chargeOrigin.y;
+  if (dx * dx + dy * dy > CHARGE_MOVE_TOLERANCE * CHARGE_MOVE_TOLERANCE) {
+    clearPressTimer();
+    chargeOrigin = null;
+    chargeCancelled = true;
+    dragState.value = "idle";
+  }
+}
+
 function onPointerUp(e: PointerEvent) {
   clearPressTimer();
+  chargeOrigin = null;
   if (longPressDragging) {
     // 刚结束一次长按拖动：不触发互动
     longPressDragging = false;
@@ -254,14 +359,16 @@ function onPointerUp(e: PointerEvent) {
     return;
   }
   dragState.value = "idle";
-  if (e.button === 0 && !inPanelArea(e.target) && pet) {
-    // 短按 → 互动（播放随机动作，force 优先级：可打断正在播放的情绪动作）
+  // 未进入系统拖动：蓄力中断（大幅移动）不互动；正常点按/未蓄满松手 → TapBody
+  if (!chargeCancelled && e.button === 0 && !inPanelArea(e.target) && pet) {
     pet.playEmotion("TapBody", { priority: "force" });
   }
 }
 
 function onPointerCancel() {
   clearPressTimer();
+  chargeOrigin = null;
+  chargeCancelled = true;
   longPressDragging = false;
   dragState.value = "idle";
 }
@@ -352,50 +459,46 @@ function onAssistantDone(content: string) {
 }
 
 // ---------- 点击穿透：默认穿透，命中可交互区则解除 ----------
-// 原理参考 N.E.K.O：透明窗口不应挡鼠标。窗口默认 setIgnoreCursorEvents(true)，
-// 前端以低频轮询（~80ms）读取全局鼠标坐标，换算到窗口内 client 坐标后，
-// 用 elementFromPoint 检测命中可交互元素（模型 canvas / 气泡 / 面板 / 提问卡片）；
-// 命中则解除穿透（可交互），否则保持穿透。轮询始终运行（不能只在穿透态跑，
-// 否则鼠标离开交互区后无法恢复穿透），但坐标不变时跳过窗口查询，静止开销趋近于零。
-const CLICKTHROUGH_POLL_MS = 80;
-/** 穿透轮询句柄 */
-let clickthroughTimer: number | null = null;
+// 对齐成熟方案：Rust 全局鼠标流（device-mouse-move，16ms 节流）推坐标。
+// 整窗 setIgnoreCursorEvents(true) 后 WebView 收不到 mousemove，事件流是
+// 穿透态下唯一可靠的光标来源 —— 解除「穿透后无法恢复交互」死锁。
+// 前端用窗口几何换算 client 坐标 + elementFromPoint 命中检测，翻转穿透。
+let unlistenMouseMove: (() => void) | null = null;
 /** 最近一次穿透态（避免重复 IPC） */
 let clickthroughActive = true;
-/** 最近一次鼠标坐标（去重用） */
-let lastCursor = { x: -1, y: -1 };
 
-/** 命中可交互区域 → 不需要穿透 */
+/** 命中可交互区域 → 不需要穿透。
+ *  模型侧只认 .model-hitbox（角色包围盒，由 live2d.ts 按顶点 bbox 计算），
+ *  整块 PIXI 画布不参与命中 —— 桌宠两侧/头顶透明空白可穿透鼠标。 */
 function isInteractiveAt(clientX: number, clientY: number): boolean {
   try {
     const el = document.elementFromPoint(clientX, clientY);
     if (!el) return false;
     return !!(
-      el.closest(".pet-root .interactive") ||
+      el.closest(".model-hitbox") ||
       el.closest(".speech-bubble") ||
       el.closest(".chat-flow") ||
-      el.closest(".question-card")
+      el.closest(".question-card") ||
+      el.closest(".conn-dot")
     );
   } catch {
     return false;
   }
 }
 
-async function applyClickthrough() {
-  const p = await getCursorScreenPoint();
-  if (!p) return;
-  if (p.x === lastCursor.x && p.y === lastCursor.y) return; // 鼠标静止：跳过
-  lastCursor = p;
+async function applyClickthroughAt(screenX: number, screenY: number) {
+  if (!tauriAvailable()) return;
   try {
     const { getCurrentWindow } = await import("@tauri-apps/api/window");
     const win = getCurrentWindow();
-    // 屏幕物理坐标 → 窗口内 client（CSS）坐标
     const [pos, size] = await Promise.all([win.outerPosition(), win.outerSize()]);
     const dpr = window.devicePixelRatio || 1;
-    const clientX = (p.x - pos.x) / dpr;
-    const clientY = (p.y - pos.y) / dpr;
-    // 鼠标不在窗口内 → 保持穿透
-    if (clientX < 0 || clientY < 0 || clientX >= size.width / dpr || clientY >= size.height / dpr) {
+    // 事件坐标为物理像素；outerPosition/Size 亦为物理像素 → client 用 /dpr
+    const clientX = (screenX - pos.x) / dpr;
+    const clientY = (screenY - pos.y) / dpr;
+    const outOfWindow =
+      clientX < 0 || clientY < 0 || clientX >= size.width / dpr || clientY >= size.height / dpr;
+    if (outOfWindow) {
       if (!clickthroughActive) {
         clickthroughActive = true;
         await win.setIgnoreCursorEvents(true);
@@ -403,7 +506,7 @@ async function applyClickthrough() {
       return;
     }
     const wantIgnore = !isInteractiveAt(clientX, clientY);
-    if (wantIgnore === clickthroughActive) return; // 状态无变化
+    if (wantIgnore === clickthroughActive) return;
     clickthroughActive = wantIgnore;
     await win.setIgnoreCursorEvents(wantIgnore);
   } catch {
@@ -415,24 +518,29 @@ async function startClickthrough() {
   if (!tauriAvailable()) return;
   try {
     const { getCurrentWindow } = await import("@tauri-apps/api/window");
-    // 初始置为穿透态（透明窗口不挡鼠标）。
-    // 注：Tauri 2 的 setIgnoreCursorEvents 在 Windows 是 WS_EX_TRANSPARENT，
-    // 鼠标事件仍可能进入 webview —— 所以 CSS 侧另有 pointer-events 双保险
-    // （.pet-root 默认 none，可交互区 opt-in auto），穿透态下透明区不响应。
+    // 初始整窗穿透；CSS pointer-events 双保险见 .pet-root
     clickthroughActive = true;
     await getCurrentWindow().setIgnoreCursorEvents(true);
   } catch {
     /* 忽略 */
   }
-  if (clickthroughTimer !== null) window.clearInterval(clickthroughTimer);
-  clickthroughTimer = window.setInterval(() => void applyClickthrough(), CLICKTHROUGH_POLL_MS);
+  // 绑定 Rust 鼠标流（窗口重建后 mount 会再次调用，Rust 侧幂等重绑）
+  try {
+    await startPetMouseStream();
+    unlistenMouseMove = await onTauriEvent<{ x: number; y: number }>(
+      PET_MOUSE_MOVE_EVENT,
+      (p) => {
+        void applyClickthroughAt(p.x, p.y);
+      },
+    );
+  } catch (err) {
+    console.error("[pet] mouse stream unavailable", err);
+  }
 }
 
 function stopClickthrough() {
-  if (clickthroughTimer !== null) {
-    window.clearInterval(clickthroughTimer);
-    clickthroughTimer = null;
-  }
+  unlistenMouseMove?.();
+  unlistenMouseMove = null;
   clickthroughActive = true;
 }
 
@@ -464,6 +572,7 @@ onMounted(async () => {
   connect();
   startAutoRefresh();
   void updateBubbleSide();
+  void bindPetMovedListener();
   // 窗口被拖动后位置会变化：定时重新检测气泡区方向 + 模型偏置
   bubbleSideTimer = window.setInterval(() => void updateBubbleSide(), 3000);
   void startClickthrough();
@@ -472,7 +581,7 @@ onMounted(async () => {
       // Live2D 懒加载：即使模型/渲染失败，页面主体仍可用
       const mod = await import("./live2d");
       pet = await mod.createPetModel(modelHost.value, {
-        heightRatio: MODEL_HEIGHT_RATIO,
+        heightRatio: MODEL_HEIGHT_RATIO_VAL,
         anchorXRatio: 0.5, // 模型全屏居中
       });
       loading.value = false;
@@ -493,6 +602,11 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   if (bubbleSideTimer !== null) window.clearInterval(bubbleSideTimer);
+  petDragSession = false;
+  clearDragIdleTimer();
+  void setPetDragging(false);
+  unlistenPetMoved?.();
+  unlistenPetMoved = null;
   stopClickthrough();
   stopMouth?.();
   pet?.destroy();
@@ -506,10 +620,31 @@ onBeforeUnmount(() => {
     class="pet-root"
     :class="[`bubble-${bubbleSide}`, `drag-${dragState}`]"
     @pointerdown="onPointerDown"
+    @pointermove="onPointerMove"
     @pointerup="onPointerUp"
     @pointercancel="onPointerCancel"
     @contextmenu="onContextMenu"
   >
+    <!-- 长按蓄力：按住填充圆环，蓄满才进入拖动；未完成前不显示 grab 指针 -->
+    <div
+      v-if="dragState === 'arming'"
+      class="drag-charge"
+      :style="{ left: `${chargePos.x}px`, top: `${chargePos.y}px` }"
+      aria-hidden="true"
+    >
+      <svg class="drag-charge-ring" viewBox="0 0 40 40">
+        <circle class="drag-charge-track" cx="20" cy="20" r="16" />
+        <circle
+          class="drag-charge-fill"
+          cx="20"
+          cy="20"
+          r="16"
+          :style="{ animationDuration: `${LONG_PRESS_MS}ms` }"
+        />
+      </svg>
+      <span class="drag-charge-hint">按住拖动</span>
+    </div>
+
     <!-- 模型区：全屏（模型居中），消息流面板悬浮其上 -->
     <div class="model-area" :class="{ loading }">
       <div ref="modelHost" class="model-host"></div>
@@ -567,17 +702,10 @@ onBeforeUnmount(() => {
             </button>
             <!-- ⋯ 菜单：低频操作收纳在此，面板保持简洁 -->
             <div class="more-menu-wrap">
-              <button class="more-btn" title="更多" @click="toggleMonitorMenu">⋯</button>
+              <button class="more-btn" title="更多" @click="toggleMoreMenu">⋯</button>
               <Transition name="panel">
-                <div v-if="monitorMenuOpen" class="more-menu">
+                <div v-if="moreMenuOpen" class="more-menu">
                   <button class="more-opt" @click="closePanelFromMenu">收起面板</button>
-                  <div class="more-divider"></div>
-                  <div v-for="(m, i) in monitors" :key="i">
-                    <button class="more-opt" @click="moveToMonitor(i)">
-                      转到屏幕 {{ i + 1 }}{{ m.name ? ` · ${m.name}` : "" }}
-                    </button>
-                  </div>
-                  <div v-if="!monitors.length" class="monitor-empty">未检测到显示器</div>
                 </div>
               </Transition>
             </div>
@@ -653,12 +781,92 @@ onBeforeUnmount(() => {
      data-v 属性选择器无法可靠作用于 PIXI 运行时创建的 canvas 与过渡动画包装。 */
   pointer-events: none;
 }
-/* 长按拖动反馈：按住（未达阈值）→ 抓取手势；拖动中 → 握紧手势 */
-.pet-root.drag-arming {
-  cursor: grab;
+/* 长按蓄力反馈：
+   - arming：默认指针 + 按下点圆环进度（350ms 蓄满）
+   - dragging：仅此时显示 grabbing，表示系统拖动已生效 */
+.pet-root.drag-arming,
+.pet-root.drag-arming .model-host,
+.pet-root.drag-arming .model-host :deep(canvas) {
+  cursor: default;
 }
-.pet-root.drag-dragging {
+.pet-root.drag-dragging,
+.pet-root.drag-dragging .model-host,
+.pet-root.drag-dragging .model-host :deep(canvas) {
   cursor: grabbing;
+}
+/* 可交互模型区悬停：不要提前 grab（拖动需长按蓄力） */
+.pet-root .model-host,
+.pet-root .model-host :deep(canvas) {
+  cursor: default;
+}
+
+.drag-charge {
+  position: fixed;
+  z-index: 80;
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+.drag-charge-ring {
+  width: 40px;
+  height: 40px;
+  display: block;
+  filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.35));
+}
+.drag-charge-track {
+  fill: rgba(20, 20, 32, 0.45);
+  stroke: rgba(255, 255, 255, 0.18);
+  stroke-width: 3;
+}
+.drag-charge-fill {
+  fill: none;
+  stroke: #ffb07c;
+  stroke-width: 3;
+  stroke-linecap: round;
+  /* r=16 → 周长 ≈ 100.53 */
+  stroke-dasharray: 100.53;
+  stroke-dashoffset: 100.53;
+  transform: rotate(-90deg);
+  transform-origin: 50% 50%;
+  animation-name: drag-charge-ring;
+  animation-timing-function: linear;
+  animation-fill-mode: forwards;
+}
+@keyframes drag-charge-ring {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+/* 拖动中：根节点与命中框均为 grabbing（scoped 选择器需盖过 default） */
+.pet-root.drag-dragging {
+  cursor: grabbing !important;
+}
+.pet-root.drag-dragging .model-hitbox,
+.pet-root.drag-dragging .model-host :deep(.model-hitbox) {
+  cursor: grabbing !important;
+}
+.pet-root.drag-arming,
+.pet-root.drag-arming .model-hitbox,
+.pet-root.drag-arming .model-host :deep(.model-hitbox) {
+  cursor: default !important;
+}
+.pet-root:not(.drag-dragging):not(.drag-arming) .model-hitbox,
+.pet-root:not(.drag-dragging):not(.drag-arming) .model-host :deep(.model-hitbox),
+.pet-root:not(.drag-dragging):not(.drag-arming) {
+  cursor: default;
+}
+.drag-charge-hint {
+  font-size: 11px;
+  color: #ffe3c4;
+  background: rgba(28, 29, 44, 0.88);
+  border: 1px solid rgba(255, 176, 124, 0.35);
+  border-radius: 999px;
+  padding: 3px 8px;
+  white-space: nowrap;
+  letter-spacing: 0.02em;
 }
 
 /* ---------- 悬浮面板布局 ----------
@@ -683,19 +891,28 @@ onBeforeUnmount(() => {
   left: 8px;
 }
 
-/* ---------- Live2D 模型区（全屏） ---------- */
+/* ---------- Live2D 模型区（全屏画布 + 角色命中框） ---------- */
 .model-area {
   position: relative;
   min-height: 0;
   overflow: hidden;
+  pointer-events: none;
 }
 .model-host {
   position: absolute;
   inset: 0;
+  pointer-events: none;
 }
 .model-host :deep(canvas) {
   width: 100%;
   height: 100%;
+  pointer-events: none;
+}
+/* 命中框由 live2d.ts 定位到角色包围盒；scoped 下仍要允许命中 */
+.model-host :deep(.model-hitbox) {
+  position: absolute;
+  pointer-events: auto;
+  z-index: 2;
 }
 .loading-hint,
 .load-error {
@@ -1000,7 +1217,7 @@ onBeforeUnmount(() => {
   font-size: 15px;
   line-height: 1;
 }
-/* ---------- ⋯ 菜单（收起/转移屏幕等低频操作收纳） ---------- */
+/* ---------- ⋯ 菜单（收起面板等低频操作） ---------- */
 .more-menu-wrap {
   position: relative;
   flex-shrink: 0;
@@ -1051,17 +1268,6 @@ onBeforeUnmount(() => {
   background: rgba(255, 176, 124, 0.15);
   color: #ffe3c4;
 }
-.more-divider {
-  height: 1px;
-  background: rgba(255, 255, 255, 0.08);
-  margin: 3px 4px;
-}
-.monitor-empty {
-  font-size: 11px;
-  color: rgba(255, 255, 255, 0.4);
-  padding: 8px;
-  text-align: center;
-}
 
 .panel-enter-active,
 .panel-leave-active {
@@ -1076,14 +1282,27 @@ onBeforeUnmount(() => {
 </style>
 
 <!-- 非 scoped：点击穿透的可交互区 opt-in。
-     scoped 的 data-v 属性选择器无法可靠作用于 PIXI 运行时创建的 canvas
-     和 Transition 动画包装节点，因此这条规则必须全局生效。 -->
+     scoped 的 data-v 属性选择器无法可靠作用于 PIXI 运行时创建的节点。
+     仅命中框与 UI 面板可交互；画布/透明留白 pointer-events: none。 -->
 <style>
-.pet-root .interactive,
+.pet-root .model-hitbox,
 .pet-root .speech-bubble,
 .pet-root .chat-flow,
 .pet-root .question-card,
 .pet-root .conn-dot {
   pointer-events: auto;
+}
+/* PIXI 画布铺满窗口，必须不参与命中 */
+.pet-root .model-host canvas {
+  pointer-events: none !important;
+  cursor: default !important;
+}
+.pet-root.drag-dragging .model-hitbox {
+  cursor: grabbing !important;
+}
+/* 调试：打开后可看见角色命中框 */
+.pet-root .model-hitbox.debug-hitbox {
+  outline: 1px dashed rgba(255, 176, 124, 0.7);
+  background: rgba(255, 176, 124, 0.08);
 }
 </style>

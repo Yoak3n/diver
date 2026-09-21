@@ -67,6 +67,13 @@ configure(builder)
 退出时（`RunEvent::Exit`）主动 `stop()` sidecar；主窗口关闭只隐藏不退出
 （`CloseRequested` → `prevent_close` + hide），agent 持续运行。
 
+退出清理三级兜底（`base/sidecar.rs` `stop()`）：
+1. `POST /api/shutdown`（令牌校验）→ Node 走 `settle()` 优雅 dispose agent 树后 exit
+2. 超时/失败 → `Child::kill()` 强制终止
+3. Windows Job Object（KILL_ON_JOB_CLOSE）→ 应用退出/被强杀时整进程树兜底清理
+
+详见 [Node sidecar 与 dsh 接入](sidecar.md)。
+
 ## 窗口管理
 
 `src-tauri/src/base/window/` 统一管理窗口生命周期：

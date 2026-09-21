@@ -1,3 +1,4 @@
+use super::pet_geom::{pet_window_logical_size, PET_SIZE_DEFAULT_PERCENT};
 use super::schema::WindowType;
 use std::collections::HashMap;
 
@@ -36,13 +37,12 @@ impl WindowConfig {
                 float: false,
             },
             // Live2D 桌宠：透明、无边框、置顶、不占任务栏、不抢焦点。
-            // 固定尺寸（600×560）：窗口紧凑，桌宠在屏幕上的移动范围大。
-            // 模型高度比例 0.8（模型 ~448px，与之前 640×0.7 相同，不随窗口变小）。
-            // 布局：模型（画布 ~330px 宽）+ 面板（画布宽×1.2 ≈ 400px）并排。
+            // 尺寸来自 pet_geom（基准 600×560，可随 size_percent 缩放）；
+            // 创建时 manager 会再按持久化配置覆盖 actual size。
             WindowType::Pet => Self {
                 window_type,
-                inner_size: (600.0, 560.0),
-                min_inner_size: (600.0, 560.0),
+                inner_size: pet_window_logical_size(PET_SIZE_DEFAULT_PERCENT),
+                min_inner_size: pet_window_logical_size(super::pet_geom::PET_SIZE_MIN_PERCENT),
                 decorations: false,
                 transparent: true,
                 skip_taskbar: true,

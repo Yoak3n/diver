@@ -38,6 +38,7 @@ const {
   save,
   doRestartSidecar,
   toggleWindowStartup,
+  changePetSize,
 } = settings;
 
 // TTS 状态（开关/语音）由设置面板持有，注入给聊天核心做自动朗读
@@ -97,6 +98,7 @@ const dotClass = computed(() => (canSend.value ? "on" : busy.value ? "busy" : "o
       @save="save"
       @restart="doRestartSidecar"
       @toggle-window-startup="toggleWindowStartup"
+      @change-pet-size="changePetSize"
     />
   </div>
 </template>

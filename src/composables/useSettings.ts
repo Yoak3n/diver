@@ -5,6 +5,8 @@ import { getSettings, saveSettings } from "../api";
 import {
   getSidecarStatus,
   getWindowStartupConfig,
+  getPetWindowConfig,
+  setPetSizePercent,
   listVoices,
   restartSidecar,
   setWindowStartupConfig,
@@ -29,6 +31,8 @@ export interface SettingsState {
   saveError: string;
   /** 启动时自动打开的窗口 */
   windowStartup: WindowStartupConfig;
+  /** 桌宠缩放百分比（50–200） */
+  petSizePercent: number;
 }
 
 export function useSettings(chat: ReturnType<typeof useChat>) {
@@ -46,6 +50,7 @@ export function useSettings(chat: ReturnType<typeof useChat>) {
     savingMsg: "",
     saveError: "",
     windowStartup: { autoOpenMain: true, autoOpenPet: true },
+    petSizePercent: 100,
   });
 
   // ---------- 派生 ----------
@@ -118,6 +123,12 @@ export function useSettings(chat: ReturnType<typeof useChat>) {
       } catch {
         /* 读取失败保持默认 */
       }
+      try {
+        const petCfg = await getPetWindowConfig();
+        state.petSizePercent = petCfg.sizePercent;
+      } catch {
+        /* 读取失败保持默认 */
+      }
     }
   }
 
@@ -130,6 +141,20 @@ export function useSettings(chat: ReturnType<typeof useChat>) {
     } catch {
       /* 保存失败回滚 */
       state.windowStartup[key] = !value;
+    }
+  }
+
+  /** 设置桌宠缩放百分比（立即应用到桌宠窗口）。 */
+  async function changePetSize(percent: number) {
+    const next = Math.min(200, Math.max(50, Math.round(percent)));
+    const prev = state.petSizePercent;
+    state.petSizePercent = next;
+    if (!tauriAvailable()) return;
+    try {
+      const cfg = await setPetSizePercent(next);
+      state.petSizePercent = cfg.sizePercent;
+    } catch {
+      state.petSizePercent = prev;
     }
   }
 
@@ -204,5 +229,6 @@ export function useSettings(chat: ReturnType<typeof useChat>) {
     save,
     doRestartSidecar,
     toggleWindowStartup,
+    changePetSize,
   };
 }

@@ -18,7 +18,7 @@ use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
@@ -35,6 +35,116 @@ pub const DEFAULT_PORT: u16 = 53620;
 
 /// 日志环形缓冲上限。
 const LOG_CAPACITY: usize = 300;
+
+/// 优雅退出等待上限：POST /api/shutdown 后轮询进程退出的最长时间。
+const GRACEFUL_EXIT_TIMEOUT: Duration = Duration::from_millis(2500);
+
+/// stop() 优雅等待阶段进程退出轮询间隔。
+const POLL_INTERVAL: Duration = Duration::from_millis(50);
+
+/// 监控线程进程退出轮询间隔（不持有 Child，保证 stop() 能拿到句柄）。
+const MONITOR_POLL_INTERVAL: Duration = Duration::from_millis(200);
+
+/// 优雅退出令牌：每次启动 sidecar 时随机生成，经 `DIVER_SHUTDOWN_TOKEN` 环境变量
+/// 注入。`stop()` 发起的 `POST /api/shutdown` 必须携带该令牌，防止 sidecar 上
+/// 同源静态 UI / 本地恶意脚本把常驻 agent 进程关掉（sidecar 只监听 127.0.0.1）。
+fn shutdown_token() -> &'static str {
+    static TOKEN: once_cell::sync::OnceCell<String> = once_cell::sync::OnceCell::new();
+    TOKEN.get_or_init(|| {
+        use std::time::{SystemTime, UNIX_EPOCH};
+        let nanos = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0);
+        let pid = std::process::id();
+        format!("diver-shutdown-{pid}-{nanos:x}")
+    })
+}
+
+/// Windows：把子进程放进 Job Object，进程树随 Job 一起被清理。
+///
+/// 设 `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` —— Job 的最后一个句柄关闭时，系统
+/// 强制终止 Job 内**全部**进程（含 agent 经 sh 工具拉起的 powershell 等孙进程）。
+/// 这样即使应用被强杀（任务管理器结束、崩溃、`ExitRequested` 被跳过），sidecar
+/// 进程树也不会变成孤儿常驻内存。
+///
+/// 注意：Rust 标准库的 `Child` 在子进程退出时会自动关闭进程句柄，而 Job 句柄
+/// 独立持有（存进 `SidecarManager`），只要 Job 句柄未关闭就不会触发误杀。
+#[cfg(target_os = "windows")]
+mod job_object {
+    use std::process::Child;
+    use windows_sys::Win32::Foundation::{CloseHandle, HANDLE};
+    use windows_sys::Win32::System::JobObjects::{
+        AssignProcessToJobObject, CreateJobObjectW, JobObjectExtendedLimitInformation,
+        SetInformationJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+        JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+    };
+    use windows_sys::Win32::System::Threading::OpenProcess;
+    use windows_sys::Win32::System::Threading::PROCESS_SET_QUOTA;
+    use windows_sys::Win32::System::Threading::PROCESS_TERMINATE;
+
+    pub struct SidecarJob {
+        handle: HANDLE,
+    }
+
+    unsafe impl Send for SidecarJob {}
+    unsafe impl Sync for SidecarJob {}
+
+    impl SidecarJob {
+        pub fn assign(child: &Child) -> Option<Self> {
+            unsafe {
+                // 匿名 Job（无名句柄）：避免与系统里其他"同名 Job"（可能来自别的
+                // Diver 实例或残留）冲突，也无需跨进程引用该名字。
+                let job = CreateJobObjectW(std::ptr::null(), std::ptr::null());
+                if job.is_null() {
+                    return None;
+                }
+                // 先放行所有子进程（含后代）进 Job，再叠加 KILL_ON_JOB_CLOSE。
+                let mut info: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = std::mem::zeroed();
+                info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+                let ok = SetInformationJobObject(
+                    job,
+                    JobObjectExtendedLimitInformation,
+                    &info as *const _ as *const _,
+                    std::mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+                );
+                if ok == 0 {
+                    CloseHandle(job);
+                    return None;
+                }
+                // 用目标 pid 开一个带权限的句柄（Child 的进程句柄不一定带
+                // PROCESS_SET_QUOTA / PROCESS_TERMINATE，Assign 会失败）。
+                let pid = child.id() as u32;
+                let process = OpenProcess(PROCESS_SET_QUOTA | PROCESS_TERMINATE, 0, pid);
+                if process.is_null() {
+                    CloseHandle(job);
+                    return None;
+                }
+                let assigned = AssignProcessToJobObject(job, process);
+                CloseHandle(process);
+                if assigned == 0 {
+                    CloseHandle(job);
+                    return None;
+                }
+                Some(SidecarJob { handle: job })
+            }
+        }
+    }
+
+    impl Drop for SidecarJob {
+        fn drop(&mut self) {
+            // Job 句柄关闭 → 系统按 KILL_ON_JOB_CLOSE 终止 Job 内所有进程。
+            unsafe {
+                CloseHandle(self.handle);
+            }
+        }
+    }
+}
+
+/// 非 Windows 平台的占位类型（SidecarManager 字段统一携带）。
+#[cfg(not(target_os = "windows"))]
+pub type SidecarJob = ();
+
+/// Windows：把 Job Object 类型提升到模块可见（字段声明用）。
+#[cfg(target_os = "windows")]
+pub use job_object::SidecarJob;
 
 /// release 构建时 sidecar 资源在 bundle resources 下的相对路径。
 #[cfg(not(debug_assertions))]
@@ -70,6 +180,10 @@ pub struct SidecarStatus {
 pub struct SidecarManager {
     child: Mutex<Option<Child>>,
     status: Mutex<SidecarStatus>,
+    /// Windows：sidecar 进程树所在的 Job Object（KILL_ON_JOB_CLOSE）。
+    /// 持有句柄期间不触发清理；应用退出 / Job 句柄 drop 时整树被终止。
+    /// 非 Windows 平台为单元类型占位。
+    job: Mutex<Option<SidecarJob>>,
     #[cfg(debug_assertions)]
     harness_dir: PathBuf,
     #[cfg(debug_assertions)]
@@ -102,6 +216,7 @@ impl SidecarManager {
                     port,
                     logs: Vec::new(),
                 }),
+                job: Mutex::new(None),
                 #[cfg(debug_assertions)]
                 harness_dir,
                 #[cfg(debug_assertions)]
@@ -150,11 +265,6 @@ impl SidecarManager {
     }
 
     /// 构建 sidecar 启动命令。
-    /// - dev（debug 构建）：`node --import tsx <repo>/harness/packages/sidecar/src/companion.ts`，
-    ///   仓库内 harness（cos-plugins 路径直连依赖仓库布局），COS_HOME = harness/.cos-home。
-    /// - release：打包的 SEA 单文件 `resources/sidecar/cos-sidecar.exe --bundles
-    ///   resources/sidecar/bundles/bundle-companion`，cwd = resources/sidecar（cordis.yml /
-    ///   secrets.yml 从那里读），COS_HOME = 用户数据目录（升级不丢数据）。
     fn build_command(&self, app: &AppHandle) -> Result<Command, String> {
         #[cfg(not(debug_assertions))]
         {
@@ -266,6 +376,7 @@ impl SidecarManager {
                 .arg("--harness").arg(clean(&harness_dir))
                 .env("COS_HOME", &cos_home)
                 .env("DIVER_PORT", self.port().to_string())
+                .env("DIVER_SHUTDOWN_TOKEN", shutdown_token())
                 .env("DIVER_UI_DIST", &ui_dist)
                 .env(
                     "DIVER_MCP_CONFIG_FILE",
@@ -320,6 +431,7 @@ impl SidecarManager {
                 .arg(&entry)
                 .env("COS_HOME", &cos_home)
                 .env("DIVER_PORT", self.port().to_string())
+                .env("DIVER_SHUTDOWN_TOKEN", shutdown_token())
                 .env(
                     "DIVER_MCP_CONFIG_FILE",
                     crate::config::mcp::config_path(app).to_string_lossy().to_string(),
@@ -400,6 +512,24 @@ impl SidecarManager {
         let stderr = child.stderr.take();
         *self.child.lock() = Some(child);
 
+        // Windows：把 sidecar 放进 Job Object（KILL_ON_JOB_CLOSE），进程树随
+        // Job 一起清理。失败仅告警——stop() 仍有显式 kill 兜底。
+        #[cfg(target_os = "windows")]
+        {
+            let child_guard = self.child.lock();
+            if let Some(child) = child_guard.as_ref() {
+                match job_object::SidecarJob::assign(child) {
+                    Some(job) => {
+                        log::info!("sidecar 已纳入 Job Object（KILL_ON_JOB_CLOSE）");
+                        *self.job.lock() = Some(job);
+                    }
+                    None => {
+                        log::warn!("sidecar 纳入 Job Object 失败，退出时仅能显式 kill 直系进程");
+                    }
+                }
+            }
+        }
+
         let app_clone = app.clone();
         // 线程需要 'static 引用：单例实例经 global() 获取。
         let mgr: &'static SidecarManager = Self::global();
@@ -448,33 +578,127 @@ impl SidecarManager {
             }
         });
 
-        // 监控线程：进程退出时更新状态（除非是主动停止）
+        // 监控线程：进程退出时更新状态（除非是主动停止）。
+        // 注意：不能 take() 掉 Child —— stop() 的优雅退出流程需要持有进程句柄
+        // 轮询退出；这里只轮询 try_wait()，退出后由 stop() 清理句柄。
         let app_clone = app.clone();
+        let stop_flag = stop_flag.clone();
         std::thread::spawn(move || {
-            let child = mgr.child.lock().take();
-            if let Some(mut child) = child {
-                let _ = child.wait();
-                if !mgr.stopping.load(Ordering::SeqCst) {
-                    log::warn!("sidecar 进程意外退出");
-                    mgr.push_log("[diver] sidecar 进程退出".into());
-                    mgr.set_state(SidecarState::Crashed);
-                    mgr.emit_status(&app_clone);
+            loop {
+                if stop_flag.load(Ordering::SeqCst) {
+                    break;
                 }
+                let exited = {
+                    let mut guard = mgr.child.lock();
+                    match guard.as_mut() {
+                        Some(child) => child.try_wait().ok().flatten().is_some(),
+                        None => true,
+                    }
+                };
+                if exited {
+                    break;
+                }
+                std::thread::sleep(MONITOR_POLL_INTERVAL);
+            }
+            if !mgr.stopping.load(Ordering::SeqCst) {
+                log::warn!("sidecar 进程意外退出");
+                mgr.push_log("[diver] sidecar 进程退出".into());
+                mgr.set_state(SidecarState::Crashed);
+                mgr.emit_status(&app_clone);
             }
         });
 
         true
     }
 
-    /// 停止 sidecar。
+    /// 停止 sidecar：优先优雅退出（HTTP shutdown 让 Node 走 `settle()` 完整
+    /// dispose agent 树），失败/超时再硬杀，最后兜底 Job Object 整树清理。
     pub fn stop(&self) {
+        if self.status.lock().state == SidecarState::Stopped {
+            return;
+        }
         self.stopping.store(true, Ordering::SeqCst);
-        let mut guard = self.child.lock();
-        if let Some(mut child) = guard.take() {
-            let _ = child.kill();
-            let _ = child.wait();
+        log::info!("停止 sidecar …");
+
+        // 1) 优雅退出：POST /api/shutdown（带令牌）。sidecar 收到后走
+        //    companion 的 settle() —— 关闭 HTTP/SSE、dispose 整个 agent 树。
+        let requested = self.request_shutdown();
+
+        // 2) 等待进程自然退出（优雅路径下 Node 自己 process.exit(0)）。
+        let mut child = self.child.lock().take();
+        let graceful = child.as_mut().map_or(false, |c| {
+            self.wait_exit(c, GRACEFUL_EXIT_TIMEOUT)
+        });
+
+        if !graceful {
+            if let Some(child) = child.as_mut() {
+                if requested {
+                    log::warn!("sidecar 优雅退出超时，强制终止");
+                    self.push_log("[diver] sidecar 优雅退出超时，强制终止".into());
+                } else {
+                    log::warn!("sidecar 未响应 shutdown 请求，强制终止");
+                }
+                let _ = child.kill();
+                self.wait_exit(child, Duration::from_millis(1000));
+            }
+        }
+        // 3) 显式释放 Job（KILL_ON_JOB_CLOSE → 进程树兜底清理）。
+        if let Some(job) = self.job.lock().take() {
+            drop(job);
         }
         self.set_state(SidecarState::Stopped);
+        self.push_log("[diver] sidecar 已停止".into());
+        log::info!("sidecar 已停止");
+    }
+
+    /// 向 sidecar 发起优雅退出请求。返回是否成功发出（不代表已退出）。
+    fn request_shutdown(&self) -> bool {
+        let port = self.port();
+        let token = shutdown_token();
+        let url = format!("http://127.0.0.1:{port}/api/shutdown");
+        let body = format!(r#"{{"token":"{token}"}}"#);
+        // curl：Windows 10 1803+ 系统自带 curl.exe；NUL 是 Windows 的空设备。
+        #[cfg(target_os = "windows")]
+        const NULL_DEV: &str = "NUL";
+        #[cfg(not(target_os = "windows"))]
+        const NULL_DEV: &str = "/dev/null";
+        match Command::new("curl")
+            .args(["-s", "-o", NULL_DEV, "-w", "%{http_code}", "-m", "2"])
+            .arg("-X").arg("POST")
+            .arg("-H").arg("Content-Type: application/json")
+            .arg("-d").arg(&body)
+            .arg(&url)
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .output()
+        {
+            Ok(out) => {
+                let code = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                log::info!("sidecar shutdown 请求返回 HTTP {code}");
+                code == "200"
+            }
+            Err(e) => {
+                log::warn!("sidecar shutdown 请求失败: {e}");
+                false
+            }
+        }
+    }
+
+    /// 轮询等待子进程退出，超时返回 false。
+    fn wait_exit(&self, child: &mut std::process::Child, timeout: Duration) -> bool {
+        let deadline = Instant::now() + timeout;
+        loop {
+            match child.try_wait() {
+                Ok(Some(_)) => return true,
+                Ok(None) => {}
+                Err(_) => return false,
+            }
+            if Instant::now() >= deadline {
+                return false;
+            }
+            std::thread::sleep(POLL_INTERVAL);
+        }
     }
 
     /// 重启 sidecar。

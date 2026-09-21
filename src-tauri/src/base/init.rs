@@ -10,6 +10,9 @@ pub fn generate_handlers() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + 
         get_sidecar_status,
         restart_sidecar,
         get_sidecar_url,
+        list_shortcuts,
+        set_shortcut,
+        remove_shortcut,
         list_plugins,
         set_plugin_enabled,
         toggle_plugin,
@@ -43,6 +46,15 @@ pub fn generate_handlers() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + 
 
 pub fn configure(builder: Builder<tauri::Wry>) -> Builder<tauri::Wry> {
     let builder = builder.plugin(tauri_plugin_opener::init());
+
+    // 全局快捷键：统一 handler 分发（热插拔注册/注销见 base/shortcut.rs）。
+    let builder = builder.plugin(
+        tauri_plugin_global_shortcut::Builder::new()
+            .with_handler(|app, shortcut, event| {
+                crate::base::shortcut::ShortcutManager::global().handle(app, shortcut, event);
+            })
+            .build(),
+    );
 
     let builder = builder.plugin(
         tauri_plugin_log::Builder::new()
@@ -90,6 +102,9 @@ pub fn configure(builder: Builder<tauri::Wry>) -> Builder<tauri::Wry> {
 
         // companion profile：壳端启停插件写在 profiles/companion/cordis.patch.yml。
         crate::plugins::ensure_profile(app.handle());
+
+        // 全局快捷键：按配置注册启用绑定（运行时热插拔由 base/shortcut.rs 负责）。
+        crate::base::shortcut::ShortcutManager::global().init(app.handle());
 
         // 启动 Node sidecar（cos harness + companion bundle，agent 常驻）。
         let sidecar = crate::base::sidecar::SidecarManager::global();

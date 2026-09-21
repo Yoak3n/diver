@@ -6,6 +6,7 @@ import VoiceTab from "./settings/VoiceTab.vue";
 import SystemTab from "./settings/SystemTab.vue";
 import McpTab from "./settings/McpTab.vue";
 import PluginsTab from "./settings/PluginsTab.vue";
+import ShortcutsTab from "./settings/ShortcutsTab.vue";
 
 defineProps<{
   open: boolean;
@@ -67,6 +68,13 @@ defineEmits<{
           </button>
           <button
             class="tab"
+            :class="{ active: state.activeTab === 'shortcuts' }"
+            @click="state.activeTab = 'shortcuts'"
+          >
+            快捷键
+          </button>
+          <button
+            class="tab"
             :class="{ active: state.activeTab === 'system' }"
             @click="state.activeTab = 'system'"
           >
@@ -89,6 +97,7 @@ defineEmits<{
             @restart="$emit('restart')"
           />
           <PluginsTab v-if="state.activeTab === 'plugins'" />
+          <ShortcutsTab v-if="state.activeTab === 'shortcuts'" />
           <SystemTab
             v-if="state.activeTab === 'system'"
             :state="state"

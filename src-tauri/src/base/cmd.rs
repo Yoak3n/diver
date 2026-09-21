@@ -94,6 +94,30 @@ pub fn restart_sidecar(app: AppHandle) -> bool {
     SidecarManager::global().restart(&app)
 }
 
+/// 列出全局快捷键绑定（含启用状态）。
+#[tauri::command]
+pub fn list_shortcuts(app: AppHandle) -> Vec<crate::config::shortcuts::ShortcutBinding> {
+    crate::config::shortcuts::load_config(&app).bindings
+}
+
+/// 热插拔：新增/更新单个快捷键绑定（写配置 + 运行时注册/注销）。
+#[tauri::command]
+pub fn set_shortcut(
+    app: AppHandle,
+    binding: crate::config::shortcuts::ShortcutBinding,
+) -> Result<Vec<crate::config::shortcuts::ShortcutBinding>, String> {
+    crate::base::shortcut::ShortcutManager::global().set_binding(&app, binding)
+}
+
+/// 热插拔：移除快捷键绑定（写配置 + 运行时注销）。
+#[tauri::command]
+pub fn remove_shortcut(
+    app: AppHandle,
+    id: String,
+) -> Result<Vec<crate::config::shortcuts::ShortcutBinding>, String> {
+    crate::base::shortcut::ShortcutManager::global().remove_binding(&app, id)
+}
+
 /// 获取 sidecar 的 API 根地址（供前端展示/调试）。
 #[tauri::command]
 pub fn get_sidecar_url() -> String {

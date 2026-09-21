@@ -17,7 +17,7 @@ import type { useChat } from "./chat";
 
 export interface SettingsState {
   open: boolean;
-  activeTab: "models" | "voice" | "mcp" | "plugins" | "system";
+  activeTab: "models" | "voice" | "mcp" | "plugins" | "shortcuts" | "system";
   saving: boolean;
   /** provider 配置输入（插件声明驱动）：{ [provider]: { [fieldKey]: value } } */
   configInputs: Record<string, Record<string, string>>;

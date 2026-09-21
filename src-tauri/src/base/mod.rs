@@ -4,6 +4,7 @@ pub mod handle;
 pub mod init;
 pub mod lightweight;
 pub mod pet_mouse;
+pub mod shortcut;
 pub mod sidecar;
 pub mod state;
 pub mod timer;

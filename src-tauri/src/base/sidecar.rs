@@ -1,19 +1,20 @@
 //! Sidecar 生命周期管理：负责启动/监控/停止 Node harness 子进程。
 //!
-//! sidecar 是 Node 进程，运行自研 cos harness（diver path 直连 `cos-plugins/bundle-companion`），
+//! sidecar 是 Node 进程，运行自研 cos harness（统一 companion 组合：pluginPaths
+//! 解析 @cos/* 核心、pluginRoot 解析开放插件目录、profile=companion 承载启停补丁）。
 //! 通过 `DIVER_READY` 标志行报告就绪，随后由 WebView 通过
 //! `http://127.0.0.1:{port}` 访问其自有的 HTTP/SSE 服务。
 //! agent 常驻于 sidecar：窗口隐藏/销毁（轻量模式）不影响它持续运行。
 //!
-//! 两种形态：
-//! - dev（debug 构建）：`node --import tsx <repo>/harness/packages/sidecar/src/companion.ts`，
-//!   仓库内 harness 直连（cos-plugins 路径解析依赖仓库布局）。
-//! - release：打包进 bundle 的 SEA 单文件 `resources/sidecar/cos-sidecar.exe`（Node 运行时 +
-//!   全部插件烘焙进二进制，companion-sea 入口），cwd = resources/sidecar，
-//!   COS_HOME = 用户数据目录（与安装目录隔离，升级不丢数据）。
+//! 两种形态（同一 loader 契约，已放弃 SEA 烘焙路径）：
+//! - dev（debug 构建）：`node --import tsx .../companion.ts`，
+//!   `--plugin-root <repo>/cos-plugins`、`--bundles .../bundle-companion`、
+//!   `--harness <repo>/harness`、`--profile companion`。
+//! - release：随包 Node + `companion-bundle.ts`（非 SEA）：
+//!   `resources/sidecar/{node.exe,harness/,plugins/,bundles/}`，
+//!   cwd = resources/sidecar，COS_HOME = 用户数据目录（升级不丢数据）。
 
 use std::io::{BufRead, BufReader};
-#[cfg(debug_assertions)]
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -26,6 +27,9 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 #[cfg(not(debug_assertions))]
 use tauri::Manager;
+
+/// 启动时缓存的 COS_HOME：stop() 清 restart 标志用（无 AppHandle）。
+static LAST_COS_HOME: once_cell::sync::OnceCell<PathBuf> = once_cell::sync::OnceCell::new();
 
 /// sidecar HTTP 服务默认端口（可用环境变量 DIVER_PORT 覆盖）。
 ///
@@ -339,6 +343,7 @@ impl SidecarManager {
             // 用户数据目录：与安装目录隔离（升级安装不丢会话/记忆）。
             // 与 config::mcp 共享同一路径（cos_home 即 sidecar 注入的 COS_HOME）。
             let cos_home = crate::config::cos_home(app);
+            let _ = LAST_COS_HOME.set(cos_home.clone());
             if let Err(e) = std::fs::create_dir_all(&cos_home) {
                 log::warn!("创建 COS_HOME 失败: {e}");
             }
@@ -374,10 +379,13 @@ impl SidecarManager {
                 .arg("--bundles").arg(clean(&bundle_dir))
                 .arg("--plugin-root").arg(clean(&plugins_dir))
                 .arg("--harness").arg(clean(&harness_dir))
+                .arg("--profile").arg(crate::plugins::active_profile(app))
                 .env("COS_HOME", &cos_home)
                 .env("DIVER_PORT", self.port().to_string())
                 .env("DIVER_SHUTDOWN_TOKEN", shutdown_token())
                 .env("DIVER_UI_DIST", &ui_dist)
+                .env("DIVER_BUNDLE_DIR", clean(&bundle_dir))
+                .env("DIVER_PLUGINS_ROOT", clean(&plugins_dir))
                 .env(
                     "DIVER_MCP_CONFIG_FILE",
                     crate::config::mcp::config_path(app).to_string_lossy().to_string(),
@@ -395,7 +403,7 @@ impl SidecarManager {
 
         #[cfg(debug_assertions)]
         {
-            // ── dev：仓库内 harness + node/tsx ───────────────────────────
+            // ── dev：仓库内 harness + node/tsx（与 release 同一 loader 契约） ──
             let entry = self.harness_dir.join("packages/sidecar/src/companion.ts");
             let entry = if entry.exists() {
                 entry
@@ -407,6 +415,7 @@ impl SidecarManager {
                     .join("packages/sidecar/src/companion.ts")
             };
             let cos_home = crate::config::cos_home(app);
+            let _ = LAST_COS_HOME.set(cos_home.clone());
             if !entry.exists() {
                 return Err(format!(
                     "sidecar 入口不存在: {}（请先在根目录执行 pnpm install）",
@@ -414,13 +423,35 @@ impl SidecarManager {
                 ));
             }
 
+            let repo_root = self
+                .harness_dir
+                .parent()
+                .unwrap_or(&self.harness_dir)
+                .to_path_buf();
+            let plugins_root = {
+                let cos_plugins = repo_root.join("cos-plugins");
+                if cos_plugins.is_dir() {
+                    cos_plugins
+                } else {
+                    repo_root.join("plugins")
+                }
+            };
+            let bundle_dir = plugins_root.join("bundle-companion");
+            let harness_dir = if self.harness_dir.join("packages").is_dir() {
+                self.harness_dir.clone()
+            } else {
+                repo_root.join("harness")
+            };
+
             log::info!(
-                "启动 sidecar: node --import tsx {}（diver path: cos-plugins/bundle-companion, COS_HOME={}）",
+                "启动 sidecar: node --import tsx {}（profile=companion plugins={} harness={} COS_HOME={}）",
                 entry.display(),
+                plugins_root.display(),
+                harness_dir.display(),
                 cos_home.display()
             );
             self.push_log(format!(
-                "[diver] 启动: {}（diver path 直连）",
+                "[diver] 启动: {}（profile=companion + pluginRoot）",
                 entry.display()
             ));
 
@@ -429,9 +460,31 @@ impl SidecarManager {
                 .arg("tsx")
                 .arg("--expose-internals")
                 .arg(&entry)
+                .arg("--bundles")
+                .arg(&bundle_dir)
+                .arg("--plugin-root")
+                .arg(&plugins_root)
+                .arg("--harness")
+                .arg(&harness_dir)
+                .arg("--profile")
+                .arg(crate::plugins::active_profile(app))
                 .env("COS_HOME", &cos_home)
                 .env("DIVER_PORT", self.port().to_string())
                 .env("DIVER_SHUTDOWN_TOKEN", shutdown_token())
+                .env(
+                    "DIVER_BUNDLE_DIR",
+                    crate::plugins::plugin_paths_for(app, &crate::plugins::active_profile(app))
+                        .bundle_dir
+                        .display()
+                        .to_string(),
+                )
+                .env(
+                    "DIVER_PLUGINS_ROOT",
+                    crate::plugins::plugin_paths_for(app, &crate::plugins::active_profile(app))
+                        .plugins_root
+                        .display()
+                        .to_string(),
+                )
                 .env(
                     "DIVER_MCP_CONFIG_FILE",
                     crate::config::mcp::config_path(app).to_string_lossy().to_string(),
@@ -440,7 +493,7 @@ impl SidecarManager {
                     "DIVER_MEMORY_PORT",
                     std::env::var("DIVER_MEMORY_PORT").unwrap_or_default(),
                 )
-                .current_dir(&self.harness_dir)
+                .current_dir(&harness_dir)
                 .stdin(Stdio::null())
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped());
@@ -458,7 +511,7 @@ impl SidecarManager {
         }
 
         // 预检：上一会话可能留下仍然占用端口的孤儿 sidecar（强杀会话时未被回收）。
-        // 命中自研 cos 入口（companion.ts / cos-sidecar.exe）的先回收再启动；
+        // 命中自研 cos 入口（companion.ts / companion-bundle.ts）的先回收再启动；
         // 被其他进程占用则中止并给出明确提示。
         match Self::reclaim_stale_sidecar(self.port()) {
             Some(true) => {
@@ -477,8 +530,39 @@ impl SidecarManager {
             None => {}
         }
 
-        // 构建启动命令：release 用打包的 SEA 单文件（cos-sidecar.exe），
-        // dev 用仓库内 harness + node/tsx。
+        // P3 preflight：布局/profile 补丁检查；companion 失败时自动降级 safe 一次。
+        let mut report = crate::plugins::preflight(app);
+        if let Some(bak) = &report.quarantined {
+            self.push_log(format!("[diver] profile 补丁已隔离: {bak}"));
+        }
+        if !report.ok {
+            for p in &report.problems {
+                log::warn!("sidecar preflight: {p}");
+            }
+            if !report.safe_mode {
+                log::warn!("sidecar preflight 失败，自动切换 safe profile 后重试");
+                self.push_log(
+                    "[diver] companion 预检失败 → 自动 safe 模式（仅核心 + backend）".into(),
+                );
+                if crate::config::profile::set_active_profile(app, crate::plugins::SAFE_PROFILE) {
+                    report = crate::plugins::preflight(app);
+                }
+            }
+            if !report.ok {
+                log::error!(
+                    "sidecar preflight 仍失败: {:?}（继续尝试启动，boot 可能自行报错）",
+                    report.problems
+                );
+                self.push_log(format!("[diver] preflight: {:?}", report.problems));
+            }
+        }
+        self.push_log(format!(
+            "[diver] profile={} safe={}",
+            report.profile, report.safe_mode
+        ));
+
+        // 构建启动命令：dev 用仓库内 companion.ts；release 用随包 Node +
+        // companion-bundle.ts（开放 plugins/ 目录，非 SEA）。
         let mut cmd = match self.build_command(app) {
             Ok(cmd) => cmd,
             Err(e) => {
@@ -601,6 +685,17 @@ impl SidecarManager {
                 std::thread::sleep(MONITOR_POLL_INTERVAL);
             }
             if !mgr.stopping.load(Ordering::SeqCst) {
+                // backend 请求的业务重启：见 $COS_HOME/restart.requested 则自动再拉起。
+                let cos_home = crate::config::cos_home(&app_clone);
+                let flag = cos_home.join("restart.requested");
+                if flag.exists() {
+                    let _ = std::fs::remove_file(&flag);
+                    log::info!("sidecar 请求重启（restart.requested）→ 自动再启动");
+                    mgr.push_log("[diver] 检测到重启请求，正在拉起 sidecar…".into());
+                    std::thread::sleep(Duration::from_millis(300));
+                    mgr.start(&app_clone);
+                    return;
+                }
                 log::warn!("sidecar 进程意外退出");
                 mgr.push_log("[diver] sidecar 进程退出".into());
                 mgr.set_state(SidecarState::Crashed);
@@ -619,6 +714,12 @@ impl SidecarManager {
         }
         self.stopping.store(true, Ordering::SeqCst);
         log::info!("停止 sidecar …");
+
+        // 用户/壳主动停止：清掉 backend 留下的重启标志（stop 无 AppHandle，
+        // 用进程内缓存的 cos_home；缺失则跳过——start 也会再清一次）。
+        if let Some(home) = LAST_COS_HOME.get() {
+            let _ = std::fs::remove_file(home.join("restart.requested"));
+        }
 
         // 1) 优雅退出：POST /api/shutdown（带令牌）。sidecar 收到后走
         //    companion 的 settle() —— 关闭 HTTP/SSE、dispose 整个 agent 树。

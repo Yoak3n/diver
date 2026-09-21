@@ -1,5 +1,6 @@
 pub mod base;
 pub mod config;
+pub mod plugins;
 pub mod services;
 
 use base::init;

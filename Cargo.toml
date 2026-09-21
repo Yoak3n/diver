@@ -5,6 +5,7 @@ members = [
     "crates/diver-search",
     "src-tauri"
 ]
+license = "AGPL-3.0-only"
 
 [workspace.dependencies]
 

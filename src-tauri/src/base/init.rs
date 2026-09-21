@@ -10,6 +10,15 @@ pub fn generate_handlers() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + 
         get_sidecar_status,
         restart_sidecar,
         get_sidecar_url,
+        list_plugins,
+        set_plugin_enabled,
+        toggle_plugin,
+        get_plugin_paths,
+        get_active_profile,
+        preflight_plugins,
+        switch_profile,
+        install_profile_plugin,
+        uninstall_profile_plugin,
         speak,
         list_voices,
         get_window_startup_config,
@@ -79,7 +88,10 @@ pub fn configure(builder: Builder<tauri::Wry>) -> Builder<tauri::Wry> {
         // 之后由设置面板「MCP 服务」页直接编辑，保存即热重载生效。
         crate::config::mcp::ensure_initial(app.handle());
 
-        // 启动 Node sidecar（dsh 框架 + 陪伴 bundle，agent 常驻）。
+        // companion profile：壳端启停插件写在 profiles/companion/cordis.patch.yml。
+        crate::plugins::ensure_profile(app.handle());
+
+        // 启动 Node sidecar（cos harness + companion bundle，agent 常驻）。
         let sidecar = crate::base::sidecar::SidecarManager::global();
         if !sidecar.start(app.handle()) {
             log::error!("sidecar 启动失败，请检查依赖安装状态");

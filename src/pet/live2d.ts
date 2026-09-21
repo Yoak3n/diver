@@ -72,14 +72,36 @@ export async function createPetModel(
   // 注意：不能用 autoInteract —— pixi-live2d-display 0.4 依赖 renderer.plugins.interaction
   // 拿交互管理器（pixi 6 API），而 pixi 7.4 中它是 deprecated getter，返回的 EventSystem
   // 没有 .on 方法，会在每次 _render 时抛 "manager.on is not a function"。
-  // 因此禁用它，改用 pixi 7 的事件系统自行处理点击。
+  // 因此禁用它，改用 DOM hitbox（见上）+ PetApp 的 pointer 处理。
+  //
+  // Pixi 7 EventBoundary 会对 eventMode=static/dynamic 的节点调用 currentTarget.isInteractive()。
+  // pixi-live2d-display 的 Live2DModel 并非经 @pixi/events mixin 完整混入的 Container
+  // （还缺 removeFromParent 等），命中测试会抛 "isInteractive is not a function"。
+  // 这里：① 不把模型设为可交互（点击穿透用 DOM）；② 兜底补上 isInteractive，避免
+  // stage 走查子树时再次炸掉。
   const model = await Live2DModel.from(MODEL_URL, { autoInteract: false });
-  model.eventMode = "static";
+  model.eventMode = "none";
+  const modelAny = model as unknown as {
+    isInteractive?: unknown;
+    removeFromParent?: unknown;
+  };
+  if (typeof modelAny.isInteractive !== "function") {
+    modelAny.isInteractive = function isInteractive(this: { eventMode?: string }) {
+      return this.eventMode === "static" || this.eventMode === "dynamic";
+    };
+  }
+  if (typeof modelAny.removeFromParent !== "function") {
+    modelAny.removeFromParent = function removeFromParent(this: {
+      parent?: { removeChild?: (c: unknown) => void } | null;
+    }) {
+      this.parent?.removeChild?.(this);
+    };
+  }
 
   // 底部锚定，宽度固定（不随窗口宽度漂移）
   model.anchor.set(0.5, 1);
 
-  app.stage.addChild(model);
+  app.stage.addChild(model as never);
 
   // ---------- 角色实际绘制范围（而非画布） ----------
   // model.width 是画布宽（CanvasWidth，Hiyori 约 2048px），角色通常只占画布一部分。

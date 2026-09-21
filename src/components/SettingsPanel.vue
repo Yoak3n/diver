@@ -5,6 +5,7 @@ import ModelsTab from "./settings/ModelsTab.vue";
 import VoiceTab from "./settings/VoiceTab.vue";
 import SystemTab from "./settings/SystemTab.vue";
 import McpTab from "./settings/McpTab.vue";
+import PluginsTab from "./settings/PluginsTab.vue";
 
 defineProps<{
   open: boolean;
@@ -59,6 +60,13 @@ defineEmits<{
           </button>
           <button
             class="tab"
+            :class="{ active: state.activeTab === 'plugins' }"
+            @click="state.activeTab = 'plugins'"
+          >
+            插件
+          </button>
+          <button
+            class="tab"
             :class="{ active: state.activeTab === 'system' }"
             @click="state.activeTab = 'system'"
           >
@@ -80,6 +88,7 @@ defineEmits<{
             :state="state"
             @restart="$emit('restart')"
           />
+          <PluginsTab v-if="state.activeTab === 'plugins'" />
           <SystemTab
             v-if="state.activeTab === 'system'"
             :state="state"

@@ -86,6 +86,8 @@ pnpm install
 
 # 2. 拉取 Live2D 桌宠模型（模型文件不入库，首次运行前执行一次）
 pnpm pet:fetch
+# 可选：安装 N.E.K.O 的 YUI 模型（学习评估；表现力更强，支持模型切换）
+pnpm pet:models
 
 # 3. 开发运行（自动拉起 sidecar + Vite + 窗口）
 pnpm tauri dev
@@ -125,7 +127,9 @@ node scripts/opencode-test.mjs # opencode-go provider 直测
 ### Live2D 桌宠
 
 屏幕右下角常驻 **Live2D 桌宠**（透明/置顶/无边框，`src/pet/`）：pixi-live2d-display +
-Cubism 4 Core，模型为官方示例「Hiyori」；点按随机动作、底部气泡面板轻量聊天
+Cubism 4 Core。默认官方示例「Hiyori」；可选 N.E.K.O 的 YUI（`pnpm pet:models`）
+获得更多情绪变体与表情。点按随机动作、底部气泡面板轻量聊天；在
+**设置 → 系统 → 桌宠形象** 或桌宠 `⋯` → **切换模型** 可换装。
 （最近 8 条）、回复自动 TTS 朗读 + **口型同步**（ParamMouthOpenY，按真实音频时长驱动）。
 主窗口关闭（隐藏到托盘）不影响桌宠；与主窗口共用同一会话/记忆。
 详见 [docs/live2d-pet.md](docs/live2d-pet.md)。

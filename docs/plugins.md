@@ -97,19 +97,68 @@ COS_HOME= %APPDATA%/com.diver.companion/cos
 | profile | `$COS_HOME/profiles/companion/` | 同左（COS_HOME 不同） |
 | catalog | `cos-plugins/bundle-companion/plugins.json` | 同结构拷贝到 plugins 布局 |
 
-### 2.4 插件契约（第三方 / 内部相同）
+### 2.4 插件契约（与 DSH 同形）
+
+**注册语法已对齐 deepseek-harness（DSH）插件生态**——cos 原生写法就是 DSH 写法：
 
 ```ts
+import type { Context } from 'cordis'
+import type {} from '@cos/plugin-api'
+import { defineTool } from '@cos/plugin-api' // 或 '@deepseek-ai/dsh-tools'
+import z from '@deepseek-ai/schemastery'
+
 export const name = 'my-tool'
-export const inject = ['tools', 'systemPrompt'] // 依赖的框架服务
-export function apply(ctx: Context, config: Record<string, unknown> = {}) {
-  // ctx.tools.register(...) / ctx.systemPrompt.section(...) / ctx.llm.registerAdapter(...)
+export const inject = ['tools', 'systemPrompt']
+
+/** 可选：设置页表单（Desktop model-config 风格） */
+export const configDecl = {
+  title: '我的工具',
+  fields: [
+    { key: 'greeting', label: '问候语', type: 'text' as const, default: 'hello' },
+    { key: 'verbose', label: '详细日志', type: 'boolean' as const, default: false },
+  ],
+}
+
+/** 可选：schemastery Config — cordis 在 apply 前校验/填默认值 */
+export const Config = z.object({
+  greeting: z.string().default('hello'),
+  verbose: z.boolean(),
+})
+
+export function apply(ctx: Context, config: { greeting: string; verbose: boolean }) {
+  ctx.tools.register(defineTool({
+    name: 'hello',
+    description: 'Say hello',
+    parameters: { who: { type: 'string', required: true } },
+    output: {
+      schema: { type: 'string' },
+      render: (_args, value) => [{ type: 'text', text: String(value) }],
+    },
+    async execute(args) {
+      return `${config.greeting}, ${(args as { who: string }).who}`
+    },
+  }))
+  ctx.systemPrompt.section({ name: 'my:hello', order: 100, text: '…' })
 }
 ```
 
-- 命名导出 `name` / `inject` / `apply`，无 default export。
+- 命名导出 `name` / `inject` / `apply`，无 default export（cordis/DSH 同）。
+- **工具注册**：`ctx.tools.register(defineTool({...}))` 为规范形；三参数
+  `register(name, executor, options)` 仍可用（旧插件零迁移）。
+- **插件配置校验**：可选 `export const Config = z.object({...})`。字段可选为省略 /
+  `.default()`，必选用 `.required()`（非 zod 的 `.optional()`）。
+- **设置页可编辑配置**：`export const configDecl`（`PluginConfigField`：
+  `key/label/type/secret/required/default/description/options`）。设置 → 插件会出现
+  表单；保存写入 profile `cordis.patch.yml` 的 `config` 覆盖并 `requestRestart`，
+  `apply(ctx, config)` 生效。API：`GET/POST /api/plugins/config`。
+  示例：`@diver/basic-tools`。
 - 相对导入带 `.ts` 扩展名（Node ESM + tsx）。
-- 组合包（bundle）用 `package.json` 的 `dsh.bundle.patch` 或目录式 `cordis.patch.yml` + `bundle.yml`（`requires` 校验核心行）。
+- 组合包（bundle）用 `package.json` 的 `dsh.bundle.patch` 或目录式 `cordis.patch.yml` + `bundle.yml`。
+
+**DSH 包名兼容层保留：** `@deepseek-ai/dsh-tools` / `dsh-llm` / `dsh-agent` /
+`dsh-session` / `dsh-system-prompt` / `dsh-scope` / `schemastery` 仍可 import（shim 到 `@cos/*`），
+社区插件无需改 import。详见 [harness/docs/plugins.md](../harness/docs/plugins.md)。
+示例：`examples/dsh-compat-example`。
 
 ### 2.5 disable 为何要在 boot 过滤 insert
 

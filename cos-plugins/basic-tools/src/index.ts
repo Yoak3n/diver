@@ -1,4 +1,4 @@
-// @diver/basic-tools — 基础工具插件（read / write / edit / sh / grep）。
+// @diver/basic-tools — 基础工具插件（read / write / edit / multi_edit / sh / grep / ls / find）。
 //
 // 逻辑移植自 DSH 上游（@deepseek-ai/dsh-tool-fs 与 dsh-tool-fs-search），适配
 // @cos/tools 极简注册表（executor 返回 {content} 字符串）：
@@ -17,13 +17,42 @@ import type {} from '@cos/plugin-api'
 import { applyReadTool } from './read.ts'
 import { applyWriteTool } from './write.ts'
 import { applyEditTool } from './edit.ts'
+import { applyMultiEditTool } from './multi-edit.ts'
 import { applyShTool } from './sh.ts'
 import { applyGrepTool } from './grep.ts'
+import { applyLsTool } from './ls.ts'
+import { applyFindTool } from './find.ts'
 import { ObservationTable } from './observation.ts'
 
 export const name = 'basic-tools'
 
 export const inject = ['tools', 'systemPrompt']
+
+/** Settings-page form for `apply(ctx, config)` values (Desktop model-config style). */
+export const configDecl = {
+  title: '基础工具',
+  fields: [
+    {
+      key: 'workspaceRoot',
+      label: '工作区根目录',
+      type: 'text' as const,
+      description: '相对 file_path 的解析基准；默认 $COS_HOME/workspace',
+    },
+    {
+      key: 'shTimeoutMs',
+      label: 'sh 超时（毫秒）',
+      type: 'number' as const,
+      default: 60000,
+      description: '每次 sh 调用的默认超时',
+    },
+    {
+      key: 'requireObservation',
+      label: '要求先 read 再 write/edit',
+      type: 'boolean' as const,
+      default: true,
+    },
+  ],
+}
 
 /** 当前进程的 cos home（sidecar 启动时由 Rust 注入 COS_HOME）。 */
 export function cosHome() {
@@ -51,8 +80,11 @@ export function apply(ctx: Context, config: Config = {}) {
   applyReadTool(ctx, { workspaceRoot, observation })
   applyWriteTool(ctx, { workspaceRoot, observation })
   applyEditTool(ctx, { workspaceRoot, observation })
+  applyMultiEditTool(ctx, { workspaceRoot, observation })
   applyShTool(ctx, { workspaceRoot, timeoutMs: shTimeoutMs })
   applyGrepTool(ctx, { workspaceRoot })
+  applyLsTool(ctx, { workspaceRoot })
+  applyFindTool(ctx, { workspaceRoot })
 
-  console.log(`[basic-tools] 五个基础工具就绪（workspace=${workspaceRoot}, requireObservation=${requireObservation}）`)
+  console.log(`[basic-tools] 八个基础工具就绪（workspace=${workspaceRoot}, requireObservation=${requireObservation}）`)
 }

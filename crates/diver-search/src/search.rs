@@ -90,8 +90,11 @@ pub struct SearchInput {
     pub pattern: String,
     /// 目标文件或目录（绝对路径；调用方负责相对化）。
     pub path: String,
-    /// 单个正向 glob 过滤（如 "*.ts"）；None = 不过滤。
+    /// 单个正向 glob 过滤（如 "*.ts"）；None = 不过滤。兼容旧接口。
     pub include: Option<String>,
+    /// 多 glob 过滤（rg --glob 语义，支持 `!` 否定、`{a,b}` 交替）。
+    /// 与 `include` 合并后一起进 OverrideBuilder。
+    pub includes: Vec<String>,
     /// 保留的最大匹配数（对齐 DSH GREP_MAX_MATCHES=250）。
     pub max_matches: usize,
     /// 单行预览最大字节数（对齐 DSH GREP_MAX_LINE_BYTES=2000）。
@@ -106,6 +109,7 @@ impl Default for SearchInput {
             pattern: String::new(),
             path: String::new(),
             include: None,
+            includes: Vec::new(),
             max_matches: 250,
             max_bytes_per_line: 2000,
             workdir: String::new(),
@@ -187,12 +191,25 @@ pub fn search(input: &SearchInput) -> Result<SearchOutput, SearchError> {
     walker.git_exclude(true);
     walker.ignore(true);
 
+    let mut globs: Vec<String> = Vec::new();
     if let Some(include) = &input.include {
+        if !include.trim().is_empty() {
+            globs.push(include.clone());
+        }
+    }
+    for include in &input.includes {
+        if !include.trim().is_empty() {
+            globs.push(include.clone());
+        }
+    }
+    if !globs.is_empty() {
         // OverrideBuilder 的 glob 语义与 rg --glob 一致（含 ! 否定、{a,b} 交替）。
         let mut overrides = OverrideBuilder::new(&input.path);
-        overrides
-            .add(include)
-            .map_err(|err| invalid_params(format!("invalid include glob: {err}")))?;
+        for glob in &globs {
+            overrides
+                .add(glob)
+                .map_err(|err| invalid_params(format!("invalid include glob '{glob}': {err}")))?;
+        }
         let overrides = overrides
             .build()
             .map_err(|err| invalid_params(format!("invalid include glob: {err}")))?;
@@ -343,6 +360,7 @@ mod tests {
             pattern: "needle".to_string(),
             path: dir.to_string_lossy().into_owned(),
             include: Some("*.ts".to_string()),
+            includes: Vec::new(),
             workdir: dir.to_string_lossy().into_owned(),
             ..Default::default()
         };

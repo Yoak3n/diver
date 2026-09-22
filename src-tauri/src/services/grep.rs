@@ -42,7 +42,9 @@ fn usize_opt(params: &Value, key: &str) -> Option<usize> {
     params.get(key).and_then(|v| v.as_u64()).map(|n| n as usize)
 }
 
-/// `grep::search`：文件内容搜索。params: { pattern, path, include?, maxMatches?, maxBytesPerLine? }
+/// `grep::search`：文件内容搜索。
+/// params: { pattern, path, include?, includes?, exclude?, excludes?, maxMatches?|maxCount?, maxBytesPerLine? }
+/// include/includes 为 rg glob（支持 `!`、`{a,b}`）；exclude/excludes 自动加 `!` 前缀。
 pub fn dispatch(method: &str, params: &Value, workdir: &str) -> Result<Value, RpcFailure> {
     match method {
         "grep::search" => {
@@ -51,11 +53,48 @@ pub fn dispatch(method: &str, params: &Value, workdir: &str) -> Result<Value, Rp
             if path.trim().is_empty() {
                 return Err(RpcFailure::new("path must be a non-empty string"));
             }
+            let mut includes: Vec<String> = Vec::new();
+            if let Some(single) = params.get("include").and_then(|v| v.as_str()) {
+                if !single.trim().is_empty() {
+                    includes.push(single.to_string());
+                }
+            }
+            if let Some(list) = params.get("includes").and_then(|v| v.as_array()) {
+                for item in list {
+                    if let Some(s) = item.as_str() {
+                        if !s.trim().is_empty() {
+                            includes.push(s.to_string());
+                        }
+                    }
+                }
+            }
+            for key in ["exclude", "excludes"] {
+                let mut push_neg = |s: &str| {
+                    let s = s.trim();
+                    if s.is_empty() {
+                        return;
+                    }
+                    includes.push(if s.starts_with('!') { s.to_string() } else { format!("!{s}") });
+                };
+                if let Some(single) = params.get(key).and_then(|v| v.as_str()) {
+                    push_neg(single);
+                }
+                if let Some(list) = params.get(key).and_then(|v| v.as_array()) {
+                    for item in list {
+                        if let Some(s) = item.as_str() {
+                            push_neg(s);
+                        }
+                    }
+                }
+            }
             let input = SearchInput {
                 pattern,
                 path,
-                include: params.get("include").and_then(|v| v.as_str()).map(str::to_string),
-                max_matches: usize_opt(params, "maxMatches").unwrap_or(250),
+                include: None,
+                includes,
+                max_matches: usize_opt(params, "maxMatches")
+                    .or_else(|| usize_opt(params, "maxCount"))
+                    .unwrap_or(250),
                 max_bytes_per_line: usize_opt(params, "maxBytesPerLine").unwrap_or(2000),
                 workdir: workdir.to_string(),
             };

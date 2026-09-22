@@ -5,6 +5,9 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
+.pnpm-store-local
+.pnpm-store
+harness/.dsh-ref
 lerna-debug.log*
 
 target
@@ -28,6 +31,7 @@ dist-ssr
 harness/node_modules
 harness/.dsh-home
 harness/*/node_modules
+harness/smoke.bundle.mjs
 
 # Diver release 打包产物（SEA sidecar 运行时目录，体积大，不入库）
 src-tauri/resources/sidecar/

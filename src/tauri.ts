@@ -381,6 +381,16 @@ export function removeShortcut(id: string): Promise<ShortcutBinding[]> {
   return invoke<ShortcutBinding[]>("remove_shortcut", { id });
 }
 
+/** 录制组合键前：挂起全部全局热键，避免 OS 吞掉 keydown。 */
+export function suspendShortcuts(): Promise<void> {
+  return invoke<void>("suspend_shortcuts");
+}
+
+/** 录制组合键后：按配置恢复全局热键。 */
+export function resumeShortcuts(): Promise<void> {
+  return invoke<void>("resume_shortcuts");
+}
+
 /** 启动/重绑桌宠全局鼠标流。
  * Rust 以 16ms 节流 emit `device-mouse-move`，用于穿透态下恢复交互。
  */

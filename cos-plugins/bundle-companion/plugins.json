@@ -44,6 +44,14 @@
       "defaultEnabled": true
     },
     {
+      "id": "llm-volcark",
+      "packageName": "@diver/llm-volcark",
+      "displayName": "火山方舟模型",
+      "description": "火山方舟（Volcengine Ark）OpenAI 兼容适配器",
+      "toggleable": true,
+      "defaultEnabled": true
+    },
+    {
       "id": "voice",
       "packageName": "@diver/voice",
       "displayName": "对话风格",

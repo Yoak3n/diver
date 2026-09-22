@@ -20,7 +20,7 @@ import {
   uninstallProfilePlugin,
   gracefulExitForRestart,
 } from './plugins.ts'
-import { COMPANION_PROFILE, readActiveProfile } from './paths.ts'
+import { COMPANION_PROFILE, readActiveProfile, requestRestart } from './paths.ts'
 
 const MIME: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
@@ -179,10 +179,54 @@ export async function handleRequest(
     // /api/history —— 当前会话消息历史（重启后恢复界面）
     if (pathname === '/api/history' && req.method === 'GET') {
       const messages: Array<Record<string, unknown>> = []
+      // 逐步收集 thinking-delta，挂到同 step 的 assistant 消息上
+      const thinkingByStep = new Map<string, string>()
+      // step → 消息下标，便于 tool/result 回填工具结果
+      const msgIndexByStep = new Map<string, number>()
       let presencePending = false
       try {
         const events = deps.ctx.sessionPersistence.prepare(SessionId(SESSION_ID)) ?? []
         for (const ev of events) {
+          if (ev.type === 'assistant/chunk') {
+            const chunk = ev.data.chunk
+            if (chunk?.type === 'thinking-delta' && typeof chunk.text === 'string') {
+              const stepKey = `turn-${ev.data.turn}-${ev.data.step}`
+              thinkingByStep.set(stepKey, (thinkingByStep.get(stepKey) ?? '') + chunk.text)
+            }
+            continue
+          }
+          if (ev.type === 'tool/result') {
+            const stepKey = `turn-${ev.data.turn}-${ev.data.step}`
+            const idx = msgIndexByStep.get(stepKey)
+            if (idx === undefined) continue
+            const msg = messages[idx] as { tools?: Array<Record<string, unknown>> }
+            const list = msg.tools ? [...msg.tools] : []
+            const callId = ev.data.callId !== undefined ? String(ev.data.callId)
+              : (ev.data.message?.callId !== undefined ? String(ev.data.message.callId) : undefined)
+            const raw = String(ev.data.message?.content ?? '')
+            const summary = raw.length > 120 ? `${raw.slice(0, 120)}…` : raw
+            const isError = ev.data.message?.isError === true
+            const hit = list.findIndex((t) => callId !== undefined && t.callId === callId)
+            if (hit >= 0) {
+              list[hit] = {
+                ...list[hit],
+                status: 'result',
+                ...(summary !== '' ? { summary } : {}),
+                isError,
+              }
+            } else {
+              list.push({
+                name: 'tool',
+                status: 'result',
+                time: Number(ev.time) || Date.now(),
+                ...(callId !== undefined ? { callId } : {}),
+                ...(summary !== '' ? { summary } : {}),
+                isError,
+              })
+            }
+            messages[idx] = { ...msg, tools: list }
+            continue
+          }
           if (ev.type !== 'user/message' && ev.type !== 'assistant/message') continue
           const time = Number(ev.time) || Date.now()
           if (ev.type === 'user/message') {
@@ -200,17 +244,32 @@ export async function handleRequest(
               messages.push({ id: ev.data.id, kind: 'user', content: text, origin: 'user', time })
             }
           } else if (ev.type === 'assistant/message') {
-            // 纯工具调用步骤（无文本）不进入历史，避免前端渲染空气泡
             const text = textOf(ev.data.message.content)
-            if (text === '') {
+            const stepKey = `turn-${ev.data.turn}-${ev.data.step}`
+            const thinking = thinkingByStep.get(stepKey) ?? ''
+            // assistant 消息中的 tool-call 块 → 工具记录（结果由后续 tool/result 回填）
+            const blocks = Array.isArray(ev.data.message.content) ? ev.data.message.content : []
+            const tools = blocks
+              .filter((b: any) => b && (b.type === 'tool-call' || b.type === 'toolCall'))
+              .map((b: any) => ({
+                name: String(b.name ?? 'tool'),
+                status: 'call',
+                time,
+                ...(b.id !== undefined ? { callId: String(b.id) } : {}),
+              }))
+            // 无文本、无思考、无工具的步骤不进历史，避免空气泡
+            if (text === '' && thinking === '' && tools.length === 0) {
               presencePending = false
               continue
             }
             messages.push({
               id: ev.data.message.id, kind: 'assistant',
               content: text,
+              ...(thinking !== '' ? { thinking } : {}),
+              ...(tools.length > 0 ? { tools } : {}),
               origin: presencePending ? 'presence' : 'assistant', time,
             })
+            msgIndexByStep.set(stepKey, messages.length - 1)
             presencePending = false
           }
         }
@@ -308,6 +367,22 @@ export async function handleRequest(
     }
 
     // GET /api/profile
+    if (pathname === '/api/plugins/config' && req.method === 'GET') {
+      const { listPluginConfigs } = await import('./plugin-config.ts')
+      return sendJson(res, 200, { plugins: await listPluginConfigs() })
+    }
+
+    if (pathname === '/api/plugins/config' && req.method === 'POST') {
+      const body = await readBody(req)
+      if (typeof body.id !== 'string' || body.id === '') {
+        return sendJson(res, 400, { error: 'id is required' })
+      }
+      const { savePluginConfig } = await import('./plugin-config.ts')
+      const result = await savePluginConfig(body.id, body.values ?? {})
+      requestRestart()
+      return sendJson(res, 200, result)
+    }
+
     if (pathname === '/api/profile' && req.method === 'GET') {
       sendJson(res, 200, await getProfile())
       return
@@ -365,7 +440,7 @@ export async function handleRequest(
         const h = await deps.healthInfo()
         sendJson(res, 200, {
           modelConfigured: h.modelConfigured,
-          // provider/model 与 harness 注册表对齐（持久化选择失效时钳制到当前适配器）
+          // provider/model 来自持久化选择；model 未设置时才回退目录第一个
           provider: h.provider,
           model: h.model,
           models: await deps.catalogModels(),

@@ -4,23 +4,95 @@
 
 import { Live2DModel } from "pixi-live2d-display/cubism4";
 import * as PIXI from "pixi.js";
+import { getSpeechLevel } from "../tts";
 
 // 关键：pixi-live2d-display 的 autoUpdate 通过 window.PIXI.Ticker.shared 注册渲染驱动。
 // ESM 环境下 PIXI 不会挂到全局，必须手动挂载，否则模型永远不会 update ——
 // 表现就是模型完全静止（连呼吸/眨眼都没有）。
 (window as unknown as { PIXI?: unknown }).PIXI = PIXI;
 
-const MODEL_URL = "/pet/models/Hiyori/Hiyori.model3.json";
+const DEFAULT_MODEL_URL = "/pet/models/Hiyori/Hiyori.model3.json";
+
+/** moc3 文件头：magic 'MOC3' + uint32 version（与 Cubism MocVersion 枚举一致）。 */
+async function readMocVersion(modelUrl: string): Promise<number> {
+  const res = await fetch(modelUrl);
+  if (!res.ok) throw new Error(`模型描述加载失败：HTTP ${res.status}（${modelUrl}）`);
+  const meta = (await res.json()) as { FileReferences?: { Moc?: string } };
+  const mocRel = meta.FileReferences?.Moc;
+  if (!mocRel) throw new Error("model3.json 缺少 FileReferences.Moc");
+  const base = modelUrl.replace(/[^/]*$/, "");
+  const mocRes = await fetch(base + mocRel);
+  if (!mocRes.ok) throw new Error(`moc3 加载失败：HTTP ${mocRes.status}（${base + mocRel}）`);
+  const buf = await mocRes.arrayBuffer();
+  const u8 = new Uint8Array(buf);
+  const magic = String.fromCharCode(u8[0], u8[1], u8[2], u8[3]);
+  if (magic !== "MOC3") throw new Error(`moc3 魔数异常：${magic}`);
+  const ver = u8[4] | (u8[5] << 8) | (u8[6] << 16) | (u8[7] << 24);
+  return ver >>> 0;
+}
+
+/** 当前 Core 支持的最高 moc3 版本（MocVersion_42=4 / MocVersion_50=5）。 */
+function coreMaxMocVersion(): number {
+  const core = (window as unknown as {
+    Live2DCubismCore?: {
+      Version?: { csmGetLatestMocVersion?: () => number };
+    };
+  }).Live2DCubismCore;
+  try {
+    return core?.Version?.csmGetLatestMocVersion?.() ?? 0;
+  } catch {
+    return 0;
+  }
+}
+
+async function assertMocSupported(modelUrl: string): Promise<void> {
+  let fileVer: number;
+  try {
+    fileVer = await readMocVersion(modelUrl);
+  } catch (err) {
+    throw new Error(
+      `读取模型 moc 版本失败：${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+  const max = coreMaxMocVersion();
+  if (max > 0 && fileVer > max) {
+    throw new Error(
+      `Cubism Core 不支持 moc3 v${fileVer}（当前最高 v${max}）。` +
+        `请升级 public/pet/live2dcubismcore.min.js（需含 MocVersion_50）。` +
+        `模型：${modelUrl}`,
+    );
+  }
+}
+
+function enrichLoadError(modelUrl: string, err: unknown): Error {
+  const msg = err instanceof Error ? err.message : String(err);
+  if (msg && msg !== "Unknown error" && !/unknown error/i.test(msg)) {
+    return new Error(`模型加载失败（${modelUrl}）：${msg}`);
+  }
+  return new Error(
+    `模型加载失败（${modelUrl}）：${msg}。` +
+      `常见原因：moc3 版本过新 / 贴图路径错误 / WebGL 上下文异常。` +
+      `可打开 DevTools 查看 Cubism 日志。`,
+  );
+}
 
 export interface PetModelHandle {
   model: Live2DModel;
   app: PIXI.Application;
-  /** 说话口型：循环更新 ParamMouthOpenY（0~1），返回停止函数。 */
+  /**
+   * 说话口型：在 motionManager.update 之后每帧写入（避免被动作曲线覆盖）。
+   * 有 TTS 音量时用真实响度驱动；否则退回正弦抖动。
+   * 返回停止函数。
+   */
   startMouth: () => () => void;
   /** 随机播放一个动作组（如 Idle / TapBody）。 */
   playMotion: (group?: string) => void;
   /** 播放一个情绪动作组（Happy/Sad/Angry/...），带节流与优先级控制。 */
   playEmotion: (group: string, opts?: { priority?: "normal" | "force" }) => void;
+  /** 切换表情（exp3 名）；传 null/空 清除当前表情层。 */
+  setExpression: (name?: string | null) => void;
+  /** 当前模型已声明的动作组名（调试/自适应用）。 */
+  listGroups: () => string[];
   /** 当前是否正在播放非 Idle 的动作（用于节流判断）。 */
   isBusyMotion: () => boolean;
   /** 模型水平中心在窗口宽度上的比例（0=左缘，1=右缘）。用于左右分区布局。 */
@@ -44,10 +116,19 @@ export interface PetModelHandle {
  */
 export async function createPetModel(
   container: HTMLElement,
-  options: { heightRatio?: number; anchorXRatio?: number } = {},
+  options: {
+    heightRatio?: number;
+    anchorXRatio?: number;
+    /** model3.json 路径；默认 Hiyori */
+    modelUrl?: string;
+    /** 逻辑动作组 → 候选真实组名（取第一个存在的） */
+    groupAliases?: Record<string, string[]>;
+  } = {},
 ): Promise<PetModelHandle> {
   const heightRatio = options.heightRatio ?? 0.7;
   let anchorXRatio = options.anchorXRatio ?? 0.5;
+  const modelUrl = options.modelUrl ?? DEFAULT_MODEL_URL;
+  const groupAliases = options.groupAliases ?? {};
   /** 面板所在侧（setRetreat 传入），决定让位方向 */
   let panelSideRef: "left" | "right" = "right";
 
@@ -79,7 +160,17 @@ export async function createPetModel(
   // （还缺 removeFromParent 等），命中测试会抛 "isInteractive is not a function"。
   // 这里：① 不把模型设为可交互（点击穿透用 DOM）；② 兜底补上 isInteractive，避免
   // stage 走查子树时再次炸掉。
-  const model = await Live2DModel.from(MODEL_URL, { autoInteract: false });
+  //
+  // Core 版本：public/pet/live2dcubismcore.min.js 必须支持目标模型的 moc3 版本。
+  // YUI（N.E.K.O）是 moc3 v5（MocVersion_50），旧 Core 最高 v4 会 reviveMoc 失败，
+  // pixi-live2d-display 只吐 "Unknown error"。加载前做一次 moc 版本探测，给出可读原因。
+  await assertMocSupported(modelUrl);
+  let model: Live2DModel;
+  try {
+    model = await Live2DModel.from(modelUrl, { autoInteract: false });
+  } catch (err) {
+    throw enrichLoadError(modelUrl, err);
+  }
   model.eventMode = "none";
   const modelAny = model as unknown as {
     isInteractive?: unknown;
@@ -147,11 +238,6 @@ export async function createPetModel(
       charHeight = maxY - minY;
       charCenterOffsetX = (minX + maxX) / 2 - canvasW / 2;
       charBottomOffset = canvasH - maxY; // 角色底边在画布底边上方多少
-      console.log(
-        `[pet] char bbox: W=${charWidth.toFixed(1)} H=${charHeight.toFixed(1)} ` +
-        `ratio=${(charHeight / charWidth).toFixed(2)} centerX=${charCenterOffsetX.toFixed(1)} ` +
-        `bottom=${charBottomOffset.toFixed(1)} canvas=${canvasW.toFixed(1)}x${canvasH.toFixed(1)}`,
-      );
     } else {
       console.warn(`[pet] 包围盒计算为空（count=${count}），回退画布尺寸`);
     }
@@ -345,16 +431,29 @@ export async function createPetModel(
   // 注：点按互动/长按拖动由 PetApp 统一管理（避免与长按拖动冲突），
   // 这里不再监听 pointertap。
 
+  /** 逻辑组 → 第一个在模型中真实存在的组名。 */
+  function resolveGroup(logical: string): string | null {
+    const candidates = groupAliases[logical]?.length
+      ? groupAliases[logical]
+      : [logical];
+    for (const g of candidates) {
+      if (groupExists(g)) return g;
+    }
+    return null;
+  }
+
   function playMotion(group = "TapBody") {
+    const resolved = resolveGroup(group) ?? resolveGroup("TapBody") ?? resolveGroup("Idle");
+    if (!resolved) return;
     const manager = model.internalModel.motionManager as any;
     try {
       const defs: any[] = manager?.definitions ?? [];
-      const groupDefs = defs.filter((d) => d.group === group);
+      const groupDefs = defs.filter((d) => d.group === resolved);
       if (groupDefs.length > 0) {
         const pick = groupDefs[Math.floor(Math.random() * groupDefs.length)];
-        model.motion(group, pick.index);
+        model.motion(resolved, pick.index);
       } else {
-        model.motion(group);
+        model.motion(resolved);
       }
     } catch {
       /* 动作不可用时忽略 */
@@ -435,13 +534,14 @@ export async function createPetModel(
     if (!force && now - lastEmotionEnd < EMOTION_COOLDOWN_MS) return;
     // 已有动作在播时，普通请求跳过；force 允许抢占
     if (!force && hasActiveMotion()) return;
-    // 动作组不存在时静默忽略
-    if (!groupExists(group)) return;
+    // 逻辑组名经别名表解析（Hiyori 的 Happy、YUI 的 happy 等）
+    const resolved = resolveGroup(group);
+    if (!resolved) return;
 
     const manager = model.internalModel.motionManager as any;
     try {
       const defs: any[] = manager?.definitions ?? [];
-      const groupDefs = defs.filter((d) => d.group === group);
+      const groupDefs = defs.filter((d) => d.group === resolved);
       let index: number | undefined;
       if (groupDefs.length > 0) {
         index = groupDefs[Math.floor(Math.random() * groupDefs.length)].index;
@@ -452,7 +552,7 @@ export async function createPetModel(
       // model.motion() 异步加载并播放；状态复位由 motionFinish 事件负责，
       // promise 结果不可靠（force 抢占时旧动作会 resolve false，但新动作已开始）。
       // 这里只吞掉 rejection，避免 unhandled rejection 噪音。
-      void model.motion(group, index, priority).catch(() => {
+      void model.motion(resolved, index, priority).catch(() => {
         /* 播放失败（加载错误等）：兜底定时器会复位状态 */
       });
     } catch {
@@ -464,31 +564,131 @@ export async function createPetModel(
     }
   }
 
+  function setExpression(name?: string | null) {
+    if (disposed) return;
+    try {
+      const manager = (model.internalModel as any)?.expressionManager;
+      if (!manager) return;
+      if (!name) {
+        // 清除：重置为默认表情（表达式管理器 reset / expression(null)）
+        if (typeof model.expression === "function") model.expression();
+        else manager?.resetExpression?.();
+        return;
+      }
+      if (typeof model.expression === "function") {
+        void model.expression(name);
+      } else {
+        manager?.setExpression?.(name);
+      }
+    } catch {
+      /* 表情不可用时忽略 */
+    }
+  }
+
+  function listGroups(): string[] {
+    try {
+      const defs: any[] = (model.internalModel.motionManager as any)?.definitions ?? [];
+      return [...new Set(defs.map((d) => d.group).filter(Boolean))] as string[];
+    } catch {
+      return [];
+    }
+  }
+
   // ---------- 无自主 idle 循环 ----------
   // 呼吸/眨眼由 Cubism 内置的 breath/eyeBlink 自动驱动（updateNaturalMovements），
   // 不需要定时播放大动作——之前 7 秒一次的随机 Idle 动作会让模型"突然晃动"，
   // 且与用户交互时机巧合时显得像被操作触发。
 
+  /**
+   * 说话口型。
+   *
+   * Cubism4InternalModel.update() 的顺序是：
+   *   motionManager.update → saveParameters → expression/physics →
+   *   emit("beforeModelUpdate") → model.update()（烘焙顶点）→ loadParameters()
+   * `loadParameters` 会把参数恢复成 motion 之后的快照 —— 任何在 update 外/烘焙后
+   * 写入的口型都会被冲掉。因此必须挂在 `beforeModelUpdate`（烘焙前）写入。
+   * 响度优先用 TTS AnalyserNode（getSpeechLevel），失败则退回多频正弦。
+   */
   function startMouth(): () => void {
     const core = model.internalModel.coreModel as any;
-    let frame = 0;
+    const internal = model.internalModel as any;
     let stop = false;
-    const timer = window.setInterval(() => {
-      if (stop) return;
-      frame += 0.6;
-      // 正弦抖动模拟说话口型
-      const value = Math.abs(Math.sin(frame)) * 0.9;
+    let frame = 0;
+    /** 平滑后的开口度（避免抖动） */
+    let openSmooth = 0;
+
+    function sampleTarget(): number {
+      frame += 0.42;
+      const level = getSpeechLevel();
+      if (level > 0) {
+        // 真实音量：压缩到更明显的开口范围
+        return Math.min(1, Math.max(0, level * 3.2));
+      }
+      // 多频正弦模拟音节开合（比单频更像说话）
+      const syllable = Math.abs(Math.sin(frame));
+      const wobble = 0.55 + 0.45 * Math.sin(frame * 0.37 + 1.1);
+      return Math.min(1, syllable * wobble * 1.2);
+    }
+
+    function applyMouth() {
+      if (stop || !core) return;
+      const target = sampleTarget();
+      openSmooth += (target - openSmooth) * 0.5;
+      const open = openSmooth;
+      // 口型变形：开口大时略「啊」，闭合时略抿嘴
+      const form = open * 0.55 - 0.15;
       try {
-        core.setParameterValueById?.("ParamMouthOpenY", value);
+        // CubismModel.setParameterValueById 存在；勿写到 loadParameters 之后
+        if (typeof core.setParameterValueById === "function") {
+          core.setParameterValueById("ParamMouthOpenY", open);
+          core.setParameterValueById("ParamMouthForm", form);
+          // YUI 还有自定义「齿口」（Param71），一并轻微驱动，嘴部更明显
+          core.setParameterValueById("Param71", open * 0.85);
+        } else if (core.parameters?.ids) {
+          const setByArray = (id: string, v: number) => {
+            const idx = core.parameters.ids.indexOf(id);
+            if (idx >= 0) core.parameters.values[idx] = v;
+          };
+          setByArray("ParamMouthOpenY", open);
+          setByArray("ParamMouthForm", form);
+          setByArray("Param71", open * 0.85);
+        }
       } catch {
         /* 忽略 */
       }
-    }, 60);
+    }
+
+    // 官方钩子：expression/physics 之后、model.update() 烘焙之前
+    let hooked = false;
+    if (typeof internal?.on === "function") {
+      internal.on("beforeModelUpdate", applyMouth);
+      hooked = true;
+    }
+
+    // 兜底：若事件系统不可用，用 Ticker 在下一帧 update 前写入
+    // （仍可能被 loadParameters 冲掉，但比 setInterval 强）
+    const tick = () => {
+      if (!hooked) applyMouth();
+    };
+    PIXI.Ticker.shared.add(tick);
+    applyMouth();
+
     return () => {
       stop = true;
-      window.clearInterval(timer);
+      PIXI.Ticker.shared.remove(tick);
       try {
-        core.setParameterValueById?.("ParamMouthOpenY", 0);
+        if (hooked && typeof internal?.off === "function") {
+          internal.off("beforeModelUpdate", applyMouth);
+        } else if (hooked && typeof internal?.removeListener === "function") {
+          internal.removeListener("beforeModelUpdate", applyMouth);
+        }
+      } catch {
+        /* 忽略 */
+      }
+      try {
+        core?.setParameterValueById?.("ParamMouthOpenY", 0);
+        core?.setParameterValueById?.("ParamMouthForm", 0);
+        core?.setParameterValueById?.("Param71", 0);
       } catch {
         /* 忽略 */
       }
@@ -502,6 +702,8 @@ export async function createPetModel(
     playMotion: (group?: string) => playMotion(group),
     playEmotion: (group: string, opts?: { priority?: "normal" | "force" }) =>
       playEmotion(group, opts),
+    setExpression: (name?: string | null) => setExpression(name),
+    listGroups,
     isBusyMotion: () => hasActiveMotion() || emotionMotionActive,
     getHitbox: () => {
       const left = parseFloat(hitboxEl.style.left) || 0;

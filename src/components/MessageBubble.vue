@@ -1,7 +1,9 @@
 <script setup lang="ts">
-import type { ChatMessage } from "../types";
+import { computed } from "vue";
+import type { ChatMessage, ToolActivity } from "../types";
+import ThinkingBlock from "./ThinkingBlock.vue";
 
-defineProps<{
+const props = defineProps<{
   msg: ChatMessage;
   ttsVoice: string;
   tauri: boolean;
@@ -9,32 +11,68 @@ defineProps<{
 
 defineEmits<{ speak: [msg: ChatMessage] }>();
 
+const hasContent = computed(() => (props.msg.content ?? "") !== "");
+const hasThinking = computed(() => (props.msg.thinking ?? "") !== "");
+const toolList = computed(() => props.msg.tools ?? []);
+const hasTools = computed(() => toolList.value.length > 0);
+/** 无正文气泡（仅思考 / 工具记录）：不占空气泡，左侧对齐到头像列。 */
+const metaOnly = computed(() => !hasContent.value && (hasThinking.value || hasTools.value));
+const showBubble = computed(() => hasContent.value);
+
 function fmtTime(ts: number): string {
   const d = new Date(ts);
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
+
+function toolLabel(t: ToolActivity): string {
+  if (t.status === "call") return "调用中";
+  return t.isError ? "失败" : "完成";
+}
+
+function toolPreview(t: ToolActivity): string {
+  const s = (t.summary ?? "").replace(/\s+/g, " ").trim();
+  if (s === "") return "";
+  return s.length > 80 ? `${s.slice(0, 80)}…` : s;
+}
 </script>
 
 <template>
-  <div class="msg-row" :class="msg.kind">
-    <div v-if="msg.kind === 'assistant'" class="avatar small">✦</div>
-    <div class="bubble-wrap">
-      <div class="bubble" :class="{ streaming: msg.streaming }">
-        <span v-if="msg.origin === 'presence'" class="origin-tag">主动</span>
-        <span v-html="msg.content.replace(/\n/g, '<br/>')"></span>
-        <span v-if="msg.streaming" class="cursor">▍</span>
+  <div class="msg-row" :class="[msg.kind, { 'meta-only': metaOnly }]">
+    <div v-if="msg.kind === 'assistant' && !metaOnly" class="avatar small">✦</div>
+    <div class="bubble-wrap" :class="{ 'with-thinking': hasThinking, 'with-tools': hasTools }">
+      <ThinkingBlock
+        v-if="hasThinking"
+        :text="msg.thinking!"
+        :streaming="msg.thinkingStreaming"
+      />
+      <div v-if="hasTools" class="tool-records">
+        <div v-for="(t, i) in toolList" :key="t.callId ?? i" class="tool-record" :class="[t.status, { error: t.isError }]">
+          <span class="tool-icon" aria-hidden="true">⚙</span>
+          <span class="tool-name">{{ t.name }}</span>
+          <span class="sep">·</span>
+          <span class="tool-status">{{ toolLabel(t) }}</span>
+          <span v-if="toolPreview(t)" class="sep">·</span>
+          <span v-if="toolPreview(t)" class="tool-summary">{{ toolPreview(t) }}</span>
+        </div>
       </div>
-      <div class="bubble-foot">
-        <span class="time">{{ fmtTime(msg.time) }}</span>
-        <button
-          v-if="msg.kind === 'assistant' && msg.content && !msg.streaming"
-          class="speak-btn"
-          title="朗读"
-          @click="$emit('speak', msg)"
-        >
-          🔊
-        </button>
-      </div>
+      <template v-if="showBubble">
+        <div class="bubble" :class="{ streaming: msg.streaming }">
+          <span v-if="msg.origin === 'presence'" class="origin-tag">主动</span>
+          <span v-html="msg.content.replace(/\n/g, '<br/>')"></span>
+          <span v-if="msg.streaming" class="cursor">▍</span>
+        </div>
+        <div class="bubble-foot">
+          <span class="time">{{ fmtTime(msg.time) }}</span>
+          <button
+            v-if="msg.kind === 'assistant' && msg.content && !msg.streaming"
+            class="speak-btn"
+            title="朗读"
+            @click="$emit('speak', msg)"
+          >
+            🔊
+          </button>
+        </div>
+      </template>
     </div>
   </div>
 </template>
@@ -44,6 +82,8 @@ function fmtTime(ts: number): string {
   display: flex;
   gap: 10px;
   align-items: flex-start;
+  min-width: 0;
+  max-width: 100%;
 }
 .msg-row.user {
   flex-direction: row-reverse;
@@ -58,10 +98,25 @@ function fmtTime(ts: number): string {
   font-size: 12px;
   padding: 4px 10px;
 }
+/* 无正文时没有头像，用 44px 对齐到有头像消息的内容起点 */
+.msg-row.meta-only .bubble-wrap {
+  padding-left: 44px;
+}
 .bubble-wrap {
   max-width: 76%;
+  min-width: 0;
   display: flex;
   flex-direction: column;
+}
+.bubble-wrap.with-thinking,
+.bubble-wrap.with-tools {
+  max-width: 100%;
+  min-width: 0;
+}
+/* 展开到整行时，子内容统一收回到正文同宽 */
+.bubble-wrap.with-thinking > *,
+.bubble-wrap.with-tools > * {
+  max-width: min(76%, 720px);
 }
 .msg-row.user .bubble-wrap {
   align-items: flex-end;
@@ -105,6 +160,53 @@ function fmtTime(ts: number): string {
   padding: 0 6px;
   margin-right: 6px;
   vertical-align: 1px;
+}
+.tool-records {
+  min-width: 0;
+  margin: 2px 0 6px;
+  font-size: 12px;
+  line-height: 1.55;
+  color: #8d89a1;
+}
+.tool-record {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  padding: 2px 0;
+}
+.tool-icon {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: #6f6b85;
+}
+.tool-name {
+  flex-shrink: 0;
+  font-weight: 500;
+  color: #9a96ad;
+}
+.tool-record .sep {
+  flex-shrink: 0;
+  color: #5c5870;
+}
+.tool-status {
+  flex-shrink: 0;
+  color: #7a768f;
+}
+.tool-record.call .tool-status {
+  color: #ffb07c;
+}
+.tool-record.error .tool-status {
+  color: #d37d7d;
+}
+.tool-summary {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #7a768f;
+  flex: 1;
 }
 .bubble-foot {
   display: flex;

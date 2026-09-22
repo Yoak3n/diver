@@ -6,12 +6,19 @@ import {
   listShortcuts,
   setShortcut,
   removeShortcut,
+  suspendShortcuts,
+  resumeShortcuts,
   SHORTCUT_ACTION_LABELS,
   tauriAvailable,
   type ShortcutAction,
   type ShortcutBinding,
 } from "../../tauri";
-import { eventToAccelerator, isCaptureCancel, modifierHint } from "../../hotkey";
+import {
+  eventToAccelerator,
+  isCaptureCancel,
+  isImeEvent,
+  modifierHint,
+} from "../../hotkey";
 
 const bindings = ref<ShortcutBinding[]>([]);
 const loading = ref(false);
@@ -44,20 +51,35 @@ async function refresh() {
   }
 }
 
-function stopCapture() {
+function detachCapture() {
   capturingId.value = null;
   capturePreview.value = "";
   window.removeEventListener("keydown", onCaptureKey, true);
 }
 
+function stopCapture() {
+  detachCapture();
+  void resumeShortcuts().catch((e) => {
+    error.value = String(e);
+  });
+}
+
 function startCapture(id: string) {
-  stopCapture();
+  // 只拆监听，不要 resume——避免与随后的 suspend 交错
+  detachCapture();
   capturingId.value = id;
   capturePreview.value = "";
   window.addEventListener("keydown", onCaptureKey, true);
+  // 挂起全局热键：Windows RegisterHotKey 会吞掉已注册组合的 keydown
+  void suspendShortcuts().catch((e) => {
+    error.value = `挂起全局快捷键失败（录制可能收不到按键）: ${e}`;
+  });
 }
 
 function onCaptureKey(e: KeyboardEvent) {
+  // IME 假按键不参与录制；也不要 preventDefault，以免打断输入法
+  if (isImeEvent(e)) return;
+
   // 录制期间吞掉按键，避免触发页面快捷键 / 输入框
   e.preventDefault();
   e.stopPropagation();
@@ -75,16 +97,27 @@ function onCaptureKey(e: KeyboardEvent) {
   }
 
   const target = capturingId.value;
-  stopCapture();
-  if (target === null) return;
-
-  if (target === "__new__") {
-    newAccelerator.value = accel;
-    void onAdd();
+  detachCapture();
+  if (target === null) {
+    void resumeShortcuts().catch(() => {});
     return;
   }
-  const binding = bindings.value.find((b) => b.id === target);
-  if (binding) void onSaveAccelerator(binding, accel);
+
+  void (async () => {
+    try {
+      if (target === "__new__") {
+        newAccelerator.value = accel;
+        await onAdd();
+        return;
+      }
+      const binding = bindings.value.find((b) => b.id === target);
+      if (binding) await onSaveAccelerator(binding, accel);
+    } finally {
+      void resumeShortcuts().catch((e) => {
+        error.value = String(e);
+      });
+    }
+  })();
 }
 
 async function onToggle(binding: ShortcutBinding, enabled: boolean) {
@@ -108,11 +141,20 @@ async function onToggle(binding: ShortcutBinding, enabled: boolean) {
 
 async function onSaveAccelerator(binding: ShortcutBinding, accelerator: string) {
   const accel = accelerator.trim();
-  if (!accel || accel === binding.accelerator) return;
+  if (!accel) return;
+  if (accel === binding.accelerator) {
+    hint.value = `组合键未变化（仍为 ${accel}）`;
+    return;
+  }
   if (busyId.value) return;
   busyId.value = binding.id;
   error.value = "";
   hint.value = "";
+  // 先本地更新，避免异步保存期间 UI 仍显示旧键
+  const optimistic = bindings.value.map((b) =>
+    b.id === binding.id ? { ...b, accelerator: accel } : b,
+  );
+  bindings.value = optimistic;
   try {
     const next = { ...binding, accelerator: accel };
     bindings.value = await setShortcut(next);
@@ -166,7 +208,10 @@ async function onAdd() {
 }
 
 onMounted(refresh);
-onBeforeUnmount(stopCapture);
+onBeforeUnmount(() => {
+  detachCapture();
+  void resumeShortcuts().catch(() => {});
+});
 </script>
 
 <template>

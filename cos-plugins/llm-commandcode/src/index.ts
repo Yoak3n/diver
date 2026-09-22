@@ -266,6 +266,8 @@ class CommandCodeLlmAdapter extends LlmAdapter {
         model,
         messages: translate(request.messages, request.system),
         ...(request.tools !== undefined && request.tools.length > 0 ? { tools: request.tools } : {}),
+        // 推理模型 completion_tokens 含 CoT；缺省 max_tokens 会被网关砍半截正文。
+        max_tokens: request.maxTokens ?? 384000,
         stream: true,
         stream_options: { include_usage: true },
       }),
@@ -280,8 +282,94 @@ class CommandCodeLlmAdapter extends LlmAdapter {
     let buffer = ''
     let textOpened = false
     let usageReported = false
+    let rawFinish: string | undefined
     const toolBlocks = new Map<number, { id: string; name: string; arguments: string }>()
     try {
+      /** 解析一行 SSE data 并产出 StreamChunk（主循环与流末残留 buffer 共用）。 */
+      const consume = function* (line: string): Generator<StreamChunk> {
+        const data = parseSseData(line)
+        if (data === null || typeof data !== 'object') return
+        // 非流式错误载荷（stream 中段的 error 事件）。
+        if ('error' in data) {
+          const message = String((data as { error: { message?: unknown } }).error?.message ?? 'unknown error')
+          throw new LlmError('PROVIDER_ERROR', `commandcode stream error: ${message}`)
+        }
+        // usage 块：OpenAI 兼容流里中间块常带 `"usage": null`，必须用 != null
+        // 判空（`null !== undefined` 为真，直接读 prompt_tokens 会炸）。
+        const usage = (data as {
+          usage?: { prompt_tokens?: number; completion_tokens?: number } | null
+        }).usage
+        // usage 常与 finish_reason 同 chunk：先记 usage，**不能 return**，否则丢掉 rawFinish。
+        if (usage != null && !usageReported) {
+          usageReported = true
+          yield {
+            type: 'usage',
+            usage: {
+              inputTokens: usage.prompt_tokens,
+              outputTokens: usage.completion_tokens,
+            },
+          }
+        }
+        const topFinish = (data as { finish_reason?: string | null }).finish_reason
+        if (typeof topFinish === 'string' && topFinish !== '') {
+          rawFinish = topFinish
+        }
+        const choices = (data as {
+          choices?: Array<{ delta?: unknown; finish_reason?: string | null }> | null
+        }).choices
+        if (!Array.isArray(choices) || choices.length === 0) return
+        const choice = choices[0]
+        if (choice === undefined) return
+        for (const c of choices) {
+          if (typeof c.finish_reason === 'string' && c.finish_reason !== '') {
+            rawFinish = c.finish_reason
+          }
+        }
+        if (typeof choice.delta !== 'object' || choice.delta === null) return
+        const delta = choice.delta as {
+          content?: string
+          reasoning_content?: string
+          reasoning?: string
+          tool_calls?: Array<{
+            index?: number
+            id?: string
+            function?: { name?: string; arguments?: string }
+          }>
+        }
+        const thinking =
+          typeof delta.reasoning_content === 'string' && delta.reasoning_content !== ''
+            ? delta.reasoning_content
+            : typeof delta.reasoning === 'string' && delta.reasoning !== ''
+              ? delta.reasoning
+              : ''
+        if (thinking !== '') {
+          yield { type: 'thinking-delta', text: thinking }
+        }
+        if (typeof delta.content === 'string' && delta.content !== '') {
+          if (!textOpened) {
+            yield { type: 'block-start', index: 0, blockType: 'text' }
+            textOpened = true
+          }
+          yield { type: 'text-delta', index: 0, text: delta.content }
+        }
+        for (const call of delta.tool_calls ?? []) {
+          const blockIndex = (call.index ?? 0) + 1
+          const block = toolBlocks.get(blockIndex) ?? { id: '', name: '', arguments: '' }
+          const firstForBlock = !toolBlocks.has(blockIndex)
+          block.id += call.id ?? ''
+          block.name += call.function?.name ?? ''
+          block.arguments += call.function?.arguments ?? ''
+          toolBlocks.set(blockIndex, block)
+          if (firstForBlock) yield { type: 'block-start', index: blockIndex, blockType: 'tool-call' }
+          yield {
+            type: 'tool-call-delta',
+            index: blockIndex,
+            id: call.id ?? '',
+            name: call.function?.name ?? '',
+            argumentsDelta: call.function?.arguments ?? '',
+          }
+        }
+      }
       while (true) {
         const { done, value } = await reader.read()
         if (done) break
@@ -289,63 +377,16 @@ class CommandCodeLlmAdapter extends LlmAdapter {
         const lines = buffer.split('\n')
         buffer = lines.pop() ?? ''
         for (const line of lines) {
-          const data = parseSseData(line.trim())
-          if (data === null || typeof data !== 'object') continue
-          // 非流式错误载荷（stream 中段的 error 事件）。
-          if ('error' in data) {
-            const message = String((data as { error: { message?: unknown } }).error?.message ?? 'unknown error')
-            throw new LlmError('PROVIDER_ERROR', `commandcode stream error: ${message}`)
-          }
-          // usage 块：在 finish 之前发射（流结束时的 usage chunk）。
-          const usage = (data as { usage?: { prompt_tokens?: number; completion_tokens?: number } }).usage
-          if (usage !== undefined && !usageReported) {
-            usageReported = true
-            yield {
-              type: 'usage',
-              usage: {
-                inputTokens: usage.prompt_tokens,
-                outputTokens: usage.completion_tokens,
-              },
-            }
-            continue
-          }
-          if (!('choices' in data)) continue
-          const choice = (data as { choices: Array<{ delta: unknown }> }).choices[0]
-          if (choice === undefined || typeof choice.delta !== 'object') continue
-          const delta = choice.delta as {
-            content?: string
-            tool_calls?: Array<{
-              index?: number
-              id?: string
-              function?: { name?: string; arguments?: string }
-            }>
-          }
-          if (typeof delta.content === 'string' && delta.content !== '') {
-            if (!textOpened) {
-              yield { type: 'block-start', index: 0, blockType: 'text' }
-              textOpened = true
-            }
-            yield { type: 'text-delta', index: 0, text: delta.content }
-          }
-          for (const call of delta.tool_calls ?? []) {
-            const blockIndex = (call.index ?? 0) + 1
-            const block = toolBlocks.get(blockIndex) ?? { id: '', name: '', arguments: '' }
-            const firstForBlock = !toolBlocks.has(blockIndex)
-            block.id += call.id ?? ''
-            block.name += call.function?.name ?? ''
-            block.arguments += call.function?.arguments ?? ''
-            toolBlocks.set(blockIndex, block)
-            if (firstForBlock) yield { type: 'block-start', index: blockIndex, blockType: 'tool-call' }
-            yield {
-              type: 'tool-call-delta',
-              index: blockIndex,
-              id: call.id ?? '',
-              name: call.function?.name ?? '',
-              argumentsDelta: call.function?.arguments ?? '',
-            }
-          }
+          yield* consume(line.trim())
         }
       }
+      // 流末尾：flush 解码器 + 处理残留 buffer（最后一行 SSE 往往没有尾换行，不处理会丢掉正文尾巴）。
+      buffer += decoder.decode()
+      for (const line of buffer.split('\n')) {
+        const trimmed = line.trim()
+        if (trimmed !== '') yield* consume(trimmed)
+      }
+      buffer = ''
       if (textOpened) yield { type: 'block-end', index: 0, block: { type: 'text', text: '' } }
       for (const index of [...toolBlocks.keys()].sort((a, b) => a - b)) {
         const block = toolBlocks.get(index)
@@ -360,7 +401,12 @@ class CommandCodeLlmAdapter extends LlmAdapter {
           },
         }
       }
-      yield { type: 'finish', reason: { kind: 'stop' } }
+      // 映射上游 finish_reason：length/max_tokens → max-tokens，避免半截回复被当成正常结束。
+      const reason =
+        rawFinish === 'length' || rawFinish === 'max_tokens'
+          ? ({ kind: 'max-tokens' } as const)
+          : ({ kind: 'stop' } as const)
+      yield { type: 'finish', reason }
     } finally {
       reader.releaseLock()
     }

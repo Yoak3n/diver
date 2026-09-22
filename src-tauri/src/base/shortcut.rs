@@ -31,12 +31,15 @@ struct RegisteredBinding {
 
 pub struct ShortcutManager {
     registered: Mutex<HashMap<u32, RegisteredBinding>>,
+    /// 录制组合键时挂起：注销全部全局热键，避免 OS 吞掉 keydown。
+    suspended: Mutex<bool>,
 }
 
 impl ShortcutManager {
     fn new() -> Self {
         Self {
             registered: Mutex::new(HashMap::new()),
+            suspended: Mutex::new(false),
         }
     }
 
@@ -50,6 +53,9 @@ impl ShortcutManager {
     /// 所有已注册快捷键触发时回调；只处理按下事件，按 `shortcut.id()` 分发动作。
     pub fn handle(&self, app: &AppHandle, shortcut: &Shortcut, event: ShortcutEvent) {
         if event.state != ShortcutState::Pressed {
+            return;
+        }
+        if *self.suspended.lock().unwrap() {
             return;
         }
         let action = {
@@ -72,6 +78,33 @@ impl ShortcutManager {
             let enabled = config.bindings.iter().filter(|b| b.enabled).count();
             log::info!("[shortcut] 已注册 {enabled} 个全局快捷键");
         }
+    }
+
+    /// 录制组合键前调用：注销全部全局热键，让按键事件进入 WebView。
+    ///
+    /// Windows `RegisterHotKey` 会吞掉已注册组合的 keydown；录制时必须先放开。
+    pub fn suspend(&self, app: &AppHandle) -> Result<(), String> {
+        let gs = app.global_shortcut();
+        gs.unregister_all()
+            .map_err(|e| format!("挂起（注销全部快捷键）失败: {e}"))?;
+        self.registered.lock().unwrap().clear();
+        *self.suspended.lock().unwrap() = true;
+        Ok(())
+    }
+
+    /// 录制结束后调用：按配置恢复注册。
+    pub fn resume(&self, app: &AppHandle) -> Result<(), String> {
+        *self.suspended.lock().unwrap() = false;
+        let config = load_config(app);
+        self.sync(app, &config)
+    }
+
+    /// 尽力注销；「本来就没注册」不视为错误（录制挂起后再次注销是正常路径）。
+    fn unregister_quiet(&self, app: &AppHandle, accelerator: &str) {
+        if let Err(e) = app.global_shortcut().unregister(accelerator) {
+            log::debug!("[shortcut] 注销 {accelerator}（可忽略）: {e}");
+        }
+        self.forget_accelerator(accelerator);
     }
 
     /// 全量同步：注销全部 → 按配置注册启用项。
@@ -106,7 +139,6 @@ impl ShortcutManager {
         }
 
         let mut config = load_config(app);
-        let gs = app.global_shortcut();
         let accelerator = binding.accelerator.trim().to_string();
 
         // 1) 语法校验（失败不触碰运行时）。
@@ -131,11 +163,10 @@ impl ShortcutManager {
         let old = config.bindings.iter().find(|b| b.id == binding.id).cloned();
 
         // 3) 运行时切换：先注销旧，再注册新；失败则回滚到旧绑定。
+        //    注销失败不阻断（录制挂起时旧键可能已不在 OS 注册表里）。
         if let Some(old) = &old {
             if old.enabled {
-                gs.unregister(old.accelerator.as_str())
-                    .map_err(|e| format!("注销旧快捷键失败: {e}"))?;
-                self.forget_accelerator(&old.accelerator);
+                self.unregister_quiet(app, &old.accelerator);
             }
         }
         if binding.enabled {
@@ -148,13 +179,15 @@ impl ShortcutManager {
                 return Err(e);
             }
         }
-        // 4) 持久化；失败则回滚运行时到旧绑定。
-        config.bindings.retain(|b| b.id != binding.id);
-        config.bindings.push(binding.clone());
+        // 4) 持久化；失败则回滚运行时到旧绑定。原地更新，保持列表顺序稳定。
+        if let Some(slot) = config.bindings.iter_mut().find(|b| b.id == binding.id) {
+            *slot = binding.clone();
+        } else {
+            config.bindings.push(binding.clone());
+        }
         if !save_config(app, &config) {
             if binding.enabled {
-                let _ = gs.unregister(binding.accelerator.as_str());
-                self.forget_accelerator(&binding.accelerator);
+                self.unregister_quiet(app, &binding.accelerator);
             }
             if let Some(old) = &old {
                 if old.enabled {
@@ -173,14 +206,11 @@ impl ShortcutManager {
         id: String,
     ) -> Result<Vec<ShortcutBinding>, String> {
         let mut config = load_config(app);
-        let Some(binding) = config.bindings.iter().find(|b| b.id == id) else {
+        let Some(old) = config.bindings.iter().find(|b| b.id == id).cloned() else {
             return Err(format!("未找到绑定: {id}"));
         };
-        if binding.enabled {
-            app.global_shortcut()
-                .unregister(binding.accelerator.as_str())
-                .map_err(|e| format!("注销快捷键失败: {e}"))?;
-            self.forget_accelerator(&binding.accelerator);
+        if old.enabled {
+            self.unregister_quiet(app, &old.accelerator);
         }
         config.bindings.retain(|b| b.id != id);
         if !save_config(app, &config) {

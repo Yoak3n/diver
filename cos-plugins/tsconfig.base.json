@@ -9,7 +9,6 @@
     "noEmit": true,
     "verbatimModuleSyntax": true,
     "skipLibCheck": true,
-    "baseUrl": ".",
     "paths": {
       "@cos/plugin-api": ["../harness/packages/plugin-api/src/index.ts"],
       "@diver/native-bridge": ["../native-bridge/src/index.ts"],

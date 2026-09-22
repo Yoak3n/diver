@@ -4,7 +4,8 @@ import "./style.css";
 import { router } from "./router";
 import { onTauriEvent } from "./tauri";
 
-// Live2D Cubism 4 Core：动态注入经典 <script>（挂载全局 Live2DCubismCore）。
+// Live2D Cubism Core：动态注入经典 <script>（挂载全局 Live2DCubismCore）。
+// 需支持 moc3 v5（YUI 等 Cubism 5 导出模型）；旧 Core 最高 v4 会导致 reviveMoc 失败。
 // 原 pet.html 用静态 <script src="/pet/live2dcubismcore.min.js"> 注入；
 // 改为路由后统一在应用启动时按需动态加载（仅当访问 /pet 时）。
 // 注意：必须在 pixi-live2d-display 创建模型前完成，PetApp 的模型加载是懒

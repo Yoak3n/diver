@@ -91,11 +91,14 @@ export type ModelBlock =
  * The adapter-output stream protocol, matching dsh-llm's StreamChunk. Every
  * block opens with `block-start` and closes with `block-end` carrying the
  * complete block; `usage` precedes `finish`, which is always the final chunk.
+ * `thinking-delta` carries reasoning-model CoT text and is not assembled into
+ * ModelBlock (history/wire ignore it; surfaces may display it).
  * @mode raw stream
  */
 export type StreamChunk =
   | { type: 'block-start'; index: number; blockType: 'text' | 'tool-call' }
   | { type: 'text-delta'; index: number; text: string }
+  | { type: 'thinking-delta'; text: string }
   | { type: 'tool-call-delta'; index: number; id: string; name: string; argumentsDelta: string }
   | { type: 'block-end'; index: number; block: ModelBlock }
   | { type: 'usage'; usage: TokenUsage }
@@ -259,11 +262,13 @@ export interface AssembleContext {
   model?: string
 }
 
-/** One contributed system-prompt section (registry input). */
+/** One contributed system-prompt section (registry input; DSH-shaped). */
 export interface PromptSection {
   readonly name: string
   readonly order: number
   readonly text: string | ((context: AssembleContext) => string)
+  /** Treat this contribution as the complete system prompt (DSH `complete`). */
+  readonly complete?: boolean
 }
 
 /** One section of an assembly, with its text resolved. */

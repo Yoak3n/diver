@@ -10,6 +10,7 @@
 
 import { randomUUID } from 'node:crypto'
 import { createReadStream } from 'node:fs'
+import { findEditMatch } from './edit-match.ts'
 import {
   chmod, link, lstat, mkdir, open, readFile, readdir, realpath, rename, rm, stat,
 } from 'node:fs/promises'
@@ -448,6 +449,8 @@ export async function readForEdit(
 /**
  * 对 LF 归一内容做字面替换。空/缺失搜索文本抛 FS_EDIT_NOT_FOUND；多匹配且
  * 非 replaceAll 抛 FS_AMBIGUOUS_EDIT。
+ * exact 失败时走 edit-match 分层模糊（引号/行号前缀/行内空白/缩进），命中后
+ * 用文件里的真实片段做替换。
  */
 export function applyLiteralEdit(
   content: string,
@@ -455,13 +458,24 @@ export function applyLiteralEdit(
   newString: string,
   replaceAll: boolean,
   displayPath: string,
-): { content: string; replacements: number } {
+): { content: string; replacements: number; actualString: string; matchStrategy: string } {
   const oldNorm = normalizeLineEndings(oldString)
   if (oldNorm.length === 0) {
     throw new DiverFsError('old_string must be a non-empty string', 'FS_EDIT_NOT_FOUND')
   }
   const newNorm = normalizeLineEndings(newString)
-  const replacements = countOccurrences(content, oldNorm)
+  const match = findEditMatch({ content, search: oldNorm, replaceAll })
+  if (match.status === 'not_found') {
+    throw new DiverFsError(`old_string was not found in "${displayPath}"`, 'FS_EDIT_NOT_FOUND')
+  }
+  if (match.status === 'ambiguous') {
+    throw new DiverFsError(
+      `old_string matched ${match.candidateCount} times in "${displayPath}" (strategy=${match.strategy}); provide a more specific old_string or set replace_all to true`,
+      'FS_AMBIGUOUS_EDIT',
+    )
+  }
+  const needle = match.actualString
+  const replacements = countOccurrences(content, needle)
   if (replacements === 0) {
     throw new DiverFsError(`old_string was not found in "${displayPath}"`, 'FS_EDIT_NOT_FOUND')
   }
@@ -471,5 +485,5 @@ export function applyLiteralEdit(
       'FS_AMBIGUOUS_EDIT',
     )
   }
-  return { content: content.split(oldNorm).join(newNorm), replacements }
+  return { content: content.split(needle).join(newNorm), replacements, actualString: needle, matchStrategy: match.strategy }
 }

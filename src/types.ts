@@ -55,11 +55,23 @@ export interface SettingsInfo {
 
 export interface ChatMessage {
   id: string;
-  kind: "user" | "assistant" | "system";
+  kind: "user" | "assistant" | "system" | "activity-summary";
   content: string;
   origin: "user" | "assistant" | "presence";
   time: number;
   streaming?: boolean;
+  /** 深度思考（reasoning CoT）全文；UI 默认折叠展示。 */
+  thinking?: string;
+  /** 思考是否仍在流式生成中。 */
+  thinkingStreaming?: boolean;
+  /** 本步工具调用记录（按发生顺序）。 */
+  tools?: ToolActivity[];
+  /** kind=activity-summary：折叠「N 次工具调用 · M 条消息」。 */
+  toolCount?: number;
+  messageCount?: number;
+  activityExpanded?: boolean;
+  /** 归属活动组 id；组收起时隐藏这些成员消息。 */
+  activityGroupId?: string;
   /** 来自重启后的历史加载（非新到达消息）：气泡/朗读等"到达提示"应跳过。 */
   fromHistory?: boolean;
 }
@@ -69,6 +81,8 @@ export interface ToolActivity {
   status: "call" | "result";
   summary?: string;
   time: number;
+  callId?: string;
+  isError?: boolean;
 }
 
 /** Rust 侧 sidecar 状态（Tauri 命令 get_sidecar_status 返回）。 */
@@ -98,7 +112,8 @@ export type StreamEvent =
   | { type: "hello"; persona: string; provider: string; model: string; modelConfigured: boolean; sessionId: string | null; busy: boolean }
   | { type: "message"; kind: "user" | "assistant" | "system"; sessionId: string; messageId: string; turnMessageId?: string; content: string; origin: "user" | "assistant" | "presence"; time: number }
   | { type: "chunk"; messageId: string; delta: string }
-  | { type: "tool"; name: string; status: "call" | "result"; summary?: string }
+  | { type: "thinking"; messageId: string; delta: string }
+  | { type: "tool"; name: string; status: "call" | "result"; summary?: string; messageId?: string; callId?: string; isError?: boolean }
   | { type: "turn"; state: "start" | "end"; reason?: string }
   | { type: "busy"; value: boolean }
   | { type: "question"; requestId: string; questions: UserQuestion[] }

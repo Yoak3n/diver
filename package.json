@@ -9,6 +9,8 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "pet:fetch": "node scripts/pet-fetch.mjs",
+    "pet:models": "node scripts/pet-models.mjs",
+    "pet:models:yui": "node scripts/pet-models.mjs --yui",
     "bundle:release": "node scripts/bundle-release.mjs",
     "typecheck": "pnpm run typecheck:harness && pnpm run typecheck:plugins",
     "typecheck:harness": "pnpm --dir harness typecheck",

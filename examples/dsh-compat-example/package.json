@@ -1,0 +1,15 @@
+{
+  "name": "dsh-compat-example",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Sample DSH-style plugin using defineTool from @deepseek-ai/dsh-tools on the cos compat layer.",
+  "main": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@deepseek-ai/dsh-tools": "workspace:*",
+    "cordis": "4.0.0-rc.7"
+  }
+}

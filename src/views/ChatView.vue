@@ -69,6 +69,7 @@ const dotClass = computed(() => (canSend.value ? "on" : busy.value ? "busy" : "o
       @open-settings="openSettings"
       @suggestion="composer = $event"
       @answer-question="submitQuestionAnswer"
+      @toggle-activity="chat.toggleActivity"
     />
 
     <ComposerBar

@@ -50,7 +50,7 @@ export function createChatState() {
     const tts = ttsSource?.();
     if (!tts?.enabled || !msg.content.trim()) return;
     try {
-      await speakMessageText(msg.content, tts.voice);
+      await speakMessageText(msg.content, tts.voice, msg.id);
     } catch {
       /* TTS 不可用时不打扰 */
     }
@@ -58,7 +58,7 @@ export function createChatState() {
 
   async function speakMessage(msg: ChatMessage) {
     const tts = ttsSource?.();
-    await speakMessageText(msg.content, tts?.voice ?? "");
+    await speakMessageText(msg.content, tts?.voice ?? "", msg.id, { force: true });
   }
 
   // ---------- 消息操作 ----------
@@ -152,7 +152,9 @@ export function createChatState() {
           for (const m of messages.value) {
             if (m.streaming) m.streaming = false;
           }
-          if (e.reason && e.reason !== "completed") {
+          if (e.reason === "max-tokens") {
+            error.value = "本轮回复被输出长度上限截断了，可发送「继续」补完";
+          } else if (e.reason && e.reason !== "completed") {
             error.value = `本轮对话结束（${e.reason}）`;
           }
         }

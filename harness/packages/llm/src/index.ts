@@ -156,6 +156,8 @@ export class BlockAssembler {
       if (!this.open.has(chunk.index)) throw new LlmError('INVALID_STREAM', `text-delta without open block ${chunk.index}`)
       const block = this.blockMap.get(chunk.index)
       if (block !== undefined && block.type === 'text') block.text += chunk.text
+    } else if (chunk.type === 'thinking-delta') {
+      // 推理 CoT 不进入 ModelBlock（不回传模型、不进 derived history）
     } else if (chunk.type === 'tool-call-delta') {
       if (!this.open.has(chunk.index)) throw new LlmError('INVALID_STREAM', `tool-call-delta without open block ${chunk.index}`)
       const block = this.blockMap.get(chunk.index)

@@ -43,7 +43,8 @@ export async function ensureCompanionAgent(ctx: Context, model?: string, provide
   const handle = await ctx.agentLoop.createAgent({
     sessionId: id,
     meta: { cwd: WORKSPACE_DIR() },
-    agentOptions: { provider: resolvedProvider, model: resolvedModel },
+    // maxTokens 显式下传：推理模型 completion 含 CoT，缺省会被网关砍半截正文。
+    agentOptions: { provider: resolvedProvider, model: resolvedModel, maxTokens: 384000 },
     resume: true,
   })
   console.log(`[diver] 陪伴会话就绪 ${SESSION_ID}（${resolvedProvider}/${resolvedModel}）`)

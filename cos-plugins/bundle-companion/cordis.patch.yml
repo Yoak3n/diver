@@ -29,6 +29,10 @@
     - id: llm-commandcode
       name: '@diver/llm-commandcode'
 
+    # 火山方舟（Volcengine Ark）适配器：注册 provider "volcark"
+    - id: llm-volcark
+      name: '@diver/llm-volcark'
+
     # 对话风格：约束 LLM 输出更像真人对话（口语短句、情绪色彩明确），
     # 与桌宠前端情绪推断（src/pet/emotion.ts）形成闭环
     - id: voice

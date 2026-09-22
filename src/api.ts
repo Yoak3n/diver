@@ -144,6 +144,41 @@ export function uninstallProfilePluginApi(
   });
 }
 
+export interface PluginConfigFieldView {
+  key: string;
+  label: string;
+  type?: "text" | "password" | "number" | "boolean" | "select";
+  secret?: boolean;
+  required?: boolean;
+  description?: string;
+  options?: Array<{ value: string; label: string }>;
+  default?: string | number | boolean;
+  value?: string;
+  configured: boolean;
+}
+
+export interface PluginConfigView {
+  id: string;
+  packageName: string;
+  title?: string;
+  hasConfig: boolean;
+  fields: PluginConfigFieldView[];
+}
+
+export function getPluginConfigsApi(): Promise<{ plugins: PluginConfigView[] }> {
+  return json("/api/plugins/config");
+}
+
+export function savePluginConfigApi(
+  id: string,
+  values: Record<string, string | number | boolean | null>,
+): Promise<{ ok: true; config: Record<string, unknown> }> {
+  return json("/api/plugins/config", {
+    method: "POST",
+    body: JSON.stringify({ id, values }),
+  });
+}
+
 export function getProfileApi(): Promise<ProfileInfo> {
   return json("/profile");
 }

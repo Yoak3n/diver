@@ -14,6 +14,7 @@ import {
   writeFileAtomic,
 } from './fsio.ts'
 import type { ObservationTable } from './observation.ts'
+import { createUnifiedDiff, formatDiffOutput } from './diff.ts'
 
 export interface EditCaps {
   workspaceRoot: string
@@ -40,11 +41,13 @@ function parseEditArgs(args: EditArgs): { filePath: string; oldString: string; n
   }
 }
 
-/** 渲染编辑成功的模型可见消息（纯句子，无 envelope，与上游一致）。 */
-function formatEditOutput(displayPath: string, replaceAll: boolean): string {
-  return replaceAll
+/** 渲染编辑成功的模型可见消息：成功句 + unified diff + 行数统计。 */
+function formatEditOutput(displayPath: string, replaceAll: boolean, oldText: string, newText: string): string {
+  const success = replaceAll
     ? `The file ${displayPath} has been updated. All occurrences were successfully replaced.`
     : `The file ${displayPath} has been updated successfully.`
+  const diff = createUnifiedDiff(oldText, newText, displayPath)
+  return formatDiffOutput(success, diff)
 }
 
 /** 注册 edit 工具。 */
@@ -92,7 +95,7 @@ export function applyEditTool(ctx: Context, caps: EditCaps): void {
     const after = await probe(target.targetKey)
     if (after !== null) caps.observation.markObserved(target.targetKey, after.version)
 
-    return { content: formatEditOutput(target.displayPath, input.replaceAll) }
+    return { content: formatEditOutput(target.displayPath, input.replaceAll, original.content, edited.content) }
   }, {
     description: 'Edit an existing UTF-8 text file by replacing literal text.',
     parameters: {

@@ -1,0 +1,89 @@
+{
+  "version": 1,
+  "description": "Diver 桌宠模型目录：id → model3 路径 + 情绪动作组别名 + 可选表情映射。模型文件不入库，由 scripts/pet-models.mjs 拉取。",
+  "defaultModelId": "hiyori",
+  "models": [
+    {
+      "id": "hiyori",
+      "label": "Hiyori（官方样例）",
+      "model3": "/pet/models/Hiyori/Hiyori.model3.json",
+      "heightRatio": 0.8,
+      "installHint": "pnpm pet:fetch",
+      "groupAliases": {
+        "Happy": ["Happy"],
+        "Sad": ["Sad"],
+        "Angry": ["Angry"],
+        "Surprised": ["Surprised"],
+        "Shy": ["Shy"],
+        "Nod": ["Nod"],
+        "Wave": ["Wave"],
+        "TapBody": ["TapBody", "Idle"],
+        "Idle": ["Idle"]
+      }
+    },
+    {
+      "id": "yui-lolita",
+      "label": "YUI · Lolita（N.E.K.O）",
+      "model3": "/pet/models/yui-lolita/yui-lolita.model3.json",
+      "heightRatio": 0.86,
+      "installHint": "pnpm pet:models",
+      "note": "学习评估用；角色版权归 Project N.E.K.O.，勿商用分发",
+      "groupAliases": {
+        "Happy": ["happy"],
+        "Sad": ["sad"],
+        "Angry": ["angry"],
+        "Surprised": ["surprised"],
+        "Shy": ["shy", "happy"],
+        "Nod": ["neutral", "happy"],
+        "Wave": ["happy"],
+        "TapBody": ["happy", "neutral"],
+        "Idle": ["Idle", "idle", "neutral"]
+      },
+      "expressionMap": {
+        "happy": ["expression3", "expression4", "by"],
+        "sad": ["by", "expression5"],
+        "angry": ["expression2", "expression9"],
+        "surprised": ["expression6", "expression7", "expression8"],
+        "shy": ["expression11", "expression12"],
+        "love": ["expression4", "expression11"],
+        "grateful": ["expression3", "by"],
+        "greeting": ["expression3"],
+        "farewell": ["by"],
+        "agree": ["expression3"],
+        "excited": ["expression3", "expression4"]
+      }
+    },
+    {
+      "id": "yui-origin",
+      "label": "YUI · Origin（N.E.K.O）",
+      "model3": "/pet/models/yui-origin/yui-origin.model3.json",
+      "heightRatio": 0.88,
+      "installHint": "pnpm pet:models",
+      "note": "学习评估用；动作文件较大，首次加载偏慢；角色版权归 Project N.E.K.O.，勿商用分发",
+      "groupAliases": {
+        "Happy": ["happy"],
+        "Sad": ["sad"],
+        "Angry": ["angry"],
+        "Surprised": ["surprised"],
+        "Shy": ["sad", "happy"],
+        "Nod": ["neutral", "happy"],
+        "Wave": ["happy"],
+        "TapBody": ["happy", "neutral"],
+        "Idle": ["Idle", "idle", "neutral"]
+      },
+      "expressionMap": {
+        "happy": ["yyy", "xxy"],
+        "sad": ["by", "wy"],
+        "angry": ["bzy", "sbx"],
+        "surprised": ["z1", "z2"],
+        "shy": ["syhs", "szhs"],
+        "love": ["xxy", "yyy"],
+        "grateful": ["yyy"],
+        "greeting": ["yyy"],
+        "farewell": ["by"],
+        "agree": ["001"],
+        "excited": ["yyy", "xxy"]
+      }
+    }
+  ]
+}

@@ -2,7 +2,7 @@ use crate::base::cmd::*;
 use crate::base::window::pet as pet_win;
 use crate::base::window::schema::WindowType;
 use tauri::{generate_handler, AppHandle, Builder, Manager, RunEvent};
-use tauri_plugin_log::{Target, TargetKind};
+use tauri_plugin_log::{Target, TargetKind, TimezoneStrategy};
 
 pub fn generate_handlers() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync + 'static
 {
@@ -13,6 +13,8 @@ pub fn generate_handlers() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + 
         list_shortcuts,
         set_shortcut,
         remove_shortcut,
+        suspend_shortcuts,
+        resume_shortcuts,
         list_plugins,
         set_plugin_enabled,
         toggle_plugin,
@@ -79,6 +81,8 @@ pub fn configure(builder: Builder<tauri::Wry>) -> Builder<tauri::Wry> {
                     file_name: Some("app".into()),
                 }),
             ])
+            // 插件默认 UTC，会与本地时间差 8 小时；统一用系统本地时区
+            .timezone_strategy(TimezoneStrategy::UseLocal)
             .level(log::LevelFilter::Info)
             .build(),
     );

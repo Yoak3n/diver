@@ -1,16 +1,21 @@
 packages:
   - harness
   - harness/packages/*
+  - examples/dsh-compat-example
   - cos-plugins/backend
   - cos-plugins/basic-tools
   - cos-plugins/memory
   - cos-plugins/voice
   - cos-plugins/mcp
   - cos-plugins/llm-commandcode
+  - cos-plugins/llm-volcark
   - cos-plugins/native-bridge
   - cos-plugins/bundle-companion
 
 nodeLinker: hoisted
+
+# 无 TTY（cargo tauri dev 的 beforeDevCommand / CI）清理 node_modules 时不询问
+confirmModulesPurge: false
 
 allowBuilds:
   esbuild: true

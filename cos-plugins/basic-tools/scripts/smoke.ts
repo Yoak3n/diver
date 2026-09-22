@@ -8,7 +8,7 @@
 //   node smoke.bundle.mjs
 
 import { join } from 'node:path'
-import { mkdtempSync, rmSync, writeFileSync, readFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 
 import {
@@ -24,6 +24,10 @@ import {
 import { buildWindow, formatReadOutput } from '../src/read-render.ts'
 import { ObservationTable } from '../src/observation.ts'
 import { parseGrepArgs } from '../src/grep.ts'
+import { globToRegExp, walkGlob } from '../src/find.ts'
+import { listDirectory } from '../src/ls.ts'
+import { formatSize, truncateHead, truncateTail, truncateLine } from '../src/truncate.ts'
+import { createUnifiedDiff, formatDiffOutput } from '../src/diff.ts'
 
 let pass = 0
 let fail = 0
@@ -56,6 +60,24 @@ async function expectError(name: string, fn: () => Promise<unknown> | unknown, c
 const dir = mkdtempSync(join(tmpdir(), 'basic-tools-smoke-'))
 const fileA = join(dir, 'a.txt')
 const fileB = join(dir, 'b.txt')
+
+console.log('\n── truncate ──')
+{
+  const head = truncateHead('l1\nl2\nl3\n', { maxLines: 2, maxBytes: 1024 })
+  check('truncateHead keeps first lines', head.content === 'l1\nl2' && head.truncatedBy === 'lines')
+  const tail = truncateTail('l1\nl2\nl3\n', { maxLines: 2, maxBytes: 1024 })
+  check('truncateTail keeps last lines', tail.content === 'l2\nl3' && tail.truncatedBy === 'lines')
+  const line = truncateLine('x'.repeat(20), 10)
+  check('truncateLine adds marker', line.wasTruncated && line.text.endsWith('... [truncated]'))
+  check('formatSize KB', formatSize(2048) === '2.0KB')
+}
+
+console.log('\n── find: globToRegExp ──')
+{
+  check('glob *', globToRegExp('*.ts').test('a.ts') && !globToRegExp('*.ts').test('src/a.ts'))
+  check('glob **/', globToRegExp('**/*.ts').test('src/deep/a.ts'))
+  check('glob ?', globToRegExp('a?.ts').test('ab.ts') && !globToRegExp('a?.ts').test('abc.ts'))
+}
 
 console.log('\n── fsio: resolve / probe ──')
 {
@@ -130,16 +152,61 @@ console.log('\n── observation: read-first guard ──')
 
 console.log('\n── grep: arg validation ──')
 {
-  check('valid args', JSON.stringify(parseGrepArgs({ pattern: 'x', include: '*.{ts,tsx}' })).length > 0)
+  const ok = parseGrepArgs({ pattern: 'x', include: ['*.{ts,tsx}'], exclude: ['*.min.js'], maxCount: 10 })
+  check('include/exclude globs', ok.globs.includes('*.{ts,tsx}') && ok.globs.includes('!*.min.js') && ok.maxCount === 10)
+  check('exclude auto-negates', parseGrepArgs({ pattern: 'x', exclude: '!a.js' }).globs.includes('!a.js'))
   let threw = false
   try { parseGrepArgs({ pattern: '' }) } catch { threw = true }
   check('empty pattern rejects', threw)
   threw = false
-  try { parseGrepArgs({ pattern: 'x', include: '!*.ts' }) } catch { threw = true }
-  check('negated include rejects', threw)
+  try { parseGrepArgs({ pattern: 'x', include: '  ' }) } catch { threw = true }
+  check('blank include rejects', threw)
   threw = false
-  try { parseGrepArgs({ pattern: 'x', include: '*.ts,*.js' }) } catch { threw = true }
-  check('comma include rejects', threw)
+  try { parseGrepArgs({ pattern: 'x', maxCount: 0 }) } catch { threw = true }
+  check('maxCount 0 rejects', threw)
+  check('negated include allowed', parseGrepArgs({ pattern: 'x', include: '!*.ts' }).globs.includes('!*.ts'))
+}
+
+console.log('\n── edit-match: fuzzy strategies ──')
+{
+  const { findEditMatch } = await import('../src/edit-match.ts')
+  check('exact', findEditMatch({ content: 'hello world', search: 'hello', replaceAll: false }).status === 'matched')
+  const quote = findEditMatch({ content: 'say “hi” now', search: 'say "hi" now', replaceAll: false })
+  check('quote_normalized', quote.status === 'matched' && quote.strategy === 'quote_normalized')
+  const lnum = findEditMatch({ content: 'real code\n', search: '12: real code', replaceAll: false })
+  check('line_number_prefix_stripped', lnum.status === 'matched' && lnum.strategy === 'line_number_prefix_stripped')
+  const indent = findEditMatch({ content: 'fn a() {\n  let x = 1;\n}\n', search: 'fn a() {\nlet x = 1;\n}\n', replaceAll: false })
+  check('line_trimmed/indent', indent.status === 'matched')
+  const fuzzyAll = findEditMatch({ content: '  a  \n', search: 'a', replaceAll: true })
+  check('replaceAll skips broad matchers', fuzzyAll.status === 'not_found' || fuzzyAll.strategy === 'exact' || fuzzyAll.strategy === 'quote_normalized' || fuzzyAll.strategy === 'escape_normalized' || fuzzyAll.strategy === 'line_number_prefix_stripped')
+}
+
+console.log('\n── unified diff ──')
+{
+  const before = 'keep\nold line\nkeep2\nkeep3\nkeep4\nkeep5\n'
+  const after = 'keep\nnew line\nkeep2\nkeep3\nkeep4\nkeep5\n'
+  const diff = createUnifiedDiff(before, after, 'a.txt')
+  check('diff has headers', diff.patch.startsWith('--- a/a.txt\n+++ b/a.txt'))
+  check('diff has hunk', diff.patch.includes('@@'))
+  check('diff marks -/+', diff.patch.includes('-old line') && diff.patch.includes('+new line'))
+  check('stats +1/-1', diff.stats.additions === 1 && diff.stats.deletions === 1)
+  check('same content empty patch', createUnifiedDiff('x', 'x', 'f').patch === '')
+  const out = formatDiffOutput('updated', diff)
+  check('formatDiffOutput embeds patch', out.includes('updated') && out.includes('@@'))
+}
+
+console.log('\n── ls / find walk ──')
+{
+  mkdirSync(join(dir, 'sub'), { recursive: true })
+  writeFileSync(join(dir, 'sub', 'c.ts'), 'export {}\n', 'utf8')
+  writeFileSync(join(dir, 'top.ts'), 'export {}\n', 'utf8')
+  writeFileSync(join(dir, 'readme.md'), '# hi\n', 'utf8')
+  const listing = await listDirectory(dir, 50)
+  check('ls marks dirs', listing.entries.some((e) => e.endsWith('/')) && listing.entries.includes('top.ts'))
+  const hits = await walkGlob(dir, '**/*.ts', 10)
+  check('find **/*.ts', hits.includes('top.ts') && hits.includes('sub/c.ts') && !hits.includes('readme.md'))
+  const one = await walkGlob(dir, '*.md', 10)
+  check('find *.md', one.includes('readme.md') && one.length === 1)
 }
 
 rmSync(dir, { recursive: true, force: true })

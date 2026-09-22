@@ -43,6 +43,7 @@
 | `deepseek-official` | `@cos/llm-deepseek` 的 `providerConfig()` | apiKey（password/credentials，必填，env 兜底 `DEEPSEEK_API_KEY`）+ baseUrl（text/settings，可自定义端点） | 官方 API（`deepseek-v4-flash` / `deepseek-v4-pro`） |
 | `mock` | `@cos/mock-llm` 的 `providerConfig()` | （无） | 本地 mock（离线 / 无 key 调试） |
 | `commandcode` | `@diver/llm-commandcode` 的 `providerConfig()`（`cos-plugins/` 第三方插件，经 `@diver/bundle-companion` 挂载） | apiKey（password/credentials，必填，env 兜底 `COMMANDCODE_API_KEY`）+ baseUrl（text/settings，可自定义端点） | [Command Code Provider API](https://commandcode.ai/docs/provider)，适配 [GOAT 套餐](https://commandcode.ai/docs/plans/goat)：$10/月解锁 30+ 模型，同一把 key（Studio 创建）按套餐额度计量；模型目录经公开 `GET /provider/v1/models` 实时拉取（advisory） |
+| `volcark` | `@diver/llm-volcark` 的 `providerConfig()`（`cos-plugins/` 第三方插件，经 `@diver/bundle-companion` 挂载） | apiKey（password/credentials，必填，env 兜底 `ARK_API_KEY`）+ baseUrl（text/settings，可自定义端点） | 火山方舟（Volcengine Ark）OpenAI 兼容接口，默认端点 `https://ark.cn-beijing.volces.com/api/plan/v3`；Model ID 对齐[官方模型列表](https://console.volcengine.com/ark/region:cn-beijing/docs/ark/model-list?lang=zh)（如 `doubao-seed-2-1-lite-260915`），plan 端点也可用控制台短名（如 `deepseek-v4.1-flash`），或推理接入点 `ep-…` |
 
 ## 扩展新 provider
 

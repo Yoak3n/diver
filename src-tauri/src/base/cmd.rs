@@ -118,6 +118,18 @@ pub fn remove_shortcut(
     crate::base::shortcut::ShortcutManager::global().remove_binding(&app, id)
 }
 
+/// 录制组合键前调用：挂起全部全局热键，避免 OS 吞掉 keydown。
+#[tauri::command]
+pub fn suspend_shortcuts(app: AppHandle) -> Result<(), String> {
+    crate::base::shortcut::ShortcutManager::global().suspend(&app)
+}
+
+/// 录制组合键结束后调用：按配置恢复全局热键。
+#[tauri::command]
+pub fn resume_shortcuts(app: AppHandle) -> Result<(), String> {
+    crate::base::shortcut::ShortcutManager::global().resume(&app)
+}
+
 /// 获取 sidecar 的 API 根地址（供前端展示/调试）。
 #[tauri::command]
 pub fn get_sidecar_url() -> String {

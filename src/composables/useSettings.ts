@@ -10,12 +10,14 @@ import {
   getTtsConfig,
   getWindowStartupConfig,
   getPetWindowConfig,
+  onTauriEvent,
   setPetSizePercent,
   restartSidecar,
   setWindowStartupConfig,
   tauriAvailable,
   type WindowStartupConfig,
 } from "../tauri";
+import type { SidecarStatus } from "../types";
 import { getChat } from "./chat";
 
 export type SettingsTab =
@@ -103,10 +105,9 @@ function applySettings(s: NonNullable<typeof settingsInfo.value>) {
   }
 }
 
-/** 拉取并回填设置（进入设置页 / 手动刷新时调用）。 */
+/** 拉取并回填设置（进入设置页 / 手动刷新 / sidecar 重启后自动调用）。 */
 async function openSettings() {
-  state.saveError = "";
-  state.savingMsg = "";
+  bindSidecarAutoRefresh();
 
   // 先基于已有的 settingsInfo 初始化，避免表单闪烁。
   const current = settingsInfo.value ?? getChat()?.settingsInfo.value ?? null;
@@ -146,6 +147,36 @@ async function openSettings() {
       state.petSizePercent = petCfg.sizePercent;
     } catch {
       /* 读取失败保持默认 */
+    }
+  }
+}
+
+/** sidecar 就绪后自动回填设置（覆盖插件启停重启 / 系统重启，无需手动刷新页面）。 */
+let sidecarAutoRefreshBound = false;
+let sidecarRefreshTimer: number | null = null;
+
+function bindSidecarAutoRefresh() {
+  if (sidecarAutoRefreshBound || !tauriAvailable()) return;
+  sidecarAutoRefreshBound = true;
+  void onTauriEvent<SidecarStatus>("sidecar://status", (status) => {
+    if (status.state !== "running") return;
+    if (sidecarRefreshTimer !== null) window.clearTimeout(sidecarRefreshTimer);
+    sidecarRefreshTimer = window.setTimeout(() => {
+      sidecarRefreshTimer = null;
+      void openSettings();
+    }, 400);
+  });
+}
+
+/** 轮询拉取设置直到 sidecar 就绪（重启后旧状态可能仍报 running，不能只看事件）。 */
+async function pullSettingsWhenReady(timeoutMs = 20000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      applySettings(await getSettings());
+      return;
+    } catch {
+      await new Promise((r) => setTimeout(r, 250));
     }
   }
 }
@@ -245,9 +276,15 @@ async function save() {
 // ---------- Sidecar 重启 ----------
 async function doRestartSidecar() {
   if (!tauriAvailable()) return;
+  bindSidecarAutoRefresh();
+  state.saveError = "";
+  state.savingMsg = "正在重启 sidecar…";
   try {
     await restartSidecar();
-    await new Promise((r) => setTimeout(r, 1500));
+    // 旧进程可能短暂仍报 running：轮询 /api/settings 直到新进程就绪并回填，
+    // 避免用户必须手动刷新页面才能看到新注册的 provider/模型目录。
+    await pullSettingsWhenReady();
+    await openSettings();
     const chat = getChat();
     if (chat) await chat.reconnect();
     else {
@@ -259,8 +296,11 @@ async function doRestartSidecar() {
     }
     const st = await getSidecarStatus();
     state.sidecarLogs = st.logs;
-  } catch {
-    /* ignore */
+    state.savingMsg = "sidecar 已重启成功，设置已刷新";
+  } catch (err) {
+    state.savingMsg = "";
+    state.saveError =
+      err instanceof Error ? `重启失败: ${err.message}` : `重启失败: ${String(err)}`;
   }
 }
 

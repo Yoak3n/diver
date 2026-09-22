@@ -28,6 +28,8 @@ export function createChatTransport(state: ChatState) {
       // 仅当本地还没有消息时填充，避免覆盖正在进行的会话
       if (state.messages.value.length === 0) {
         state.messages.value = data.messages.map((m) => ({ ...m, streaming: false }));
+        // 历史里的完整轮次同样默认折叠过程活动
+        state.collapseTurnActivity();
       }
       historyLoaded = true;
     } catch {
@@ -70,11 +72,18 @@ export function createChatTransport(state: ChatState) {
     openStream();
     state.scrollToBottom();
 
-    // Tauri 环境：sidecar 状态变为 running（DIVER_READY）时立即补拉历史，
-    // 修复首次启动时 WebView 先于 sidecar 就绪导致的历史缺失。
+    // Tauri 环境：sidecar 状态变为 running（DIVER_READY）时立即补拉历史与设置，
+    // 修复首次启动 / 插件启停重启后 WebView 状态陈旧（需手动刷新页面）的问题。
     if (!stopSidecarEvent && tauriAvailable()) {
       void onTauriEvent<import("../../types").SidecarStatus>("sidecar://status", (status) => {
-        if (status.state === "running") void loadHistory();
+        if (status.state !== "running") return;
+        void loadHistory();
+        void refreshHealth();
+        void getSettings()
+          .then((s) => {
+            state.settingsInfo.value = s;
+          })
+          .catch(() => {});
       }).then((unlisten) => {
         stopSidecarEvent = unlisten;
       });
@@ -97,6 +106,11 @@ export function createChatTransport(state: ChatState) {
 
   async function reconnect() {
     await refreshHealth();
+    try {
+      state.settingsInfo.value = await getSettings();
+    } catch {
+      /* 设置接口失败不阻断 */
+    }
     openStream();
   }
 

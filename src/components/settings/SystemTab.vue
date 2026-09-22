@@ -1,7 +1,16 @@
 <script setup lang="ts">
+import { computed, onMounted, ref } from "vue";
 import type { HealthInfo, SettingsInfo } from "../../types";
 import type { SettingsState } from "../../composables/useSettings";
-import { tauriAvailable } from "../../tauri";
+import { tauriAvailable, onTauriEvent } from "../../tauri";
+import PetModelPicker from "../PetModelPicker.vue";
+import {
+  loadModelCatalog,
+  pickModelProfile,
+  selectModelId,
+  PET_MODEL_CHANGED_EVENT,
+} from "../../pet/models";
+import type { PetModelProfile } from "../../pet/models";
 
 defineProps<{
   state: SettingsState;
@@ -14,6 +23,55 @@ defineEmits<{
   toggleWindowStartup: [key: "autoOpenMain" | "autoOpenPet", value: boolean];
   changePetSize: [percent: number];
 }>();
+
+// ---------- 桌宠形象模型 ----------
+const petModels = ref<PetModelProfile[]>([]);
+const activePetModelId = ref("");
+const petModelSwitching = ref(false);
+const petModelMsg = ref<string | null>(null);
+
+const activePetModelLabel = computed(
+  () => petModels.value.find((m) => m.id === activePetModelId.value)?.label ?? "—",
+);
+
+async function refreshPetModels() {
+  const catalog = await loadModelCatalog();
+  petModels.value = catalog.models;
+  activePetModelId.value = pickModelProfile(catalog).id;
+}
+
+/** 仅持久化并广播：桌宠窗口监听后自行热切换。 */
+function onPickPetModel(id: string) {
+  if (petModelSwitching.value || id === activePetModelId.value) return;
+  petModelSwitching.value = true;
+  petModelMsg.value = null;
+  try {
+    selectModelId(id);
+    activePetModelId.value = id;
+    petModelMsg.value = "已切换；桌宠窗口会立即换装（未打开则下次启动生效）";
+  } catch (err) {
+    petModelMsg.value = err instanceof Error ? err.message : String(err);
+  } finally {
+    petModelSwitching.value = false;
+  }
+}
+
+onMounted(async () => {
+  try {
+    await refreshPetModels();
+  } catch (err) {
+    petModelMsg.value = err instanceof Error ? err.message : String(err);
+  }
+  // 桌宠侧切换后回到设置页时同步高亮
+  void onTauriEvent<{ id: string }>(PET_MODEL_CHANGED_EVENT, (p) => {
+    if (p?.id) activePetModelId.value = p.id;
+  });
+  window.addEventListener("storage", (e) => {
+    if (e.key === "diver.pet.modelId" && e.newValue) {
+      activePetModelId.value = e.newValue;
+    }
+  });
+});
 </script>
 
 <template>
@@ -62,6 +120,23 @@ defineEmits<{
       @input="$emit('changePetSize', Number(($event.target as HTMLInputElement).value))"
     />
   </div>
+
+  <label class="group-title">桌宠形象</label>
+  <div class="pet-model-row">
+    <span>当前模型</span>
+    <span class="pet-size-val">{{ activePetModelLabel }}</span>
+  </div>
+  <PetModelPicker
+    :models="petModels"
+    :active-id="activePetModelId"
+    :switching="petModelSwitching"
+    @select="onPickPetModel"
+  />
+  <p v-if="petModelMsg" class="hint">{{ petModelMsg }}</p>
+  <p class="hint">
+    缺少 YUI 时先执行 <code>pnpm pet:models</code>。YUI 来自 N.E.K.O，仅供本地学习评估，请勿商用分发。
+  </p>
+
   <p class="hint">配置保存在本机；桌宠位置与大小会记住，下次启动恢复。</p>
 
   <label class="group-title">Sidecar（agent 大脑）</label>
@@ -161,6 +236,14 @@ details summary {
 .pet-size-slider {
   width: 100%;
   accent-color: #c06ab3;
+}
+.pet-model-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: #b9b5cc;
+  margin: 2px 0 8px;
 }
 /* 开关 */
 .switch {

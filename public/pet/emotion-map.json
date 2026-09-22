@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "description": "Diver 桌宠：聊天气泡文本 → 情绪 → Live2D 动作组 映射",
   "motions": {
     "happy": ["Happy", "Nod", "Wave"],
@@ -17,37 +17,37 @@
   },
   "emotions": {
     "happy": {
-      "keywords": ["哈哈", "嘿嘿", "嘻嘻", "开心", "高兴", "喜欢", "太棒", "好耶", "真好", "好开心", "爱你", "好喜欢", "棒极了", "太好了", "haha", "hehe", "lol", "happy", "glad", "yay", "awesome", "love it", "great"]
+      "keywords": ["哈哈", "嘿嘿", "嘻嘻", "开心", "高兴", "喜欢", "太棒", "好耶", "真好", "好开心", "好喜欢", "棒极了", "太好了", "不错", "挺好", "真棒", "可爱", "好呀", "好啊", "好的", "好哒", "行啊", "可以的", "没问题", "耶", "耶耶", "哈", "嘻", "甜", "快乐", "haha", "hehe", "lol", "happy", "glad", "yay", "awesome", "love it", "great", "nice", "cool", "yep", "yeah", "ok"]
     },
     "excited": {
-      "keywords": ["兴奋", "激动", "哇", "天哪", "太厉害", "牛逼", "好强", "awesome", "amazing", "wow", "exciting", "so cool"]
+      "keywords": ["兴奋", "激动", "哇", "天哪", "太厉害", "牛逼", "好强", "绝了", "炸了", "燃", "冲", "冲冲", "太强", "无敌", "好酷", "amazing", "awesome", "wow", "exciting", "so cool", "insane", "let's go", "lets go"]
     },
     "sad": {
-      "keywords": ["难过", "伤心", "难过死了", "好难过", "哭了", "呜呜", "想哭", "失望", "沮丧", "孤独", "好累", "唉", "sad", "cry", "upset", "lonely", "tired", "depressed"]
+      "keywords": ["难过", "伤心", "好难过", "哭了", "呜呜", "想哭", "失望", "沮丧", "孤独", "好累", "唉", "唉唉", "心疼", "委屈", "郁闷", "低落", "sad", "cry", "upset", "lonely", "tired", "depressed", "sigh"]
     },
     "angry": {
-      "keywords": ["生气", "气死", "可恶", "混蛋", "讨厌", "烦死", "受不了", "滚", "愤怒", "火大", "angry", "mad", "hate", "annoyed", "damn", "wtf", "烦"]
+      "keywords": ["生气", "气死", "可恶", "混蛋", "讨厌", "烦死", "受不了", "滚", "愤怒", "火大", "烦", "气人", "可恨", "该死", "angry", "mad", "hate", "annoyed", "damn", "wtf"]
     },
     "surprised": {
-      "keywords": ["惊讶", "居然", "竟然", "真的吗", "不可能", "骗人", "吓到", "震惊", "surprised", "shocked", "really", "no way", "what", "wait what"]
+      "keywords": ["惊讶", "居然", "竟然", "真的吗", "真的假的", "不可能", "骗人", "吓到", "震惊", "不会吧", "什么", "啥", "咦", "诶", "哦？", "啊？", "surprised", "shocked", "really", "no way", "what", "wait what", "omg"]
     },
     "shy": {
-      "keywords": ["害羞", "不好意思", "脸红", "尴尬", "羞羞", "难为情", "害羞死了", "shy", "embarrassed", "blush"]
+      "keywords": ["害羞", "不好意思", "脸红", "尴尬", "羞羞", "难为情", "别这样", "讨厌啦", "shy", "embarrassed", "blush"]
     },
     "love": {
-      "keywords": ["我爱你", "喜欢你", "亲亲", "抱抱", "想你", "宝贝", "亲爱的", "love you", "miss you", "kiss", "hug"]
+      "keywords": ["我爱你", "喜欢你", "亲亲", "抱抱", "想你", "宝贝", "亲爱的", "最喜欢你", "love you", "miss you", "kiss", "hug"]
     },
     "grateful": {
-      "keywords": ["谢谢", "感谢", "辛苦了", "多谢", "thanks", "thank you", "appreciate"]
+      "keywords": ["谢谢", "感谢", "辛苦了", "多谢", "麻烦你了", "thanks", "thank you", "appreciate"]
     },
     "greeting": {
-      "keywords": ["你好", "早上好", "中午好", "晚上好", "嗨", "哈喽", "hello", "hi", "hey", "good morning", "good evening"]
+      "keywords": ["你好", "早上好", "中午好", "晚上好", "嗨", "哈喽", "hello", "hi", "hey", "good morning", "good evening", "在吗", "在不在"]
     },
     "farewell": {
-      "keywords": ["再见", "拜拜", "晚安", "下次见", "bye", "goodbye", "good night", "see you"]
+      "keywords": ["再见", "拜拜", "晚安", "下次见", "走了", "睡了", "bye", "goodbye", "good night", "see you"]
     },
     "agree": {
-      "keywords": ["对", "没错", "同意", "赞成", "嗯嗯", "是啊", "确实", "有道理", "right", "yes", "agree", "correct", "true", "indeed"]
+      "keywords": ["对对", "对的", "没错", "同意", "赞成", "嗯嗯", "是啊", "确实", "有道理", "好的", "好嘞", "收到", "了解", "明白", "right", "yes", "agree", "correct", "true", "indeed", "sure", "okay"]
     }
   }
 }

@@ -4,6 +4,7 @@ import type { ChatMessage, ToolActivity, UserQuestion, UserQuestionAnswerItem } 
 import { tauriAvailable } from "../tauri";
 import { speakMessageText } from "../tts";
 import MessageBubble from "./MessageBubble.vue";
+import ActivitySummary from "./ActivitySummary.vue";
 import WelcomeCard from "./WelcomeCard.vue";
 import QuestionCard from "./QuestionCard.vue";
 
@@ -20,13 +21,22 @@ const props = defineProps<{
   pendingQuestion: { requestId: string; questions: UserQuestion[] } | null;
 }>();
 
-defineEmits<{
+const emit = defineEmits<{
   retry: [];
   restart: [];
   "open-settings": [];
   suggestion: [text: string];
   answerQuestion: [answers: UserQuestionAnswerItem[]];
+  toggleActivity: [groupId: string];
 }>();
+
+/** 活动组是否展开（收起时隐藏成员消息）。 */
+function isActivityExpanded(groupId: string): boolean {
+  const summary = props.messages.find(
+    (m) => m.kind === "activity-summary" && (m.activityGroupId ?? m.id) === groupId,
+  );
+  return !!summary?.activityExpanded;
+}
 
 const scrollEl = ref<HTMLElement | null>(null);
 
@@ -43,7 +53,7 @@ watch(
 );
 
 async function speak(msg: ChatMessage) {
-  await speakMessageText(msg.content, props.ttsVoice);
+  await speakMessageText(msg.content, props.ttsVoice, msg.id, { force: true });
 }
 </script>
 
@@ -69,14 +79,21 @@ async function speak(msg: ChatMessage) {
           @suggestion="$emit('suggestion', $event)"
         />
 
-        <MessageBubble
-          v-for="msg in messages"
-          :key="msg.id"
-          :msg="msg"
-          :tts-voice="ttsVoice"
-          :tauri="tauriAvailable()"
-          @speak="speak"
-        />
+        <template v-for="msg in messages" :key="msg.id">
+          <ActivitySummary
+            v-if="msg.kind === 'activity-summary'"
+            :msg="msg"
+            :expanded="!!msg.activityExpanded"
+            @toggle="emit('toggleActivity', msg.activityGroupId ?? msg.id)"
+          />
+          <MessageBubble
+            v-else-if="!msg.activityGroupId || isActivityExpanded(msg.activityGroupId)"
+            :msg="msg"
+            :tts-voice="ttsVoice"
+            :tauri="tauriAvailable()"
+            @speak="speak"
+          />
+        </template>
 
         <QuestionCard
           v-if="pendingQuestion"
@@ -108,12 +125,17 @@ async function speak(msg: ChatMessage) {
 .chat-scroll {
   height: 100%;
   overflow-y: auto;
+  overflow-x: hidden;
   padding: 20px 22px 12px;
   display: flex;
   flex-direction: column;
   gap: 14px;
   scrollbar-width: thin;
   scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
+}
+.chat-scroll > * {
+  min-width: 0;
+  max-width: 100%;
 }
 .center-hint {
   margin: auto;

@@ -51,6 +51,9 @@ export function attachEventListeners(
         if (chunk?.type === 'text-delta' && typeof chunk.text === 'string') {
           // 占位消息 id 按 step 区分（同一 turn 内多步工具调用不冲突）
           broadcast({ type: 'chunk', messageId: `turn-${ev.data.turn}-${ev.data.step}`, delta: chunk.text })
+        } else if (chunk?.type === 'thinking-delta' && typeof chunk.text === 'string') {
+          // 深度思考流：与正文分轨，前端默认折叠展示
+          broadcast({ type: 'thinking', messageId: `turn-${ev.data.turn}-${ev.data.step}`, delta: chunk.text })
         }
         break
       }
@@ -74,16 +77,34 @@ export function attachEventListeners(
       }
       case 'tool/call': {
         state.toolNames.set(String(ev.data.callId), ev.data.name)
-        broadcast({ type: 'tool', name: ev.data.name, status: 'call' })
+        broadcast({
+          type: 'tool',
+          name: ev.data.name,
+          status: 'call',
+          messageId: `turn-${ev.data.turn}-${ev.data.step}`,
+          callId: String(ev.data.callId),
+        })
         break
       }
       case 'tool/result': {
         // callId 在 message.source（tool/result 的 data 无顶层 callId）
         const source = ev.data.message?.source as { callId?: string } | undefined
-        const callId = source?.callId !== undefined ? String(source.callId) : undefined
+        const callId = source?.callId !== undefined ? String(source.callId)
+          : ev.data.callId !== undefined ? String(ev.data.callId)
+          : undefined
         const name = (callId && state.toolNames.get(callId)) || state.toolNames.values().next().value || 'tool'
         if (callId) state.toolNames.delete(callId)
-        broadcast({ type: 'tool', name, status: 'result' })
+        const raw = String(ev.data.message?.content ?? '')
+        const summary = raw.length > 120 ? `${raw.slice(0, 120)}…` : raw
+        broadcast({
+          type: 'tool',
+          name,
+          status: 'result',
+          messageId: `turn-${ev.data.turn}-${ev.data.step}`,
+          ...(callId !== undefined ? { callId } : {}),
+          ...(summary !== '' ? { summary } : {}),
+          isError: ev.data.message?.isError === true,
+        })
         break
       }
       case 'turn/start': {

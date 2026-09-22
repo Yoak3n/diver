@@ -68,5 +68,44 @@ export type {
   ResolvedModelInfo,
 } from '../../llm/src/index.ts'
 
-// Tools registry types.
+// Tools registry types + **canonical DSH-shaped authoring surface**.
+// Preferred plugin registration syntax (aligned with deepseek-harness):
+//   import { defineTool } from '@cos/plugin-api'
+//   ctx.tools.register(defineTool({ name, description, parameters, output, execute }))
+// The triple form `ctx.tools.register(name, executor, options)` remains as an alias.
+// Plugin config (DSH/cordis Standard Schema): export `Config` and cordis validates YAML `config` before apply.
+export { default as z } from '@deepseek-ai/schemastery'
+
+/** Settings-page field descriptor (Desktop model-config / ProviderConfigDecl shape). */
+export interface PluginConfigField {
+  key: string
+  label: string
+  type?: 'text' | 'password' | 'number' | 'boolean' | 'select'
+  secret?: boolean
+  required?: boolean
+  description?: string
+  options?: Array<{ value: string; label: string }>
+  default?: string | number | boolean
+}
+
+export interface PluginConfigDecl {
+  title?: string
+  fields: readonly PluginConfigField[]
+}
 export type { ToolExecutor, ToolOptions, ToolResult } from '../../tools/src/index.ts'
+export { dshToolExecutor } from '../../tools/src/index.ts'
+export type { DshToolDefinition } from '../../tools/src/index.ts'
+
+export {
+  ToolArgsError,
+  defineTool,
+  parameterSchemaSpecToJsonSchema,
+  validateArgs,
+  valueSchemaSpecToJsonSchema,
+} from '../../dsh-tools/src/index.ts'
+export type {
+  DefineToolOptions,
+  ParameterSchemaSpec,
+  ParameterPropertySpec,
+  ValueSchemaSpec,
+} from '../../dsh-tools/src/index.ts'

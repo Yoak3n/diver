@@ -6,7 +6,8 @@
 //
 // 接口与 DSH 上游 @deepseek-ai/dsh-tool-fs-search/grep 对齐：
 // - pattern: ripgrep 正则；path: 目标文件或目录（默认 workspace 根）；
-// - include: 单个正向 glob 过滤（非列表、非否定）；
+// - include(s)/exclude(s): rg glob（支持 `{a,b}` 与 `!` 否定；exclude 自动加 `!`）；
+// - maxCount: 保留的最大匹配数（默认 250）。
 // - 返回按文件分组的 `Line N: <text>`，超限时提示收窄。
 //
 // 结果渲染（formatGrepMatches）与上游一致：每文件一段 `path\nLine N: text`。
@@ -27,7 +28,14 @@ export interface GrepCaps {
 interface GrepArgs {
   pattern: string
   path?: string
-  include?: string
+  /** rg glob；字符串或数组。支持 `{a,b}` 与 `!` 否定。 */
+  include?: string | string[]
+  /** 与 include 同义的列表形式。 */
+  includes?: string[]
+  /** 排除 glob（自动加 `!`）；字符串或数组。 */
+  exclude?: string | string[]
+  /** 保留的最大匹配数（默认 250）。 */
+  maxCount?: number
 }
 
 interface GrepMatch {
@@ -36,29 +44,41 @@ interface GrepMatch {
   line: string
 }
 
-/** 校验 include 必须是单个正向 glob（非空白、非 ! 开头、非逗号列表）。 */
-function validateInclude(include: string): void {
-  if (include.trim().length === 0) throw new Error('include must be a non-empty glob when given')
-  if (include.startsWith('!')) throw new Error('include must be a positive glob filter; negated patterns ("!…") are not supported')
-  let braceDepth = 0
-  for (const char of include) {
-    if (char === '{') braceDepth++
-    else if (char === '}') braceDepth = Math.max(0, braceDepth - 1)
-    else if (char === ',' && braceDepth === 0) {
-      throw new Error('include must be one glob, not a comma-separated list (use {a,b} alternation instead)')
-    }
-  }
+function asGlobList(value: string | string[] | undefined, field: string): string[] {
+  if (value === undefined) return []
+  const list = Array.isArray(value) ? value : [value]
+  return list.map((item) => {
+    if (item.trim().length === 0) throw new Error(`${field} must be a non-empty glob when given`)
+    return item.trim()
+  })
 }
 
-/** 校验并归一化参数（与上游 parseGrepArgs 对齐）。 */
-export function parseGrepArgs(args: GrepArgs): GrepArgs {
+/** 校验并归一化参数：include(s) 原样、exclude(s) 自动加 `!`。 */
+export function parseGrepArgs(args: GrepArgs): {
+  pattern: string
+  path?: string
+  globs: string[]
+  maxCount?: number
+} {
   if (args.pattern.length === 0) throw new Error('pattern must be a non-empty string')
   if (args.path !== undefined && args.path.trim().length === 0) throw new Error('path must be a non-empty string when given')
-  if (args.include !== undefined) validateInclude(args.include)
+
+  const globs = [
+    ...asGlobList(args.include, 'include'),
+    ...asGlobList(args.includes, 'includes'),
+    ...asGlobList(args.exclude, 'exclude').map((g) => (g.startsWith('!') ? g : `!${g}`)),
+  ]
+
+  const maxCount = args.maxCount !== undefined ? Number(args.maxCount) : undefined
+  if (maxCount !== undefined && (!Number.isFinite(maxCount) || maxCount <= 0)) {
+    throw new Error('maxCount must be a positive integer when given')
+  }
+
   return {
     pattern: args.pattern,
     ...args.path !== undefined ? { path: args.path } : {},
-    ...args.include !== undefined ? { include: args.include } : {},
+    globs,
+    ...maxCount !== undefined ? { maxCount: Math.floor(maxCount) } : {},
   }
 }
 
@@ -104,7 +124,7 @@ export function applyGrepTool(ctx: Context, caps: GrepCaps): void {
   ctx.systemPrompt.section({
     name: 'tool:grep',
     order: 104,
-    text: 'Use the grep tool — not shell grep or rg — to search file contents. Use read on a matched file when you need surrounding context.',
+    text: 'Use the grep tool — not shell grep or rg — to search file contents. Narrow with include/exclude globs (e.g. include:["*.ts"], exclude:["*.min.js"]). Use read on a matched file when you need surrounding context.',
   })
 
   ctx.tools.register('grep', async (args) => {
@@ -113,7 +133,8 @@ export function applyGrepTool(ctx: Context, caps: GrepCaps): void {
     const result = await rpc<{ matches: GrepMatch[] }>('grep::search', {
       pattern: input.pattern,
       path: input.path ?? caps.workspaceRoot,
-      include: input.include,
+      includes: input.globs,
+      maxMatches: input.maxCount,
     })
 
     const matches = result.matches ?? []
@@ -139,7 +160,16 @@ export function applyGrepTool(ctx: Context, caps: GrepCaps): void {
       properties: {
         pattern: { type: 'string', description: 'Regular expression to search for (ripgrep syntax).' },
         path: { type: 'string', description: 'File or directory to search. Defaults to the workspace root.' },
-        include: { type: 'string', description: 'One glob filter for which files to search (e.g. "*.ts", "*.{js,jsx}"). Not a list; negation is not supported.' },
+        include: {
+          description: 'Glob filter(s) for files to search, e.g. "*.ts" or ["*.ts","*.tsx"]. Supports {a,b} and "!pattern" negation.',
+          oneOf: [{ type: 'string' }, { type: 'array', items: { type: 'string' } }],
+        },
+        includes: { type: 'array', items: { type: 'string' }, description: 'Same as include, list form.' },
+        exclude: {
+          description: 'Glob(s) to exclude, e.g. "*.min.js" or ["dist/**","*.snap"]. Auto-negated for the engine.',
+          oneOf: [{ type: 'string' }, { type: 'array', items: { type: 'string' } }],
+        },
+        maxCount: { type: 'number', description: 'Maximum matches to keep (default 250).' },
       },
       required: ['pattern'],
     },

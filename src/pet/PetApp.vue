@@ -1,12 +1,21 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { usePetChat } from "./usePetChat";
-import { inferEmotion, loadEmotionMap, motionGroupsFor } from "./emotion";
+import { inferEmotionDetail, loadEmotionMap, motionGroupsFor } from "./emotion";
 import type { PetEmotion } from "./emotion";
 import { tauriAvailable, onTauriEvent, startPetMouseStream, movePetWindow, cancelPetMoveAnimation, setPetDragging } from "../tauri";
 import { speakMessageText } from "../tts";
 import { MODEL_HEIGHT_RATIO, PET_MOUSE_MOVE_EVENT } from "./constants";
 import type { PetModelHandle } from "./live2d";
+import {
+  loadModelCatalog,
+  pickModelProfile,
+  selectModelId,
+  resolveMotionGroups,
+  PET_MODEL_CHANGED_EVENT,
+} from "./models";
+import type { PetModelProfile } from "./models";
+import PetModelPicker from "../components/PetModelPicker.vue";
 
 const modelHost = ref<HTMLElement | null>(null);
 const panelInput = ref<HTMLInputElement | null>(null);
@@ -17,16 +26,92 @@ let pet: PetModelHandle | null = null;
 let stopMouth: (() => void) | null = null;
 let speaking = false;
 
+// ---------- 模型切换（Hiyori / YUI…） ----------
+const modelProfiles = ref<PetModelProfile[]>([]);
+const activeModelId = ref<string>("");
+/** 模型选择面板（独立页面式浮层，不再藏在二级菜单） */
+const modelPickerOpen = ref(false);
+const switchingModel = ref(false);
+
+/** 用当前 profile 创建/重建 Live2D 句柄。 */
+async function mountPetModel(profile: PetModelProfile) {
+  if (!modelHost.value) return;
+  stopMouth?.();
+  stopMouth = null;
+  pet?.destroy();
+  pet = null;
+  const mod = await import("./live2d");
+  pet = await mod.createPetModel(modelHost.value, {
+    heightRatio: profile.heightRatio ?? MODEL_HEIGHT_RATIO,
+    anchorXRatio: 0.5,
+    modelUrl: profile.model3,
+    groupAliases: profile.groupAliases,
+  });
+  activeModelId.value = profile.id;
+  if (panelOpen.value) pet.setRetreat(true, bubbleSide.value);
+  // 模型就绪后重算气泡位置（此前可能用的是回退角位）
+  if (bubbleVisible.value) layoutSpeechBubble();
+}
+
+async function switchModel(id: string) {
+  if (switchingModel.value || id === activeModelId.value) {
+    modelPickerOpen.value = false;
+    return;
+  }
+  const profile = modelProfiles.value.find((m) => m.id === id);
+  if (!profile) return;
+  switchingModel.value = true;
+  modelPickerOpen.value = false;
+  loadError.value = null;
+  try {
+    await mountPetModel(profile);
+    selectModelId(profile.id);
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    console.error("[pet] switch model failed:", detail, err);
+    loadError.value =
+      detail +
+      (profile.installHint ? `（可先执行 ${profile.installHint}）` : "");
+  } finally {
+    switchingModel.value = false;
+    loading.value = false;
+  }
+}
+
+function openModelPicker() {
+  moreMenuOpen.value = false;
+  modelPickerOpen.value = !modelPickerOpen.value;
+}
+
+/** 设置页/其他窗口改了模型：热切换到新形象。 */
+async function onExternalModelChange(id: string) {
+  if (!id || id === activeModelId.value || switchingModel.value) return;
+  const profile = modelProfiles.value.find((m) => m.id === id);
+  if (!profile) return;
+  switchingModel.value = true;
+  loadError.value = null;
+  try {
+    await mountPetModel(profile);
+  } catch (err) {
+    loadError.value = err instanceof Error ? err.message : String(err);
+  } finally {
+    switchingModel.value = false;
+    loading.value = false;
+  }
+}
+
 // ---------- ⋯ 更多菜单（低频操作；跨屏拖动已恢复，无需「转到屏幕」） ----------
 const moreMenuOpen = ref(false);
 
 function toggleMoreMenu() {
   moreMenuOpen.value = !moreMenuOpen.value;
+  if (moreMenuOpen.value) modelPickerOpen.value = false;
 }
 
 /** ⋯ 菜单里的"收起面板"：关闭面板 + 菜单。 */
 function closePanelFromMenu() {
   moreMenuOpen.value = false;
+  modelPickerOpen.value = false;
   panelOpen.value = false;
 }
 
@@ -77,8 +162,6 @@ function answerPending() {
 // 模型占满窗口（居中），消息流面板悬浮在窗口一侧。
 // 面板在屏幕中心一侧（bubbleSide）：窗口在屏幕左半 → 面板在右；右半 → 面板在左。
 // 面板打开时模型缩小让位（setRetreat），避免遮挡；关闭时恢复。
-/** 模型高度占窗口高度的比例（常量见 constants.ts，与 Rust 几何同源）。 */
-const MODEL_HEIGHT_RATIO_VAL = MODEL_HEIGHT_RATIO;
 /** 面板相对模型的位置：'right' = 面板在右（窗口在屏幕左半时），'left' = 面板在左。 */
 const bubbleSide = ref<"left" | "right">("right");
 
@@ -114,9 +197,12 @@ async function updateBubbleSide() {
         pet?.setRetreat(true, next);
       }
     }
+    // 侧边/窗口位置变化后重算气泡贴头位置
+    if (bubbleVisible.value) layoutSpeechBubble();
   } catch {
     // 检测失败时默认面板在右
     bubbleSide.value = "right";
+    if (bubbleVisible.value) layoutSpeechBubble();
   }
 }
 
@@ -143,15 +229,93 @@ function showBubble(kind: "user" | "assistant", text: string, holdMs?: number) {
   bubbleText.value = text;
   bubbleVisible.value = true;
   bubbleStreaming.value = false;
+  scheduleBubbleDismiss(holdMs ?? bubbleDuration(text));
+  void nextTick(() => {
+    layoutSpeechBubble();
+    // 气泡就位后立刻按当前鼠标位置重算穿透，避免指着气泡却点不着
+    if (lastMouseScreen) void applyClickthroughAt(lastMouseScreen.x, lastMouseScreen.y);
+  });
+}
+
+function scheduleBubbleDismiss(ms: number) {
+  if (bubbleTimer !== null) window.clearTimeout(bubbleTimer);
   bubbleTimer = window.setTimeout(() => {
+    bubbleTimer = null;
+    if (bubbleHovering) return; // 悬停中不自动消失，leave 时再补
     bubbleVisible.value = false;
-  }, holdMs ?? bubbleDuration(text));
+    bubbleStreaming.value = false;
+  }, ms);
 }
 
 function hideBubbleNow() {
   if (bubbleTimer !== null) window.clearTimeout(bubbleTimer);
+  bubbleTimer = null;
   bubbleVisible.value = false;
   bubbleStreaming.value = false;
+  bubbleHovering = false;
+  void nextTick(() => {
+    if (lastMouseScreen) void applyClickthroughAt(lastMouseScreen.x, lastMouseScreen.y);
+  });
+}
+
+// ---------- 默认态气泡：贴角色头顶 + 交互 ----------
+/** 气泡定位（pet-root 绝对坐标）。null = 回退到 bubble-area 角上 */
+const bubblePos = ref<{ left: number; top: number } | null>(null);
+/** 悬停中：暂停自动消失 */
+let bubbleHovering = false;
+
+/**
+ * 把气泡贴到角色头顶旁（经典对白气泡位），而不是甩到窗口另一角。
+ * 优先放在角色朝向屏幕中心的一侧；放不下再夹回窗口内。
+ */
+function layoutSpeechBubble() {
+  const W = window.innerWidth;
+  const H = window.innerHeight;
+  const maxW = 280;
+  const gap = 12;
+  const box = pet?.getHitbox?.();
+  if (!box || box.width <= 0) {
+    // 模型未就绪：退回 bubble 侧上角
+    bubblePos.value =
+      bubbleSide.value === "right"
+        ? { left: Math.max(8, W - maxW - 12), top: 12 }
+        : { left: 12, top: 12 };
+    return;
+  }
+  const charLeft = box.left;
+  const charRight = box.left + box.width;
+  const charTop = box.top;
+  const charCenterX = box.left + box.width / 2;
+
+  // 贴头：竖直方向对齐头顶略下（刘海/发饰区域），不要压到脸中下部
+  const top = Math.min(Math.max(8, charTop + 8), Math.max(8, H - 120));
+  // 优先放在角色朝屏幕中心的一侧（与 bubbleSide 一致），空间不够则翻边
+  const preferLeft = bubbleSide.value === "left";
+  let left = preferLeft ? charLeft - maxW - gap : charRight + gap;
+  const fits = (x: number) => x >= 8 && x + maxW <= W - 8;
+  if (!fits(left)) {
+    const alt = preferLeft ? charRight + gap : charLeft - maxW - gap;
+    left = fits(alt) ? alt : Math.min(Math.max(8, charCenterX - maxW / 2), W - maxW - 8);
+  }
+  // 极窄窗口：夹回可见区
+  left = Math.min(Math.max(8, left), Math.max(8, W - maxW - 8));
+  bubblePos.value = { left, top };
+}
+
+/** 悬停：暂停自动消失，避免长文还没读完就淡出 */
+function onBubbleEnter() {
+  bubbleHovering = true;
+  if (bubbleTimer !== null) {
+    window.clearTimeout(bubbleTimer);
+    bubbleTimer = null;
+  }
+}
+
+function onBubbleLeave() {
+  bubbleHovering = false;
+  if (bubbleVisible.value && !bubbleStreaming.value && bubbleTimer === null) {
+    scheduleBubbleDismiss(1600);
+  }
 }
 
 // 监听消息流：用户消息立刻浮现；助手消息流式跟随，完成后停留再淡出。
@@ -174,10 +338,14 @@ watch(
       if (last.streaming) {
         // 流式输出中：持续跟随显示，不启动停留计时
         if (bubbleTimer !== null) window.clearTimeout(bubbleTimer);
+        bubbleTimer = null;
         bubbleKind.value = "assistant";
         bubbleText.value = last.content;
         bubbleVisible.value = true;
         bubbleStreaming.value = true;
+        layoutSpeechBubble();
+        // 流式过程中也做表情/情绪响应（内部有节流）——等说完再动会显得很迟钝
+        if (last.content.length >= 4) reactToText(last.content);
       } else if (last.content) {
         // 完成：停留后淡出（面板打开时不弹气泡）
         if (!panelOpen.value) showBubble("assistant", last.content);
@@ -271,7 +439,7 @@ function armDragSessionTimeout() {
 
 /** 是否点击在面板/气泡区域内（这些区域不参与长按拖动与点按互动）。 */
 function inPanelArea(target: EventTarget | null): boolean {
-  return !!(target instanceof HTMLElement && target.closest(".chat-flow, .speech-bubble, .question-card"));
+  return !!(target instanceof HTMLElement && target.closest(".chat-flow, .speech-bubble, .question-card, .model-picker-panel"));
 }
 
 async function beginDrag() {
@@ -374,26 +542,38 @@ function onPointerCancel() {
   dragState.value = "idle";
 }
 
+/** 呼出消息面板（右键 / 点击气泡共用）。 */
+function openPanel() {
+  // 呼出前先按最新窗口位置刷新面板方向（防止窗口贴屏幕边缘时
+  // 让位方向把模型挤出屏幕外）
+  void updateBubbleSide().then(() => {
+    // 先开面板接管让位，再清气泡——避免中间态把模型弹回又拉走
+    panelOpen.value = true;
+    hideBubbleNow();
+    void nextTick(() => {
+      scrollChatToBottom();
+      panelInput.value?.focus();
+      void focusWindow();
+    });
+  });
+}
+
+/** 收起消息面板。 */
+function closePanel() {
+  panelOpen.value = false;
+}
+
 /** 右键：呼出/收起交互面板（输入框常态隐藏）。 */
 function onContextMenu(e: MouseEvent) {
   if (e.target instanceof HTMLElement && e.target.closest(".chat-flow")) {
     return; // 面板内保留原生菜单（如粘贴）
   }
   e.preventDefault();
-  // 呼出前先按最新窗口位置刷新面板方向（防止窗口贴屏幕边缘时
-  // 让位方向把模型挤出屏幕外）
   if (!panelOpen.value) {
-    void updateBubbleSide().then(() => {
-      panelOpen.value = true;
-      void nextTick(() => {
-        scrollChatToBottom();
-        panelInput.value?.focus();
-        void focusWindow();
-      });
-    });
+    openPanel();
     return;
   }
-  panelOpen.value = false;
+  closePanel();
 }
 
 /** 消息流滚动到底部（最新消息）。 */
@@ -402,9 +582,15 @@ function scrollChatToBottom() {
   if (el) el.scrollTop = el.scrollHeight;
 }
 
-// 面板打开 → 模型缩小让位（偏到面板对侧）+ 滚到最新消息；关闭 → 模型恢复
+/** 模型让位：仅消息面板打开时（整块 383px 面板需要占位）。
+ *  默认态气泡是贴头小卡，不让位——全量 setRetreat 会把角色甩到天边。 */
+function applyRetreat() {
+  pet?.setRetreat(panelOpen.value, bubbleSide.value);
+}
+
+// 面板打开 → 模型缩小让位（偏到面板对侧）+ 滚到最新消息；关闭 → 恢复
 watch(panelOpen, (open) => {
-  pet?.setRetreat(open, bubbleSide.value);
+  applyRetreat();
   if (open) void nextTick(() => scrollChatToBottom());
 });
 
@@ -424,26 +610,81 @@ async function sendAndClose() {
   await send();
 }
 
-// ---------- 聊天内容 → 情绪 → Live2D 动作 ----------
-// 借鉴 N.E.K.O：对聊天气泡文本做轻量情绪推断，触发对应动作组
-// （Happy/Sad/Angry/Surprised/Shy/Nod/Wave...）。纯前端启发式，零延迟。
+// ---------- 聊天内容 → 情绪 → Live2D 动作/表情 ----------
+// 借鉴 N.E.K.O：对聊天气泡文本做轻量情绪推断，触发对应动作组 + 表情。
+// 表情与大动作解耦：朗读中只换脸（不动大动作），弱情绪也换脸，避免「几乎没反应」。
 let emotionMapReady = false;
-/** 上次情绪动作触发时刻（避免连续消息触发过密）。 */
+/** 上次情绪大动作触发时刻（避免连续消息动作过密）。 */
 let lastEmotionAt = 0;
-const EMOTION_MIN_INTERVAL_MS = 2500;
+const EMOTION_MIN_INTERVAL_MS = 1800;
+/** 上次表情切换时刻（可以比大动作更勤）。 */
+let lastExprAt = 0;
+const EXPR_MIN_INTERVAL_MS = 700;
+/** neutral 时的轻点头冷却（保持存在感，又不吵）。 */
+let lastNodAt = 0;
+const NOD_INTERVAL_MS = 12000;
 
-/** 情绪→动作触发：推断文本情绪并播放对应动作组（随机选一组）。 */
+/** 弱/无情绪时的软表情池（YUI 有 exp3 时随机轻表情）。 */
+const SOFT_EXPRS = ["by", "expression3", "expression4", "expression11", "yyy", "xxy", "001"];
+
+function pickOne<T>(arr: T[]): T {
+  return arr[Math.floor(Math.random() * arr.length)];
+}
+
+function currentProfile(): PetModelProfile | undefined {
+  return modelProfiles.value.find((m) => m.id === activeModelId.value);
+}
+
+/** 换脸（朗读中也可用；不影响 ParamMouthOpenY 口型）。 */
+function applyExpression(emotion: PetEmotion, soft = false) {
+  if (!pet) return;
+  const now = performance.now();
+  if (now - lastExprAt < EXPR_MIN_INTERVAL_MS) return;
+  const profile = currentProfile();
+  const list = profile?.expressionMap?.[emotion] ?? (soft ? SOFT_EXPRS : []);
+  if (!list.length) return;
+  lastExprAt = now;
+  pet.setExpression(pickOne(list));
+  window.setTimeout(() => pet?.setExpression(null), 2600);
+}
+
+/**
+ * 情绪→动作/表情触发。
+ * - strong：表情 + 大动作（大动作受节流/朗读限制）
+ * - weak：只换脸
+ * - neutral/none：偶尔轻点头，保持存在感
+ */
 function reactToText(text: string) {
   if (!pet || !emotionMapReady) return;
+  const detail = inferEmotionDetail(text);
+  const emotion = detail.emotion;
   const now = performance.now();
-  if (now - lastEmotionAt < EMOTION_MIN_INTERVAL_MS) return;
-  // 朗读期间不触发大动作（避免动作与口型/声音打架）
+
+  // 表情：朗读中也允许（只动脸，不动身体）
+  applyExpression(emotion, detail.intensity !== "strong");
+
+  // 大动作：朗读中跳过（避免与口型/声音打架）
   if (speaking) return;
-  const emotion: PetEmotion = inferEmotion(text);
-  if (emotion === "neutral") return;
-  const groups = motionGroupsFor(emotion);
-  if (!groups.length || groups[0] === "Idle") return;
-  pet.playEmotion(groups[Math.floor(Math.random() * groups.length)]);
+  if (detail.intensity === "weak") return;
+  if (emotion === "neutral" || detail.intensity === "none") {
+    // 闲聊兜底：偶尔轻点头，避免「完全没反应」
+    if (now - lastNodAt > NOD_INTERVAL_MS) {
+      lastNodAt = now;
+      pet.playEmotion("Nod", { priority: "normal" });
+    }
+    return;
+  }
+  if (now - lastEmotionAt < EMOTION_MIN_INTERVAL_MS) return;
+
+  const profile = currentProfile();
+  const logicalGroups = motionGroupsFor(emotion);
+  const groups = logicalGroups.flatMap((g) =>
+    profile ? resolveMotionGroups(profile, g) : [g],
+  );
+  const candidates = groups.filter((g) => g && g !== "Idle");
+  if (!candidates.length) return;
+  const group = pickOne(candidates);
+  pet.playEmotion(group);
   lastEmotionAt = now;
 }
 
@@ -467,38 +708,73 @@ function onAssistantDone(content: string) {
 let unlistenMouseMove: (() => void) | null = null;
 /** 最近一次穿透态（避免重复 IPC） */
 let clickthroughActive = true;
+/** 最近一次鼠标流坐标：气泡/面板出现时立刻重算命中，避免「已经指着却点不着」 */
+let lastMouseScreen: { x: number; y: number } | null = null;
 
 /** 命中可交互区域 → 不需要穿透。
  *  模型侧只认 .model-hitbox（角色包围盒，由 live2d.ts 按顶点 bbox 计算），
- *  整块 PIXI 画布不参与命中 —— 桌宠两侧/头顶透明空白可穿透鼠标。 */
+ *  整块 PIXI 画布不参与命中 —— 桌宠两侧/头顶透明空白可穿透鼠标。
+ *  对气泡/面板额外做 16px hit-slop：光标靠近就先解除穿透，避免「看着到了却点不着」。 */
+const INTERACTIVE_SELECTOR =
+  ".model-hitbox, .speech-bubble, .chat-flow, .model-picker-panel, .question-card, .conn-dot";
+const HIT_SLOP = 16;
+
 function isInteractiveAt(clientX: number, clientY: number): boolean {
   try {
     const el = document.elementFromPoint(clientX, clientY);
-    if (!el) return false;
-    return !!(
-      el.closest(".model-hitbox") ||
-      el.closest(".speech-bubble") ||
-      el.closest(".chat-flow") ||
-      el.closest(".question-card") ||
-      el.closest(".conn-dot")
-    );
+    if (el?.closest?.(INTERACTIVE_SELECTOR)) return true;
+    // hit-slop：可交互矩形外扩一圈，提前释放 setIgnoreCursorEvents
+    const slop = HIT_SLOP;
+    for (const node of document.querySelectorAll(INTERACTIVE_SELECTOR)) {
+      const r = (node as HTMLElement).getBoundingClientRect();
+      if (r.width <= 0 || r.height <= 0) continue;
+      if (
+        clientX >= r.left - slop &&
+        clientX <= r.right + slop &&
+        clientY >= r.top - slop &&
+        clientY <= r.bottom + slop
+      ) {
+        return true;
+      }
+    }
+    return false;
   } catch {
     return false;
+  }
+}
+
+/** 窗口几何缓存：鼠标流 16ms 一发，每次都 IPC 拉 outerPosition/Size 会拖垮命中灵敏度 */
+let winGeomCache: { x: number; y: number; w: number; h: number; at: number } | null = null;
+const WIN_GEOM_TTL_MS = 400;
+
+async function refreshWinGeom(force = false) {
+  if (!tauriAvailable()) return null;
+  const now = performance.now();
+  if (!force && winGeomCache && now - winGeomCache.at < WIN_GEOM_TTL_MS) return winGeomCache;
+  try {
+    const { getCurrentWindow } = await import("@tauri-apps/api/window");
+    const win = getCurrentWindow();
+    const [pos, size] = await Promise.all([win.outerPosition(), win.outerSize()]);
+    winGeomCache = { x: pos.x, y: pos.y, w: size.width, h: size.height, at: now };
+    return winGeomCache;
+  } catch {
+    return winGeomCache;
   }
 }
 
 async function applyClickthroughAt(screenX: number, screenY: number) {
   if (!tauriAvailable()) return;
   try {
+    const geom = await refreshWinGeom();
+    if (!geom) return;
     const { getCurrentWindow } = await import("@tauri-apps/api/window");
     const win = getCurrentWindow();
-    const [pos, size] = await Promise.all([win.outerPosition(), win.outerSize()]);
     const dpr = window.devicePixelRatio || 1;
     // 事件坐标为物理像素；outerPosition/Size 亦为物理像素 → client 用 /dpr
-    const clientX = (screenX - pos.x) / dpr;
-    const clientY = (screenY - pos.y) / dpr;
+    const clientX = (screenX - geom.x) / dpr;
+    const clientY = (screenY - geom.y) / dpr;
     const outOfWindow =
-      clientX < 0 || clientY < 0 || clientX >= size.width / dpr || clientY >= size.height / dpr;
+      clientX < 0 || clientY < 0 || clientX >= geom.w / dpr || clientY >= geom.h / dpr;
     if (outOfWindow) {
       if (!clickthroughActive) {
         clickthroughActive = true;
@@ -531,6 +807,7 @@ async function startClickthrough() {
     unlistenMouseMove = await onTauriEvent<{ x: number; y: number }>(
       PET_MOUSE_MOVE_EVENT,
       (p) => {
+        lastMouseScreen = { x: p.x, y: p.y };
         void applyClickthroughAt(p.x, p.y);
       },
     );
@@ -554,7 +831,8 @@ async function speak(text: string) {
   stopMouth = pet.startMouth();
   try {
     // 在线 TTS：Promise 在真实音频结束时 resolve，口型时长对齐播放
-    await speakMessageText(text, ttsVoice.value || undefined);
+    // 内容去重：主窗口已自动朗读过同一句时，桌宠不再重复开口
+    await speakMessageText(text, ttsVoice.value || undefined, undefined);
   } catch {
     /* 忽略 */
   }
@@ -567,7 +845,6 @@ async function speak(text: string) {
 // 注：朗读 + 情绪动作统一由 onAssistantDone 触发（在消息流 watch 中调用），
 // 这里不再重复监听，避免双重朗读。
 onMounted(async () => {
-  console.log("[pet] mounted");
   connect();
   startAutoRefresh();
   void updateBubbleSide();
@@ -578,19 +855,26 @@ onMounted(async () => {
   try {
     if (modelHost.value) {
       // Live2D 懒加载：即使模型/渲染失败，页面主体仍可用
-      const mod = await import("./live2d");
-      pet = await mod.createPetModel(modelHost.value, {
-        heightRatio: MODEL_HEIGHT_RATIO_VAL,
-        anchorXRatio: 0.5, // 模型全屏居中
-      });
+      const catalog = await loadModelCatalog();
+      modelProfiles.value = catalog.models;
+      const profile = pickModelProfile(catalog);
+      await mountPetModel(profile);
       loading.value = false;
-      console.log("[pet] model ready");
       // 情绪映射（聊天气泡 → 动作）懒加载；失败时回退内置缺省表
       try {
         await loadEmotionMap();
       } finally {
         emotionMapReady = true;
       }
+      // 设置页/其他窗口切换模型时热更新
+      void onTauriEvent<{ id: string }>(PET_MODEL_CHANGED_EVENT, (p) => {
+        void onExternalModelChange(p?.id);
+      });
+      window.addEventListener("storage", (e) => {
+        if (e.key === "diver.pet.modelId" && e.newValue) {
+          void onExternalModelChange(e.newValue);
+        }
+      });
     }
   } catch (err) {
     loadError.value = err instanceof Error ? err.message : String(err);
@@ -699,11 +983,14 @@ onBeforeUnmount(() => {
               </svg>
               <span v-else class="busy-dots">…</span>
             </button>
-            <!-- ⋯ 菜单：低频操作收纳在此，面板保持简洁 -->
+            <!-- ⋯ 菜单：低频操作收纳在此；切换模型打开独立面板 -->
             <div class="more-menu-wrap">
               <button class="more-btn" title="更多" @click="toggleMoreMenu">⋯</button>
               <Transition name="panel">
                 <div v-if="moreMenuOpen" class="more-menu">
+                  <button class="more-opt" @click="openModelPicker">
+                    切换模型{{ switchingModel ? " …" : "" }}
+                  </button>
                   <button class="more-opt" @click="closePanelFromMenu">收起面板</button>
                 </div>
               </Transition>
@@ -711,22 +998,58 @@ onBeforeUnmount(() => {
           </div>
         </div>
       </Transition>
-      <!-- 常态气泡：面板关闭时，新消息仍以短暂气泡提示 -->
-      <Transition name="bubble">
-        <div
-          v-if="!panelOpen && bubbleVisible && bubbleText"
-          class="speech-bubble"
-          :class="bubbleKind"
-          @pointerdown.stop
-        >
-          <span v-if="bubbleKind === 'user'" class="bubble-label">我</span>
-          <span class="bubble-text">
-            {{ bubbleText }}
-            <span v-if="bubbleStreaming" class="cursor">▍</span>
-          </span>
+
+      <!-- 模型选择面板：卡片列表，与设置页「桌宠形象」同一套 UI -->
+      <Transition name="panel">
+        <div v-if="modelPickerOpen" class="model-picker-panel" @pointerdown.stop>
+          <div class="model-picker-head">
+            <span class="model-picker-title">切换模型</span>
+            <button class="model-picker-close" title="关闭" @click="modelPickerOpen = false">×</button>
+          </div>
+          <PetModelPicker
+            compact
+            :models="modelProfiles"
+            :active-id="activeModelId"
+            :switching="switchingModel"
+            @select="switchModel"
+          />
+          <p class="model-picker-hint">YUI 来自 N.E.K.O，仅供本地学习评估。</p>
         </div>
       </Transition>
     </div>
+
+    <!-- 常态气泡：贴角色头顶的紧凑预览卡（pet-root 直属子级，按 hitbox 定位） -->
+    <Transition name="bubble">
+      <div
+        v-if="!panelOpen && bubbleVisible && bubbleText"
+        class="speech-bubble"
+        :class="bubbleKind"
+        :style="bubblePos ? { left: `${bubblePos.left}px`, top: `${bubblePos.top}px` } : undefined"
+        title="点击展开消息面板"
+        @pointerdown.stop
+        @click.stop="openPanel"
+        @mouseenter="onBubbleEnter"
+        @mouseleave="onBubbleLeave"
+      >
+        <div class="bubble-head">
+          <span v-if="bubbleKind === 'user'" class="bubble-label">我</span>
+          <span v-else class="bubble-label">✦</span>
+          <button
+            class="bubble-close"
+            title="关闭"
+            @pointerdown.stop
+            @click.stop="hideBubbleNow"
+          >
+            ×
+          </button>
+        </div>
+        <span class="bubble-text">
+          {{ bubbleText }}
+          <span v-if="bubbleStreaming" class="cursor">▍</span>
+        </span>
+        <div v-if="!bubbleStreaming" class="bubble-hint">点击展开 ›</div>
+      </div>
+    </Transition>
 
     <!-- 连接状态小圆点：仅离线时显示（常态在线时不显示，避免干扰视觉） -->
     <div v-if="!connected" class="conn-dot" title="离线"></div>
@@ -1022,27 +1345,39 @@ onBeforeUnmount(() => {
   padding: 24px 0;
 }
 
-/* 常态短暂气泡（面板关闭时新消息提示） */
+/* 常态短暂气泡：贴角色头顶的紧凑预览卡（pet-root 绝对定位，由 layoutSpeechBubble 赋 left/top）。
+ * 长文只露前几行；悬停暂停消失；点关闭或点正文展开面板。 */
 .speech-bubble {
   position: absolute;
-  top: 8px;
-  left: 8px;
-  right: 8px;
   display: flex;
-  align-items: flex-start;
-  gap: 6px;
-  padding: 8px 12px;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px 6px;
   border-radius: 14px;
   font-size: 12px;
   line-height: 1.55;
   word-break: break-word;
   white-space: pre-wrap;
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
-  z-index: 8;
-  max-height: calc(100% - 16px);
-  overflow-y: auto;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
+  z-index: 40;
+  box-sizing: border-box;
+  width: max-content;
+  max-width: min(280px, calc(100vw - 16px));
+  max-height: min(38%, 180px);
+  overflow: hidden;
+  cursor: pointer;
+  transition: box-shadow 0.15s ease, transform 0.15s ease;
+}
+.speech-bubble:hover {
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  transform: translateY(-1px);
+}
+.bubble-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 16px;
 }
 .speech-bubble.assistant {
   background: rgba(28, 29, 44, 0.94);
@@ -1058,10 +1393,42 @@ onBeforeUnmount(() => {
   font-size: 10px;
   opacity: 0.7;
   flex-shrink: 0;
-  margin-top: 2px;
+}
+.bubble-close {
+  margin-left: auto;
+  border: none;
+  background: transparent;
+  color: inherit;
+  opacity: 0.55;
+  font-size: 14px;
+  line-height: 1;
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  cursor: pointer;
+  padding: 0;
+}
+.bubble-close:hover {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.12);
 }
 .bubble-text {
   flex: 1;
+  min-width: 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.bubble-hint {
+  align-self: flex-end;
+  font-size: 10px;
+  opacity: 0.55;
+  line-height: 1.2;
+  margin-top: 2px;
+}
+.speech-bubble:hover .bubble-hint {
+  opacity: 0.9;
 }
 .cursor {
   color: #ffb07c;
@@ -1072,7 +1439,7 @@ onBeforeUnmount(() => {
   50% { opacity: 0.35; }
 }
 
-/* 气泡浮现/淡出动画 */
+/* 气泡浮现/淡出动画；过渡起止态不参与命中，避免透明层挡住点击 */
 .bubble-enter-active,
 .bubble-leave-active {
   transition: opacity 0.3s ease, transform 0.3s ease;
@@ -1080,10 +1447,12 @@ onBeforeUnmount(() => {
 .bubble-enter-from {
   opacity: 0;
   transform: translateY(-10px) scale(0.92);
+  pointer-events: none !important;
 }
 .bubble-leave-to {
   opacity: 0;
   transform: translateY(-6px) scale(0.96);
+  pointer-events: none !important;
 }
 
 /* ---------- 连接状态小圆点 ---------- */
@@ -1262,10 +1631,58 @@ onBeforeUnmount(() => {
   font-family: inherit;
   text-align: left;
   white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 .more-opt:hover {
   background: rgba(255, 176, 124, 0.15);
   color: #ffe3c4;
+}
+.model-picker-panel {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: min(320px, calc(100vw - 32px));
+  max-height: min(420px, calc(100vh - 40px));
+  overflow-y: auto;
+  background: rgba(28, 29, 44, 0.97);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 14px;
+  padding: 14px;
+  z-index: 50;
+  pointer-events: auto;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.45);
+}
+.model-picker-head {
+  display: flex;
+  align-items: center;
+  margin-bottom: 10px;
+}
+.model-picker-title {
+  flex: 1;
+  font-size: 13px;
+  color: #f0eef8;
+}
+.model-picker-close {
+  background: transparent;
+  border: none;
+  color: #8d89a1;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 2px 6px;
+  font-family: inherit;
+}
+.model-picker-close:hover {
+  color: #ffe3c4;
+}
+.model-picker-hint {
+  margin: 10px 0 0;
+  font-size: 10px;
+  line-height: 1.5;
+  color: #6f6b85;
 }
 
 .panel-enter-active,
@@ -1286,10 +1703,17 @@ onBeforeUnmount(() => {
 <style>
 .pet-root .model-hitbox,
 .pet-root .speech-bubble,
+.pet-root .speech-bubble *,
 .pet-root .chat-flow,
+.pet-root .model-picker-panel,
 .pet-root .question-card,
 .pet-root .conn-dot {
   pointer-events: auto;
+}
+/* 过渡起止态（透明）不参与命中，避免残留层挡住真实点击 */
+.pet-root .speech-bubble.bubble-enter-from,
+.pet-root .speech-bubble.bubble-leave-to {
+  pointer-events: none !important;
 }
 /* PIXI 画布铺满窗口，必须不参与命中 */
 .pet-root .model-host canvas {

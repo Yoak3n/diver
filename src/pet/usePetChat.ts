@@ -119,6 +119,16 @@ export function usePetChat() {
       case "turn":
         if (e.state === "end") {
           for (const m of messages.value) m.streaming = false;
+          // 输出被 token 上限截断时明说，避免看起来像模型故意说半句
+          if (e.reason === "max-tokens") {
+            push({
+              id: `local-maxtok-${Date.now()}`,
+              kind: "system",
+              content: "（这条回复被输出长度上限截断了，可以说「继续」补完）",
+              origin: "assistant",
+              time: Date.now(),
+            });
+          }
         }
         busy.value = e.state === "start";
         break;

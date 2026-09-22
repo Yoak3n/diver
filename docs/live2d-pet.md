@@ -5,11 +5,23 @@
 
 ## 渲染
 
-- **栈**：`pixi-live2d-display@0.4` + `pixi.js@7` + Live2D Cubism 4 官方 Core
-- **模型**：Live2D 官方示例「Hiyori」（`public/pet/models/Hiyori/`，4.7MB，含 10 个官方动作）
-  - 仓库不提交模型文件；首次使用前执行 `pnpm pet:fetch`（或 `node scripts/pet-fetch.mjs`）拉取官方示例包
-  - `pet:fetch` 拉取后自动运行 `scripts/gen-motions.mjs` + `scripts/patch-model3.mjs`，
-    为模型追加 **7 个情绪动作组**（Happy/Sad/Angry/Surprised/Shy/Nod/Wave）与对应动作文件
+- **栈**：`pixi-live2d-display@0.4` + `pixi.js@7` + Live2D Cubism Core（`public/pet/live2dcubismcore.min.js`，须支持 **moc3 v5** / `MocVersion_50`）
+  - YUI 等 Cubism 5 导出模型是 moc3 v5；旧 Core 最高 v4 会在 `reviveMoc` 失败，库只报 `Unknown error`
+  - `live2d.ts` 加载前会探测 moc 版本，不匹配时给出可读错误
+- **模型目录**：`src/pet/model-catalog.json`（入库）+ `public/pet/models/`（模型本体，不入库）
+  - 默认 **Hiyori**（Live2D 官方示例，约 4.7MB，含 10 个官方动作）
+  - 可选 **YUI · Lolita / Origin**（来自 [N.E.K.O](https://github.com/Project-N-E-K-O/N.E.K.O)，学习评估用）
+  - 拉取：`pnpm pet:fetch`（Hiyori）/ `pnpm pet:models`（Hiyori 缺省时补齐 + YUI 两套）
+  - YUI 原包漏声明 `shy` 动作组，安装脚本会按 `shy*.motion3.json` 自动补进 `model3.json`
+  - **YUI 角色版权归 Project N.E.K.O.**，仅本地学习/表现力评估，勿打进对外发行包
+- **切换模型（页面入口两处）**：
+  1. **主窗口设置 → 系统 → 桌宠形象**：完整卡片列表（与桌宠同一套 `PetModelPicker`）
+  2. **桌宠聊天面板 → `⋯` → 切换模型**：居中浮层面板，选完即热切换
+  - 选择写入 `localStorage`（`diver.pet.modelId`），并广播 `pet://model-changed`（Tauri event + CustomEvent），设置页与桌宠窗口互相热同步
+  - 各模型的逻辑动作组（Happy/Sad/TapBody…）经 `groupAliases` 映射到真实组名（YUI 为小写 `happy`…）
+  - YUI 额外叠加 `exp3` 表情（`expressionMap`），情绪触发时动作 + 表情同时生效
+- `pet:fetch` 拉取 Hiyori 后自动运行 `scripts/gen-motions.mjs` + `scripts/patch-model3.mjs`，
+  为 Hiyori 追加 **7 个情绪动作组**（Happy/Sad/Angry/Surprised/Shy/Nod/Wave）与对应动作文件
 - 依赖已 pin：`pixi.js@7` / `pixi-live2d-display@0.4` / `live2dcubismcore`
 
 ## 交互
@@ -18,8 +30,18 @@
 |---|---|
 | 点按桌宠 | 随机播放 TapBody 动作（force 优先级，可打断情绪动作） |
 | 底部气泡面板 | 直接对话（轻量 SSE 聊天，最近 8 条） |
-| 助手回复 | 自动 TTS 朗读 + **口型同步**（`ParamMouthOpenY`，按真实音频播放时长驱动） |
+| 助手回复 | 自动 TTS 朗读 + **口型同步**（见下） |
 | 顶部手柄 | 拖拽移动（`data-tauri-drag-region`） |
+
+## 口型同步（TTS → Live2D）
+
+- **参数**：`ParamMouthOpenY`（开合）+ `ParamMouthForm`（口型变形）
+- **写入时机**：挂在 `internalModel` 的 **`beforeModelUpdate` 事件**（expression/physics 之后、
+  `model.update()` 烘焙顶点之前）。`Cubism4InternalModel.update()` 末尾会 `loadParameters()`
+  把参数恢复成 motion 快照 —— 在烘焙后或 `setInterval` 里写口型都会被冲掉（嘴几乎不动）
+- **响度来源**：`src/tts.ts` 用 `AnalyserNode` 读播放中的 RMS（`getSpeechLevel()`）；无分析器时退回多频正弦
+- **参数**：`ParamMouthOpenY` + `ParamMouthForm` +（YUI）`Param71` 齿口
+- **YUI 注意**：原包 `Groups.LipSync.Ids` 为空，`pnpm pet:models` 会自动补上标准嘴部参数
 
 ## 情绪驱动动作（聊天内容 → Live2D 动作）
 
@@ -29,11 +51,14 @@
   （`inferEmotion`），支持中/英/日等多语言关键词表（`public/pet/emotion-map.json`），
   处理否定词（"不开心"）、转折连词（"但/但是/不过"）与程度副词（"非常/有点"）加权
 - **触发**：`PetApp.vue` 在用户消息与助手回复到达时调用 `reactToText()` →
-  `pet.playEmotion(group)`，按情绪随机播放对应动作组：
+  `pet.playEmotion(group)`，按情绪随机播放对应动作组。逻辑组名再经**当前模型**
+  的 `groupAliases` 解析（Hiyori：`Happy`；YUI：`happy` 等）：
   - happy/excited → `Happy`/`Nod`/`Wave`
   - sad → `Sad`/`Nod`；angry → `Angry`；surprised → `Surprised`/`Shy`
   - shy/love → `Shy`/`Happy`；grateful → `Nod`/`Happy`
   - greeting → `Wave`/`Happy`；farewell → `Wave`/`Sad`；agree → `Nod`
+- **表情叠加（YUI）**：`expressionMap` 把情绪映射到 `exp3` 表情，约 2.8s 后清除，
+  与身体动作同时生效，面部更生动
 - **LLM 输出配合**（`cos-plugins/voice`，`diver:voice` 提示词节）：系统提示词
   引导陪伴 agent 的输出**口语化、短句、情绪色彩明确**（"哈哈太棒了"、"哇真的假的"），
   让前端情绪推断有更可靠的信号——LLM 表达越自然，桌宠动作越生动
@@ -41,8 +66,9 @@
   - 情绪动作以 `MotionPriority.NORMAL(2)` 播放，可抢占 IDLE(1) 随机动作
   - 两次情绪动作间隔 ≥ 2.2s（冷却），避免连续消息触发过密
   - 朗读（口型）期间不触发大动作；点击互动用 `FORCE(3)` 可随时打断
-- **动作文件**：`scripts/gen-motions.mjs` 按 Cubism motion3 格式生成
-  （段/点计数自动计算，与 pixi-live2d-display 解析器一致），一次性播放后自动回 Idle
+- **动作文件**：Hiyori 由 `scripts/gen-motions.mjs` 按 Cubism motion3 格式生成
+  （段/点计数自动计算，与 pixi-live2d-display 解析器一致），一次性播放后自动回 Idle；
+  YUI 使用原包成套动作（每情绪多变体，表现力显著更强）
 
 ## 窗口技术
 

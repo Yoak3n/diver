@@ -104,19 +104,94 @@ export function codeToKeyToken(code: string): string | null {
 }
 
 /**
+ * KeyboardEvent.key → parse_key token（code 缺失时的回退）。
+ * WebView2/IME 场景下 `event.code` 可能是空串或 `Unidentified`。
+ */
+export function keyToKeyToken(key: string): string | null {
+  if (key === "" || key === "Unidentified" || key === "Dead") return null;
+  // 单字母（含 CapsLock/Shift 产生的大写）
+  if (/^[a-zA-Z]$/.test(key)) return key.toLowerCase();
+  // 主键盘数字（Shift 产生的符号不走这里——那是修饰+Digit）
+  if (/^[0-9]$/.test(key)) return key;
+  // 功能键
+  if (/^F([1-9]|1[0-9]|2[0-4])$/.test(key)) return key.toLowerCase();
+  // 命名键（大小写不敏感，对齐 parse_key）
+  const named = CODE_TO_KEY[key];
+  if (named !== undefined) return named;
+  // 常见 key 名 → code 名
+  const KEY_ALIASES: Record<string, string> = {
+    " ": "space",
+    Spacebar: "space",
+    Esc: "escape",
+    Del: "delete",
+    Ins: "insert",
+    PgUp: "pageup",
+    PgDn: "pagedown",
+    Up: "arrowup",
+    Down: "arrowdown",
+    Left: "arrowleft",
+    Right: "arrowright",
+    "+": "numpadadd", // 主键盘 + 是 Shift+Equal，这里仅在 code 缺失时兜底
+    "=": "equal",
+    "-": "minus",
+    "_": "minus",
+    ".": "period",
+    ",": "comma",
+    "/": "slash",
+    "\\": "backslash",
+    ";": "semicolon",
+    "'": "quote",
+    "`": "backquote",
+    "[": "bracketleft",
+    "]": "bracketright",
+  };
+  const alias = KEY_ALIASES[key] ?? KEY_ALIASES[key.toLowerCase()];
+  if (alias !== undefined) return alias;
+  // 最后尝试：把 key 当成 code 再走一遍（Enter / F5 / NumpadAdd …）
+  return codeToKeyToken(key) ?? codeToKeyToken(`Key${key.toUpperCase()}`);
+}
+
+/** 解析主键 token：优先物理 `code`，缺失时回退 `key`。 */
+export function resolveKeyToken(e: KeyboardEvent): string | null {
+  const code = e.code;
+  if (code !== "" && code !== "Unidentified") {
+    const fromCode = codeToKeyToken(code);
+    if (fromCode !== null) return fromCode;
+  }
+  return keyToKeyToken(e.key);
+}
+
+/**
+ * IME 组合中的假按键不应参与录制。
+ *
+ * WebView2 / Chromium 在中文输入法下常把真实按键的 `keyCode` 误报成 229、
+ * `key` 误报成 `Process`，但 `event.code`（物理键位）往往仍然正确。
+ * 因此：能解析出主键就不算假按键；只有真正无法映射时才丢弃。
+ */
+export function isImeEvent(e: KeyboardEvent): boolean {
+  if (e.isComposing === true) return true;
+  if (!isModifierOnly(e) && resolveKeyToken(e) !== null) return false;
+  return e.keyCode === 229 || e.key === "Process" || e.key === "Dead";
+}
+
+/**
  * 把一次按键转成 accelerator 字符串。
- * - 只按下修饰键 → null（继续等主键）
+ * - 只按下修饰键 / IME 组合 → null（继续等主键）
  * - 无法映射的主键 → null
  * - 否则 → `ctrl+shift+alt+super+<key>` 的子集 + 主键（修饰顺序固定）
+ * - Windows AltGr 会报成 Ctrl+Alt：有 AltGraph 时不输出 phantom `ctrl`
  */
 export function eventToAccelerator(e: KeyboardEvent): string | null {
   if (isModifierOnly(e)) return null;
+  if (isImeEvent(e)) return null;
 
-  const key = codeToKeyToken(e.code);
+  const key = resolveKeyToken(e);
   if (key === null) return null;
 
+  const altGraph = typeof e.getModifierState === "function" && e.getModifierState("AltGraph");
   const mods: string[] = [];
-  if (e.ctrlKey) mods.push("ctrl");
+  // AltGr = 右 Alt，Windows 上是 Ctrl+Alt 组合；只保留 alt，避免收成 ctrl+alt+…
+  if (e.ctrlKey && !altGraph) mods.push("ctrl");
   if (e.shiftKey) mods.push("shift");
   if (e.altKey) mods.push("alt");
   if (e.metaKey) mods.push("super");

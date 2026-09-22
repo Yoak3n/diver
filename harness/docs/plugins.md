@@ -274,6 +274,29 @@ hooks the same typed event surface — and, because the profile manifest uses th
 `dsh` section, a DSH bundle package can be dropped into a cos profile
 untouched (kit: `dsh.profile.bundles`, `dsh.bundle.patch` are recognized).
 
+### Compatibility layer (`@deepseek-ai/dsh-*` shims)
+
+Service *call shapes* used to diverge (`defineTool` vs `tools.register`,
+`agents.create/resume` vs `agentLoop.createAgent`). cos now ships drop-in
+packages under the DSH names so community plugins can import unchanged:
+
+| Import | Backing | Notes |
+|---|---|---|
+| `@deepseek-ai/dsh-tools` | `defineTool`, schema DSL → JSON Schema | `ctx.tools.register(definition)` accepts DSH `ToolDefinition` **and** cos `(name, executor, options)` |
+| `@deepseek-ai/dsh-llm` | `@cos/llm` `LlmAdapter` + stream types | `ctx.llm.registerAdapter(providers, adapter)` |
+| `@deepseek-ai/dsh-agent` | create/resume option types | `ctx.agents.create` / `ctx.agents.resume` → `agentLoop.createAgent` |
+| `@deepseek-ai/dsh-session` | `@cos/types` session types | `ctx.sessions` / `ctx.sessionPersistence.prepare` |
+| `@deepseek-ai/dsh-system-prompt` | `@cos/system-prompt` | `ctx.systemPrompt.section` / `.variable` |
+| `@deepseek-ai/dsh-scope` | `@cos/scope` | scope carriers |
+
+Smoke: `pnpm tsx scripts/dsh-compat-test.ts`. Sample plugin:
+`examples/dsh-compat-example` (`defineTool` → dual-shape register).
+
+**Still not 1:1:** DSH `ToolRuntime` pipeline events (`tools/pre-execute` …),
+PTC presentation mode, `user-approval`, and `dsh-tauri*` host plugins. Tool
+bodies that only need `defineTool` + `register` + prompt sections work as-is;
+deep pipeline/UI plugins still need a port.
+
 Verified in this repository: in diver direct-path mode the companion mounts
 `@diver/memory` + `@diver/backend` + `@diver/basic-tools` from `cos-plugins/` by path with zero
 changes to the harness code; the generic profile flow (reconcile +

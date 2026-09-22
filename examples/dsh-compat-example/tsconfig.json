@@ -1,0 +1,21 @@
+{
+  "compilerOptions": {
+    "target": "es2022",
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "allowImportingTsExtensions": true,
+    "types": ["node"],
+    "noEmit": true,
+    "verbatimModuleSyntax": true,
+    "skipLibCheck": true,
+    "paths": {
+      "@cos/plugin-api": ["../../harness/packages/plugin-api/src/index.ts"],
+      "@deepseek-ai/dsh-tools": ["../../harness/packages/dsh-tools/src/index.ts"],
+      "@deepseek-ai/dsh-tools/*": ["../../harness/packages/dsh-tools/src/*.ts"],
+      "cordis": ["../../harness/node_modules/cordis"],
+      "cordis/*": ["../../harness/node_modules/cordis/*"]
+    }
+  },
+  "include": ["src/**/*.ts"]
+}

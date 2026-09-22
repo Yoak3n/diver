@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
-import type { HealthInfo, SettingsInfo } from "../../types";
+import { computed, onMounted, ref, watch } from "vue";
+import type { HealthInfo, PetInteractionSettings, SettingsInfo } from "../../types";
 import type { SettingsState } from "../../composables/useSettings";
 import { tauriAvailable, onTauriEvent } from "../../tauri";
 import PetModelPicker from "../PetModelPicker.vue";
@@ -12,7 +12,7 @@ import {
 } from "../../pet/models";
 import type { PetModelProfile } from "../../pet/models";
 
-defineProps<{
+const props = defineProps<{
   state: SettingsState;
   healthInfo: HealthInfo | null;
   settingsInfo: SettingsInfo | null;
@@ -23,6 +23,48 @@ defineEmits<{
   toggleWindowStartup: [key: "autoOpenMain" | "autoOpenPet", value: boolean];
   changePetSize: [percent: number];
 }>();
+
+// ---------- 桌宠互动感知 ----------
+const DEFAULT_INTERACTION: PetInteractionSettings = {
+  mode: "events",
+  quietMs: 10000,
+  cooldownMs: 45000,
+  maxTriggers: 1,
+  longHoldMs: 3000,
+};
+
+const interactionForm = ref<PetInteractionSettings>({ ...DEFAULT_INTERACTION });
+
+const interactionMode = computed(() => interactionForm.value.mode);
+
+watch(
+  () => props.settingsInfo?.petInteraction,
+  (v) => {
+    if (v) interactionForm.value = { ...DEFAULT_INTERACTION, ...v };
+  },
+  { immediate: true, deep: true },
+);
+
+async function persistInteraction(patch: Partial<PetInteractionSettings>) {
+  const next = { ...interactionForm.value, ...patch };
+  interactionForm.value = next;
+  try {
+    const { saveSettings } = await import("../../api");
+    await saveSettings({ petInteraction: next });
+  } catch (err) {
+    console.error("[settings] save petInteraction failed", err);
+  }
+}
+
+function onInteractionModeChange(mode: PetInteractionSettings["mode"]) {
+  void persistInteraction({ mode });
+}
+
+function onInteractionNum(key: "quietMs" | "cooldownMs" | "maxTriggers" | "longHoldMs", raw: string) {
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n <= 0) return;
+  void persistInteraction({ [key]: Math.round(n) });
+}
 
 // ---------- 桌宠形象模型 ----------
 const petModels = ref<PetModelProfile[]>([]);
@@ -139,6 +181,66 @@ onMounted(async () => {
 
   <p class="hint">配置保存在本机；桌宠位置与大小会记住，下次启动恢复。</p>
 
+  <label class="group-title">桌宠互动感知</label>
+  <div class="sidecar-row">
+    <span>模式</span>
+    <select
+      class="interaction-mode"
+      :value="interactionMode"
+      @change="onInteractionModeChange(($event.target as HTMLSelectElement).value as PetInteractionSettings['mode'])"
+    >
+      <option value="off">关</option>
+      <option value="events">仅事件</option>
+      <option value="context">带上下文</option>
+    </select>
+  </div>
+  <details class="interaction-debug">
+    <summary>互动调试参数</summary>
+    <div class="debug-grid">
+      <label>
+        <span>静默闲时（ms）</span>
+        <input
+          type="number"
+          min="500"
+          step="500"
+          :value="interactionForm.quietMs"
+          @change="onInteractionNum('quietMs', ($event.target as HTMLInputElement).value)"
+        />
+      </label>
+      <label>
+        <span>触发冷却（ms）</span>
+        <input
+          type="number"
+          min="1000"
+          step="1000"
+          :value="interactionForm.cooldownMs"
+          @change="onInteractionNum('cooldownMs', ($event.target as HTMLInputElement).value)"
+        />
+      </label>
+      <label>
+        <span>闲时最多次数</span>
+        <input
+          type="number"
+          min="1"
+          step="1"
+          :value="interactionForm.maxTriggers"
+          @change="onInteractionNum('maxTriggers', ($event.target as HTMLInputElement).value)"
+        />
+      </label>
+      <label>
+        <span>长拖阈值（ms）</span>
+        <input
+          type="number"
+          min="500"
+          step="500"
+          :value="interactionForm.longHoldMs"
+          @change="onInteractionNum('longHoldMs', ($event.target as HTMLInputElement).value)"
+        />
+      </label>
+    </div>
+    <p class="hint">拖动切屏 / 长拖未松手等事件，仅在 agent 闲时才可能触发搭话。</p>
+  </details>
+
   <label class="group-title">Sidecar（agent 大脑）</label>
   <div class="sidecar-row">
     <span class="dot" :class="healthInfo?.ok ? 'on' : 'off'"></span>
@@ -160,8 +262,9 @@ onMounted(async () => {
 .group-title {
   display: block;
   font-size: 12px;
-  color: #8d89a1;
-  letter-spacing: 1px;
+  font-weight: 500;
+  color: var(--ink-dim);
+  letter-spacing: 0.06em;
   margin-top: 4px;
 }
 .sidecar-row {
@@ -169,42 +272,22 @@ onMounted(async () => {
   align-items: center;
   gap: 8px;
   font-size: 13px;
-  color: #b9b5cc;
-}
-.dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #6f6b85;
-}
-.dot.on {
-  background: #59d99a;
-  box-shadow: 0 0 6px #59d99a;
-}
-.dot.off {
-  background: #d35d5d;
+  color: var(--ink);
 }
 .btn.small {
-  padding: 4px 12px;
-  font-size: 12px;
   margin-left: auto;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  color: #e8e6f0;
-  border-radius: 10px;
-  cursor: pointer;
-  font-family: inherit;
 }
 .mt8 {
   margin-top: 8px;
 }
 .logs {
-  background: #141420;
-  border-radius: 8px;
+  background: var(--paper-sunken);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-sm);
   padding: 10px;
   font-size: 11px;
   line-height: 1.5;
-  color: #9a96ad;
+  color: var(--ink-soft);
   max-height: 160px;
   overflow-y: auto;
   white-space: pre-wrap;
@@ -213,19 +296,51 @@ onMounted(async () => {
 }
 details summary {
   font-size: 12px;
-  color: #8d89a1;
+  color: var(--ink-muted);
   cursor: pointer;
 }
 .hint {
   font-size: 11px;
-  color: #6f6b85;
+  color: var(--ink-dim);
   margin: 0;
   line-height: 1.7;
+}
+.interaction-mode {
+  margin-left: auto;
+  font-family: inherit;
+}
+.interaction-debug {
+  margin: 4px 0 8px;
+}
+.interaction-debug summary {
+  font-size: 12px;
+  color: var(--ink-muted);
+  cursor: pointer;
+}
+.debug-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 12px;
+  margin-top: 8px;
+}
+.debug-grid label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--ink-soft);
+}
+.debug-grid input {
+  margin-left: auto;
+  width: 88px;
+  padding: 3px 6px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
 }
 .pet-size-val {
   margin-left: auto;
   font-variant-numeric: tabular-nums;
-  color: #e8e6f0;
+  color: var(--ink);
   font-size: 12px;
 }
 .pet-size-row {
@@ -235,57 +350,17 @@ details summary {
 }
 .pet-size-slider {
   width: 100%;
-  accent-color: #c06ab3;
+  accent-color: var(--ink);
 }
 .pet-model-row {
   display: flex;
   align-items: center;
   gap: 8px;
   font-size: 13px;
-  color: #b9b5cc;
+  color: var(--ink);
   margin: 2px 0 8px;
 }
-/* 开关 */
 .switch {
-  position: relative;
-  display: inline-block;
-  width: 34px;
-  height: 19px;
   margin-left: auto;
-  flex-shrink: 0;
-}
-.switch input {
-  opacity: 0;
-  width: 0;
-  height: 0;
-}
-.slider {
-  position: absolute;
-  inset: 0;
-  background: rgba(255, 255, 255, 0.14);
-  border-radius: 19px;
-  transition: background 0.2s;
-  cursor: pointer;
-}
-.slider::before {
-  content: "";
-  position: absolute;
-  width: 15px;
-  height: 15px;
-  left: 2px;
-  top: 2px;
-  background: #fff;
-  border-radius: 50%;
-  transition: transform 0.2s;
-}
-.switch input:checked + .slider {
-  background: linear-gradient(135deg, #ff9d6c, #c06ab3);
-}
-.switch input:checked + .slider::before {
-  transform: translateX(15px);
-}
-.switch input:disabled + .slider {
-  opacity: 0.4;
-  cursor: default;
 }
 </style>

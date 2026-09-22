@@ -115,10 +115,22 @@ export function startPresenceScheduler(ctx: Context, state: WebState, deps: Sche
       }
 
       // 2) 主动问候：注入 [presence] 前缀消息 → SSE 标记 origin=presence
+      // 与桌宠互动共用 idleGate：正忙/刚聊过/冷却中则跳过本 tick（下轮再试）
       try {
+        const gate = state.idleGate
+        if (gate) {
+          const claim = gate.tryClaim()
+          if (!claim.ok) {
+            console.log(`[presence] 跳过（闲时门控）: ${claim.reason}`)
+            // 不加入 fired：下一轮 tick 若已闲可再触发
+            fired.delete(fireKey)
+            continue
+          }
+        }
         const agent = await deps.ensureAgent()
         const msg = userMessage(`[presence] ${entry.prompt}`)
         agent.followup(msg)
+        state.idleGate?.noteChat()
       } catch (err) {
         console.error('[presence] 注入主动问候失败:', (err as Error)?.message ?? err)
       }

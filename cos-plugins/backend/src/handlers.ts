@@ -5,8 +5,13 @@ import { extname, join, normalize, resolve } from 'node:path'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { SessionId } from '@cos/plugin-api'
 
-import { readDiverSettings, writeDiverSettings, textOf } from './session-helpers.ts'
+import { readDiverSettings, writeDiverSettings, textOf, imagesOf } from './session-helpers.ts'
 import { SESSION_ID, userMessage } from './agent.ts'
+import {
+  handlePetInteractionEvent,
+  isInteractionUserMessage,
+  readPetInteractionSettings,
+} from './interaction.ts'
 import { loadSchedule, saveSchedule } from './presence.ts'
 import type { WebHandlerDeps } from './types.ts'
 import {
@@ -123,17 +128,34 @@ export async function handleRequest(
       return
     }
 
-    // /api/chat —— 发送一条用户消息
+    // /api/chat —— 发送一条用户消息（可附带图片）
     if (pathname === '/api/chat' && req.method === 'POST') {
       const body = await readBody(req)
       const content = String(body.content ?? '').trim()
-      if (!content) {
+      const rawImages = Array.isArray(body.images) ? body.images : []
+      const images: Array<{ mime: string; data: string; name?: string }> = []
+      for (const raw of rawImages) {
+        if (!raw || typeof raw !== 'object') continue
+        const mime = String((raw as { mime?: unknown }).mime ?? '').trim().toLowerCase()
+        const data = String((raw as { data?: unknown }).data ?? '').trim()
+        const name = String((raw as { name?: unknown }).name ?? '').trim()
+        // 只收常见位图；data 为 base64（不含 data: 前缀）
+        if (!/^image\/(png|jpe?g|webp|gif)$/.test(mime)) continue
+        if (data === '' || data.length > 12_000_000) continue
+        images.push({
+          mime,
+          data: data.replace(/^data:[^,]+,/, ''),
+          ...(name !== '' ? { name } : {}),
+        })
+      }
+      if (images.length > 8) images.length = 8
+      if (!content && images.length === 0) {
         sendJson(res, 400, { error: '消息不能为空' })
         return
       }
       if (deps.state.busy) {
         const agent = await deps.ensureAgent()
-        const msg = userMessage(content)
+        const msg = userMessage(content || '（图片）', images)
         agent.steer(msg)
         sendJson(res, 200, { sessionId: String(agent.id), messageId: String(msg.id), queued: 'next-step' })
         return
@@ -151,9 +173,26 @@ export async function handleRequest(
         return
       }
       const agent = await deps.ensureAgent()
-      const msg = userMessage(content)
+      const msg = userMessage(content || '（图片）', images)
       agent.followup(msg)
       sendJson(res, 200, { sessionId: String(agent.id), messageId: String(msg.id), queued: false })
+      return
+    }
+
+    // /api/event —— 桌宠互动事件（闲时才注入 agent；见 interaction.ts / docs/pet-interaction-events.md）
+    if (pathname === '/api/event' && req.method === 'POST') {
+      const body = await readBody(req)
+      if (!deps.state.idleGate) {
+        sendJson(res, 200, { accepted: false, reason: 'disabled' })
+        return
+      }
+      const result = await handlePetInteractionEvent(body, {
+        state: deps.state,
+        gate: deps.state.idleGate,
+        ensureAgent: deps.ensureAgent,
+        isModelConfigured: deps.isModelConfigured,
+      })
+      sendJson(res, 200, result)
       return
     }
 
@@ -230,10 +269,17 @@ export async function handleRequest(
           if (ev.type !== 'user/message' && ev.type !== 'assistant/message') continue
           const time = Number(ev.time) || Date.now()
           if (ev.type === 'user/message') {
-            // 同样过滤运行时上下文快照（真实用户消息 source.kind === 'human'）
-            if (ev.data.source?.kind !== 'human') continue
+            // 过滤运行时上下文快照；放行真人消息与桌宠互动痕迹
+            const interaction = isInteractionUserMessage(ev.data.source)
+            if (ev.data.source?.kind !== 'human' && !interaction) continue
             const text = textOf(ev.data.content)
-            if (text.startsWith('[presence]')) {
+            if (interaction) {
+              messages.push({
+                id: ev.data.id, kind: 'system',
+                content: '（互动）',
+                origin: 'interaction', time,
+              })
+            } else if (text.startsWith('[presence]')) {
               presencePending = true
               messages.push({
                 id: ev.data.id, kind: 'system',
@@ -241,7 +287,14 @@ export async function handleRequest(
                 origin: 'presence', time,
               })
             } else {
-              messages.push({ id: ev.data.id, kind: 'user', content: text, origin: 'user', time })
+              messages.push({
+                id: ev.data.id,
+                kind: 'user',
+                content: text,
+                origin: 'user',
+                time,
+                ...(imagesOf(ev.data.content).length > 0 ? { images: imagesOf(ev.data.content) } : {}),
+              })
             }
           } else if (ev.type === 'assistant/message') {
             const text = textOf(ev.data.message.content)
@@ -445,6 +498,7 @@ export async function handleRequest(
           model: h.model,
           models: await deps.catalogModels(),
           providers: await deps.providerDecls(),
+          petInteraction: readPetInteractionSettings(),
           sidecar: { state: 'running', port: deps.port },
         })
         return
@@ -457,6 +511,22 @@ export async function handleRequest(
         const patch: Record<string, unknown> = {}
         if (typeof body.provider === 'string' && body.provider) patch.provider = body.provider
         if (typeof body.model === 'string' && body.model) patch.model = body.model
+        if (body.petInteraction && typeof body.petInteraction === 'object') {
+          const cur = readPetInteractionSettings()
+          const src = body.petInteraction as Record<string, unknown>
+          const mode = src.mode
+          const nextMode =
+            mode === 'off' || mode === 'events' || mode === 'context' ? mode : cur.mode
+          const numOr = (v: unknown, fallback: number) =>
+            typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : fallback
+          patch.petInteraction = {
+            mode: nextMode,
+            quietMs: numOr(src.quietMs, cur.quietMs),
+            cooldownMs: numOr(src.cooldownMs, cur.cooldownMs),
+            maxTriggers: numOr(src.maxTriggers, cur.maxTriggers),
+            longHoldMs: numOr(src.longHoldMs, cur.longHoldMs),
+          }
+        }
         writeDiverSettings(patch)
         if (patch.model || patch.provider) {
           const s = readDiverSettings()
@@ -471,7 +541,12 @@ export async function handleRequest(
           await deps.applyModelChange(provider, model)
         }
         const h = await deps.healthInfo()
-        sendJson(res, 200, { modelConfigured: h.modelConfigured, provider: h.provider, model: h.model })
+        sendJson(res, 200, {
+          modelConfigured: h.modelConfigured,
+          provider: h.provider,
+          model: h.model,
+          petInteraction: readPetInteractionSettings(),
+        })
         return
       }
     }

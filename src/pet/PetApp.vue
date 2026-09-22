@@ -4,7 +4,25 @@ import { usePetChat } from "./usePetChat";
 import { inferEmotionDetail, loadEmotionMap, motionGroupsFor } from "./emotion";
 import type { PetEmotion } from "./emotion";
 import { tauriAvailable, onTauriEvent, startPetMouseStream, movePetWindow, cancelPetMoveAnimation, setPetDragging } from "../tauri";
-import { speakMessageText } from "../tts";
+import {
+  speakLocal,
+  onTtsSpeakingChange,
+  stopSpeaking,
+  TTS_STOP,
+  TTS_SPEAK_REQUEST,
+  TTS_SPEAK_ACK,
+  TTS_SPEAK_DONE,
+  type TtsSpeakRequest,
+} from "../tts";
+import { emitTauriEvent } from "../tauri";
+import { markdownToPlainText, renderMarkdownHtml } from "../markdown";
+import {
+  filesToAttachments,
+  imageFilesFromClipboard,
+  imageFilesFromDataTransfer,
+} from "../imageAttach";
+import { createPetInteractionTracker, DEFAULT_LONG_HOLD_MS } from "./interaction";
+import type { PetInteractionTracker } from "./interaction";
 import { MODEL_HEIGHT_RATIO, PET_MOUSE_MOVE_EVENT } from "./constants";
 import type { PetModelHandle } from "./live2d";
 import {
@@ -19,11 +37,13 @@ import PetModelPicker from "../components/PetModelPicker.vue";
 
 const modelHost = ref<HTMLElement | null>(null);
 const panelInput = ref<HTMLInputElement | null>(null);
+const attachFileInput = ref<HTMLInputElement | null>(null);
 const loading = ref(true);
 const loadError = ref<string | null>(null);
 const runtimeErrors = ref<string[]>([]);
 let pet: PetModelHandle | null = null;
 let stopMouth: (() => void) | null = null;
+let offTtsMouth: (() => void) | null = null;
 let speaking = false;
 
 // ---------- 模型切换（Hiyori / YUI…） ----------
@@ -127,8 +147,66 @@ window.addEventListener("unhandledrejection", (e) => {
   runtimeErrors.value.push(msg);
 });
 
-const { messages, busy, connected, composer, canSend, connect, send, startAutoRefresh, ttsEnabled, ttsVoice, pendingQuestion, submitQuestionAnswer } =
-  usePetChat();
+const {
+  messages,
+  busy,
+  connected,
+  composer,
+  attachments,
+  isReady,
+  canSend,
+  addAttachments,
+  removeAttachment,
+  connect,
+  send,
+  startAutoRefresh,
+  ttsEnabled,
+  ttsVoice,
+  pendingQuestion,
+  submitQuestionAnswer,
+} = usePetChat();
+
+const panelDragOver = ref(false);
+
+async function onAddAttachFiles(files: File[]) {
+  const items = await filesToAttachments(files);
+  if (items.length) addAttachments(items);
+}
+
+function pickAttachImages() {
+  attachFileInput.value?.click();
+}
+
+function onAttachFileInput(e: Event) {
+  const input = e.target as HTMLInputElement;
+  const files = Array.from(input.files ?? []);
+  input.value = "";
+  if (files.length) void onAddAttachFiles(files);
+}
+
+function onPanelPaste(e: ClipboardEvent) {
+  const files = imageFilesFromClipboard(e);
+  if (files.length) {
+    e.preventDefault();
+    void onAddAttachFiles(files);
+  }
+}
+
+function onPanelDragOver(e: DragEvent) {
+  if (e.dataTransfer?.types.includes("Files")) {
+    e.preventDefault();
+    panelDragOver.value = true;
+  }
+}
+
+function onPanelDrop(e: DragEvent) {
+  panelDragOver.value = false;
+  const files = imageFilesFromDataTransfer(e.dataTransfer);
+  if (files.length) {
+    e.preventDefault();
+    void onAddAttachFiles(files);
+  }
+}
 
 /** 桌宠侧提问的临时选择状态（单选：label；多选：数组）。 */
 const qSelections = ref<Record<string, string[]>>({});
@@ -225,11 +303,12 @@ function bubbleDuration(text: string): number {
 
 function showBubble(kind: "user" | "assistant", text: string, holdMs?: number) {
   if (bubbleTimer !== null) window.clearTimeout(bubbleTimer);
+  const plain = markdownToPlainText(text);
   bubbleKind.value = kind;
-  bubbleText.value = text;
+  bubbleText.value = plain;
   bubbleVisible.value = true;
   bubbleStreaming.value = false;
-  scheduleBubbleDismiss(holdMs ?? bubbleDuration(text));
+  scheduleBubbleDismiss(holdMs ?? bubbleDuration(plain));
   void nextTick(() => {
     layoutSpeechBubble();
     // 气泡就位后立刻按当前鼠标位置重算穿透，避免指着气泡却点不着
@@ -340,7 +419,7 @@ watch(
         if (bubbleTimer !== null) window.clearTimeout(bubbleTimer);
         bubbleTimer = null;
         bubbleKind.value = "assistant";
-        bubbleText.value = last.content;
+        bubbleText.value = markdownToPlainText(last.content);
         bubbleVisible.value = true;
         bubbleStreaming.value = true;
         layoutSpeechBubble();
@@ -377,6 +456,8 @@ let petDragSession = false;
 /** 拖动结束软限位定时器（Moved 防抖） */
 let dragIdleTimer: number | null = null;
 let unlistenPetMoved: (() => void) | null = null;
+/** 互动事件识别（切屏 / 长拖）→ POST /api/event（backend 闲时门控）。 */
+const interactionTracker: PetInteractionTracker = createPetInteractionTracker();
 
 function clearPressTimer() {
   if (pressTimer !== null) {
@@ -407,6 +488,7 @@ const DRAG_IDLE_MS = 1500;
 const DRAG_SESSION_MS = 1500;
 
 function endDragVisualState() {
+  interactionTracker.endDragSession();
   petDragSession = false;
   longPressDragging = false;
   if (dragState.value !== "idle") {
@@ -452,6 +534,7 @@ async function beginDrag() {
     petDragSession = true;
     longPressDragging = true;
     dragState.value = "dragging";
+    interactionTracker.beginDragSession();
     const { getCurrentWindow } = await import("@tauri-apps/api/window");
     await getCurrentWindow().startDragging();
     armDragSessionTimeout();
@@ -467,13 +550,23 @@ async function bindPetMovedListener() {
   if (!tauriAvailable() || unlistenPetMoved) return;
   try {
     const { getCurrentWindow } = await import("@tauri-apps/api/window");
-    const unlisten = await getCurrentWindow().onMoved(() => {
+    const unlisten = await getCurrentWindow().onMoved((pos) => {
       // Moved 在「鼠标仍按住的系统拖动」中就会触发 —— 说明拖动仍在进行，
       // 保持 grabbing，并重置「停歇超时」；不要在这里做 set_position。
       if (!petDragSession && !longPressDragging) return;
       petDragSession = true;
       if (dragState.value !== "dragging") {
         dragState.value = "dragging";
+      }
+      // 跨屏语义事件（同一拖动会话只报一次）；pos 为窗口物理坐标
+      const p = pos as unknown as { x?: number; y?: number } | undefined;
+      if (p && typeof p.x === "number" && typeof p.y === "number") {
+        interactionTracker.noteMoved(p.x + 40, p.y + 40);
+      } else {
+        void getCurrentWindow()
+          .outerPosition()
+          .then((wp) => interactionTracker.noteMoved(wp.x + 40, wp.y + 40))
+          .catch(() => {});
       }
       armDragIdleRecovery();
     });
@@ -697,7 +790,7 @@ function onUserMessage(content: string) {
 /** 助手消息完成：朗读 + 根据助手内容触发情绪动作（如安慰、开心回应）。 */
 function onAssistantDone(content: string) {
   reactToText(content);
-  void speak(content);
+  // 朗读由主窗口 speakMessageText → tts://speak-request 统一触发（避免双端各播）
 }
 
 // ---------- 点击穿透：默认穿透，命中可交互区则解除 ----------
@@ -823,22 +916,25 @@ function stopClickthrough() {
 }
 
 // ---------- 语音朗读 + 口型同步 ----------
-async function speak(text: string) {
-  // 受设置面板的 TTS 总开关控制（与主窗口一致），关闭时不朗读
-  if (!ttsEnabled.value || !pet || !tauriAvailable() || speaking) return;
-  speaking = true;
-  stopMouth?.();
-  stopMouth = pet.startMouth();
-  try {
-    // 在线 TTS：Promise 在真实音频结束时 resolve，口型时长对齐播放
-    // 内容去重：主窗口已自动朗读过同一句时，桌宠不再重复开口
-    await speakMessageText(text, ttsVoice.value || undefined, undefined);
-  } catch {
-    /* 忽略 */
-  }
-  speaking = false;
-  stopMouth?.();
-  stopMouth = null;
+/** 执行主窗口朗读请求：立刻 ack + 入本地队列（latest-wins），播完/跳过都回 done。 */
+function handleTtsRequest(req: TtsSpeakRequest) {
+  if (!req?.text) return;
+  void emitTauriEvent(TTS_SPEAK_ACK, { requestId: req.requestId });
+  void (async () => {
+    try {
+      if (!req.force && !ttsEnabled.value) return;
+      // 口型跟随播放状态（当前播完 + 只留最新）
+      await speakLocal(req.text, ttsVoice.value || undefined, { force: !!req.force });
+    } catch {
+      /* ignore */
+    } finally {
+      try {
+        await emitTauriEvent(TTS_SPEAK_DONE, { requestId: req.requestId });
+      } catch {
+        /* ignore */
+      }
+    }
+  })();
 }
 
 // 助手最终消息到达时自动朗读（历史加载/重启恢复的消息不朗读，避免重放）
@@ -849,9 +945,38 @@ onMounted(async () => {
   startAutoRefresh();
   void updateBubbleSide();
   void bindPetMovedListener();
+  // 互动感知：读设置里的长拖阈值（默认 3s）；模式关时 backend 会直接丢弃
+  void (async () => {
+    try {
+      const { getSettings } = await import("../api");
+      const s = await getSettings();
+      if (s.petInteraction?.longHoldMs) {
+        interactionTracker.setLongHoldMs(s.petInteraction.longHoldMs);
+      }
+    } catch {
+      interactionTracker.setLongHoldMs(DEFAULT_LONG_HOLD_MS);
+    }
+  })();
   // 窗口被拖动后位置会变化：定时重新检测气泡区方向 + 模型偏置
   bubbleSideTimer = window.setInterval(() => void updateBubbleSide(), 3000);
   void startClickthrough();
+  // 全局朗读执行端（手动点读 / 自动回复都到这里，才能带动口型）
+  void onTauriEvent<TtsSpeakRequest>(TTS_SPEAK_REQUEST, (req) => {
+    handleTtsRequest(req);
+  });
+  // 口型跟随播放态（当前播完/被停止时收口）
+  offTtsMouth = onTtsSpeakingChange((v) => {
+    if (v) {
+      stopMouth?.();
+      stopMouth = pet ? pet.startMouth() : null;
+    } else {
+      stopMouth?.();
+      stopMouth = null;
+    }
+  });
+  void onTauriEvent(TTS_STOP, () => {
+    stopSpeaking();
+  });
   try {
     if (modelHost.value) {
       // Live2D 懒加载：即使模型/渲染失败，页面主体仍可用
@@ -888,9 +1013,12 @@ onBeforeUnmount(() => {
   petDragSession = false;
   clearDragIdleTimer();
   void setPetDragging(false);
+  interactionTracker.dispose();
   unlistenPetMoved?.();
   unlistenPetMoved = null;
   stopClickthrough();
+  offTtsMouth?.();
+  offTtsMouth = null;
   stopMouth?.();
   pet?.destroy();
   pet = null;
@@ -942,7 +1070,7 @@ onBeforeUnmount(() => {
          常态收起；面板打开时模型缩小让位（setRetreat）。 -->
     <div class="bubble-area">
       <Transition name="panel">
-        <div v-if="panelOpen" class="chat-flow" @pointerdown.stop>
+        <div v-if="panelOpen" class="chat-flow" :class="{ 'drag-over': panelDragOver }" @pointerdown.stop @dragenter.prevent="onPanelDragOver" @dragover.prevent="onPanelDragOver" @dragleave.prevent="panelDragOver = false" @drop="onPanelDrop">
           <!-- 消息流：透明背景，可滚动回看历史 -->
           <div ref="chatMessagesRef" class="chat-messages">
             <div
@@ -951,29 +1079,79 @@ onBeforeUnmount(() => {
               class="chat-msg"
               :class="[m.kind, { streaming: m.streaming }]"
             >
-              <span v-if="m.kind === 'user'" class="msg-label">我</span>
-              <span v-else class="msg-label">✦</span>
-              <span class="msg-text">
-                {{ m.content }}
-                <span v-if="m.streaming" class="cursor">▍</span>
-              </span>
+              <template v-if="m.kind === 'system'">
+                <span class="msg-text system-text">{{ m.content }}</span>
+              </template>
+              <template v-else>
+                <span v-if="m.kind === 'user'" class="msg-label">我</span>
+                <span v-else class="msg-label">✦</span>
+                <span class="msg-text">
+                  <span v-if="(m.images?.length ?? 0) > 0" class="msg-images">
+                    <img
+                      v-for="(img, ii) in m.images"
+                      :key="ii"
+                      class="msg-image"
+                      :src="`data:${img.mime};base64,${img.data}`"
+                      :alt="img.name || '图片'"
+                    />
+                  </span>
+                  <span class="md-body" v-html="renderMarkdownHtml(m.content)"></span>
+                  <span v-if="m.streaming" class="cursor">▍</span>
+                </span>
+              </template>
             </div>
             <div v-if="!messages.length" class="chat-empty">说点什么吧…</div>
           </div>
-          <!-- 输入行 -->
+          <!-- 输入区：附件预览 + 文本 + 加图/发送 -->
+          <div v-if="attachments.length" class="panel-attach-strip">
+            <div v-for="a in attachments" :key="a.id" class="panel-attach-item">
+              <img :src="a.previewUrl" :alt="a.name || '图片'" class="panel-attach-thumb" />
+              <button
+                class="panel-attach-remove"
+                type="button"
+                title="移除"
+                @pointerdown.stop
+                @click="removeAttachment(a.id)"
+              >
+                ×
+              </button>
+            </div>
+          </div>
           <div class="panel-input-row">
+            <input
+              ref="attachFileInput"
+              type="file"
+              accept="image/png,image/jpeg,image/webp,image/gif"
+              multiple
+              hidden
+              @change="onAttachFileInput"
+            />
+            <button
+              class="attach-btn"
+              type="button"
+              title="添加图片"
+              @pointerdown.stop
+              @click="pickAttachImages"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="5" width="18" height="14" rx="2" />
+                <circle cx="8.5" cy="10" r="1.5" />
+                <path d="M21 16l-5-5-4 4-2-2-7 7" />
+              </svg>
+            </button>
             <input
               ref="panelInput"
               v-model="composer"
               type="text"
-              :placeholder="canSend ? '说点什么吧…' : busy ? '正在思考…' : '连接中…'"
-              :disabled="!canSend"
+              :placeholder="isReady ? '说点什么吧…（可粘贴图片）' : busy ? '正在思考…' : '连接中…'"
+              :disabled="!isReady"
               @keydown.enter="sendAndClose"
+              @paste="onPanelPaste"
             />
             <button
               class="send-btn"
               :class="{ busy }"
-              :disabled="!canSend || !composer.trim()"
+              :disabled="!canSend"
               :title="busy ? '正在思考…' : '发送'"
               @click="sendAndClose"
             >
@@ -1312,12 +1490,20 @@ onBeforeUnmount(() => {
   font-size: 12px;
   line-height: 1.55;
   word-break: break-word;
-  white-space: pre-wrap;
   padding: 6px 10px;
   border-radius: 12px;
   width: 100%;
   max-width: 100%;
   box-sizing: border-box;
+}
+.chat-msg.system {
+  justify-content: center;
+  background: transparent !important;
+  padding: 2px 8px;
+}
+.chat-msg.system .system-text {
+  color: #8d89a1;
+  font-size: 11px;
 }
 .chat-msg.assistant {
   background: rgba(28, 29, 44, 0.75);
@@ -1337,6 +1523,7 @@ onBeforeUnmount(() => {
 }
 .msg-text {
   flex: 1;
+  min-width: 0;
 }
 .chat-empty {
   font-size: 12px;
@@ -1531,11 +1718,92 @@ onBeforeUnmount(() => {
 }
 
 /* ---------- 消息流面板内的输入区（chat-flow 子元素） ---------- */
+.chat-flow.drag-over {
+  border-color: rgba(255, 176, 124, 0.55);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.2), 0 0 0 1px rgba(255, 176, 124, 0.25);
+}
+.msg-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 0 0 4px;
+}
+.msg-image {
+  max-width: min(140px, 42vw);
+  max-height: 96px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  object-fit: contain;
+  background: rgba(0, 0, 0, 0.25);
+  display: block;
+}
+.panel-attach-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 10px 0;
+}
+.panel-attach-item {
+  position: relative;
+  width: 48px;
+  height: 48px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  overflow: hidden;
+  background: rgba(20, 20, 32, 0.8);
+}
+.panel-attach-thumb {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.panel-attach-remove {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  width: 16px;
+  height: 16px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
 .panel-input-row {
   display: flex;
   gap: 6px;
   padding: 8px 10px;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
+  align-items: center;
+}
+.attach-btn {
+  background: rgba(20, 20, 32, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #9a96ad;
+  border-radius: 12px;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  padding: 0;
+}
+.attach-btn svg {
+  width: 16px;
+  height: 16px;
+}
+.attach-btn:hover {
+  color: #ffb07c;
+  border-color: rgba(255, 176, 124, 0.4);
 }
 .panel-input-row input {
   flex: 1;

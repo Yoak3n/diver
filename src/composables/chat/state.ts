@@ -2,7 +2,15 @@
 // 不负责 HTTP/SSE 连接建立，也不负责发送；这些由 chat/transport 处理。
 
 import { computed, nextTick, ref } from "vue";
-import type { ChatMessage, HealthInfo, SettingsInfo, StreamEvent, ToolActivity, UserQuestion } from "../../types";
+import type {
+  ChatMessage,
+  ComposerAttachment,
+  HealthInfo,
+  SettingsInfo,
+  StreamEvent,
+  ToolActivity,
+  UserQuestion,
+} from "../../types";
 import { speakMessageText } from "../../tts";
 
 export function createChatState() {
@@ -17,6 +25,8 @@ export function createChatState() {
   const connecting = ref(true);
   const error = ref<string | null>(null);
   const composer = ref("");
+  /** 输入框待发送图片附件（拖入 / 粘贴截图 / 文件选择）。 */
+  const attachments = ref<ComposerAttachment[]>([]);
   /** 模型通过 ask_user_question 提出的问题（待用户回答）。 */
   const pendingQuestion = ref<{ requestId: string; questions: UserQuestion[] } | null>(null);
   let ttsSource: (() => { enabled: boolean; voice: string } | null) | null = null;
@@ -40,9 +50,44 @@ export function createChatState() {
     if (!modelConfigured.value) return "未配置模型";
     return "在线";
   });
-  const canSend = computed(() =>
-    !!healthInfo.value?.ok && modelConfigured.value && !connecting.value,
+  /** 连接/模型就绪（状态灯、占位符用）。 */
+  const isReady = computed(
+    () => !!healthInfo.value?.ok && modelConfigured.value && !connecting.value,
   );
+  /** 本次草稿可发送（有文字或图片，且就绪）。 */
+  const canSend = computed(
+    () => isReady.value && (composer.value.trim() !== "" || attachments.value.length > 0),
+  );
+
+  /** 加入待发送图片（预览 URL 仅本地使用；发送走 base64）。 */
+  function addAttachments(items: ComposerAttachment[]) {
+    for (const item of items) {
+      if (attachments.value.length >= 8) break;
+      attachments.value.push(item);
+    }
+  }
+
+  function removeAttachment(id: string) {
+    const idx = attachments.value.findIndex((a) => a.id === id);
+    if (idx < 0) return;
+    const [gone] = attachments.value.splice(idx, 1);
+    try {
+      URL.revokeObjectURL(gone.previewUrl);
+    } catch {
+      /* 忽略 */
+    }
+  }
+
+  function clearAttachments() {
+    for (const a of attachments.value) {
+      try {
+        URL.revokeObjectURL(a.previewUrl);
+      } catch {
+        /* 忽略 */
+      }
+    }
+    attachments.value = [];
+  }
 
   // ---------- TTS 源注入（由 useSettings 提供开关与语音） ----------
   function setTtsSource(fn: () => { enabled: boolean; voice: string } | null): void {
@@ -51,6 +96,8 @@ export function createChatState() {
 
   async function maybeSpeak(msg?: ChatMessage) {
     if (!msg || msg.kind !== "assistant" || msg.streaming) return;
+    // 历史加载 / 重启恢复：不朗读，避免旧句被反复重放
+    if (msg.fromHistory) return;
     const tts = ttsSource?.();
     if (!tts?.enabled || !msg.content.trim()) return;
     try {
@@ -178,9 +225,47 @@ export function createChatState() {
       case "message":
         if (e.kind === "user") {
           const dup = messages.value.some(
-            (m) => m.kind === "user" && m.content === e.content && m.id.startsWith("local-"),
+            (m) =>
+              m.kind === "user" &&
+              m.content === e.content &&
+              m.id.startsWith("local-") &&
+              (m.images?.length ?? 0) === (e.images?.length ?? 0),
           );
-          if (!dup) upsertMessage({ id: e.messageId, kind: "user", content: e.content, origin: "user", time: e.time });
+          if (!dup) {
+            upsertMessage({
+              id: e.messageId,
+              kind: "user",
+              content: e.content,
+              origin: e.origin ?? "user",
+              time: e.time,
+              ...(e.images !== undefined && e.images.length > 0 ? { images: e.images } : {}),
+            });
+          } else {
+            // 本地预览消息换成服务端 id（保留图片）
+            const idx = messages.value.findIndex(
+              (m) =>
+                m.kind === "user" &&
+                m.content === e.content &&
+                m.id.startsWith("local-") &&
+                (m.images?.length ?? 0) === (e.images?.length ?? 0),
+            );
+            if (idx >= 0) {
+              messages.value[idx] = {
+                ...messages.value[idx],
+                id: e.messageId,
+                ...(e.images !== undefined && e.images.length > 0 ? { images: e.images } : {}),
+              };
+            }
+          }
+        } else if (e.kind === "system") {
+          // presence / 桌宠互动：折叠行，不进 TTS
+          upsertMessage({
+            id: e.messageId,
+            kind: "system",
+            content: e.content,
+            origin: e.origin,
+            time: e.time,
+          });
         } else if (e.turnMessageId) {
           const idx = messages.value.findIndex((m) => m.id === e.turnMessageId);
           const existing = idx >= 0 ? messages.value[idx] : undefined;
@@ -189,7 +274,7 @@ export function createChatState() {
           if (idx >= 0) {
             messages.value[idx] = {
               id: e.messageId,
-              kind: e.kind === "system" ? "system" : "assistant",
+              kind: "assistant",
               content: e.content,
               origin: e.origin,
               time: e.time,
@@ -403,12 +488,17 @@ export function createChatState() {
     connecting,
     error,
     composer,
+    attachments,
     pendingQuestion,
     personaName,
     modelConfigured,
     currentModelLabel,
     statusText,
+    isReady,
     canSend,
+    addAttachments,
+    removeAttachment,
+    clearAttachments,
     setTtsSource,
     speakMessage,
     upsertMessage,

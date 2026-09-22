@@ -12,6 +12,8 @@
     "./health": "./src/health.ts",
     "./providers": "./src/providers.ts",
     "./sse": "./src/sse.ts",
+    "./idle-gate": "./src/idle-gate.ts",
+    "./interaction": "./src/interaction.ts",
     "./types": "./src/types.ts",
     "./state": "./src/state.ts",
     "./secrets": "./src/secrets.ts",

@@ -1,6 +1,6 @@
 // Diver 陪伴 UI — sidecar API 客户端（自有协议，见 harness/companion-web）
 
-import type { ChatMessage, HealthInfo, SettingsInfo, StreamEvent } from "./types";
+import type { ChatImage, ChatMessage, HealthInfo, PetInteractionSettings, SettingsInfo, StreamEvent } from "./types";
 
 // sidecar API 基址：
 // - dev（非 Tauri / Vite proxy）：相对 `/api`，由 Vite 转发到 sidecar
@@ -50,12 +50,44 @@ export function saveSettings(body: {
   providerConfigs?: Record<string, Record<string, string>>;
   provider?: string;
   model?: string;
-}): Promise<{ modelConfigured: boolean; provider: string; model: string }> {
+  petInteraction?: PetInteractionSettings;
+}): Promise<{
+  modelConfigured: boolean;
+  provider: string;
+  model: string;
+  petInteraction?: PetInteractionSettings;
+}> {
   return json("/settings", { method: "POST", body: JSON.stringify(body) });
 }
 
-export function sendChat(content: string): Promise<{ sessionId: string; messageId: string }> {
-  return json("/chat", { method: "POST", body: JSON.stringify({ content }) });
+export function sendChat(
+  content: string,
+  images?: ChatImage[],
+): Promise<{ sessionId: string; messageId: string }> {
+  return json("/chat", {
+    method: "POST",
+    body: JSON.stringify({
+      content,
+      ...(images && images.length > 0 ? { images } : {}),
+    }),
+  });
+}
+
+/** 桌宠互动事件上行（闲时门控在 backend；见 docs/pet-interaction-events.md）。 */
+export function sendPetEvent(body: {
+  type: string;
+  ts?: number;
+  source?: string;
+  payload?: Record<string, unknown>;
+  context?: {
+    display?: { id?: number | string; width?: number; height?: number; primary?: boolean };
+    apps?: string[];
+  };
+}): Promise<{ accepted: boolean; reason?: string; messageId?: string; triggered?: boolean }> {
+  return json("/event", {
+    method: "POST",
+    body: JSON.stringify({ source: "pet", ts: Date.now(), ...body }),
+  });
 }
 
 /** 当前会话历史（重启后恢复界面）。 */

@@ -2,7 +2,14 @@
 
 import { computed, onBeforeUnmount, ref } from "vue";
 import { answerQuestion, getHistory, health, sendChat, streamEvents } from "../api";
-import type { ChatMessage, StreamEvent, UserQuestion, UserQuestionAnswerItem } from "../types";
+import type {
+  ChatImage,
+  ChatMessage,
+  ComposerAttachment,
+  StreamEvent,
+  UserQuestion,
+  UserQuestionAnswerItem,
+} from "../types";
 import { onTauriEvent, tauriAvailable, waitForSidecarReady } from "../tauri";
 
 const MAX_MESSAGES = 8;
@@ -14,6 +21,8 @@ export function usePetChat() {
   const connected = ref(false);
   const error = ref<string | null>(null);
   const composer = ref("");
+  /** 输入框待发送图片（拖入 / 粘贴截图 / 选文件）。 */
+  const attachments = ref<ComposerAttachment[]>([]);
   /** TTS 总开关（与主窗口共享的 diver 设置，未开启时桌宠不朗读）。 */
   const ttsEnabled = ref(false);
   const ttsVoice = ref("");
@@ -26,7 +35,41 @@ export function usePetChat() {
   /** 历史成功加载一次后不再重复拉取（hello / 状态事件 / 健康轮询都会触发重试）。 */
   let historyLoaded = false;
 
-  const canSend = computed(() => connected.value && !busy.value);
+  /** 连接就绪（占位符 / 按钮可用性）。 */
+  const isReady = computed(() => connected.value && !busy.value);
+  /** 本次草稿可发送。 */
+  const canSend = computed(
+    () => isReady.value && (composer.value.trim() !== "" || attachments.value.length > 0),
+  );
+
+  function addAttachments(items: ComposerAttachment[]) {
+    for (const item of items) {
+      if (attachments.value.length >= 8) break;
+      attachments.value.push(item);
+    }
+  }
+
+  function removeAttachment(id: string) {
+    const idx = attachments.value.findIndex((a) => a.id === id);
+    if (idx < 0) return;
+    const [gone] = attachments.value.splice(idx, 1);
+    try {
+      URL.revokeObjectURL(gone.previewUrl);
+    } catch {
+      /* 忽略 */
+    }
+  }
+
+  function clearAttachments() {
+    for (const a of attachments.value) {
+      try {
+        URL.revokeObjectURL(a.previewUrl);
+      } catch {
+        /* 忽略 */
+      }
+    }
+    attachments.value = [];
+  }
 
   /**
    * 拉取最近会话历史（幂等）。
@@ -73,6 +116,7 @@ export function usePetChat() {
               m.id.startsWith("local-") &&
               m.kind === "user" &&
               m.content === e.content &&
+              (m.images?.length ?? 0) === (e.images?.length ?? 0) &&
               // 只匹配 3 秒内发送的本地消息，避免误合并历史同文消息
               Date.now() - m.time < 3000,
           );
@@ -82,10 +126,27 @@ export function usePetChat() {
               id: e.messageId,
               time: e.time,
               origin: e.origin ?? "user",
+              ...(e.images !== undefined && e.images.length > 0 ? { images: e.images } : {}),
             };
           } else {
-            push({ id: e.messageId, kind: "user", content: e.content, origin: "user", time: e.time });
+            push({
+              id: e.messageId,
+              kind: "user",
+              content: e.content,
+              origin: e.origin ?? "user",
+              time: e.time,
+              ...(e.images !== undefined && e.images.length > 0 ? { images: e.images } : {}),
+            });
           }
+        } else if (e.kind === "system") {
+          // presence / 桌宠互动痕迹：折叠行（「（互动）」/ 日程原文）
+          push({
+            id: e.messageId,
+            kind: "system",
+            content: e.content,
+            origin: e.origin ?? "presence",
+            time: e.time,
+          });
         } else if (e.turnMessageId) {
           const idx = messages.value.findIndex((m) => m.id === e.turnMessageId);
           if (idx >= 0) {
@@ -236,12 +297,26 @@ export function usePetChat() {
 
   async function send() {
     const content = composer.value.trim();
-    if (!content || !canSend.value) return;
+    const images: ChatImage[] = attachments.value.map((a) => ({
+      mime: a.mime,
+      data: a.data,
+      ...(a.name !== undefined ? { name: a.name } : {}),
+    }));
+    if (!content && images.length === 0) return;
+    if (!isReady.value) return;
     composer.value = "";
-    push({ id: `local-${Date.now()}`, kind: "user", content, origin: "user", time: Date.now() });
+    clearAttachments();
+    push({
+      id: `local-${Date.now()}`,
+      kind: "user",
+      content,
+      origin: "user",
+      time: Date.now(),
+      ...(images.length > 0 ? { images } : {}),
+    });
     busy.value = true;
     try {
-      await sendChat(content);
+      await sendChat(content, images);
     } catch (err) {
       error.value = err instanceof Error ? err.message : String(err);
       busy.value = false;
@@ -249,10 +324,30 @@ export function usePetChat() {
   }
 
   onBeforeUnmount(() => {
+    clearAttachments();
     if (healthTimer !== null) window.clearInterval(healthTimer);
     stopSidecarEvent?.();
     closeStream?.();
   });
 
-  return { messages, busy, connected, error, composer, canSend, connect, send, startAutoRefresh, ttsEnabled, ttsVoice, pendingQuestion, submitQuestionAnswer };
+  return {
+    messages,
+    busy,
+    connected,
+    error,
+    composer,
+    attachments,
+    isReady,
+    canSend,
+    addAttachments,
+    removeAttachment,
+    clearAttachments,
+    connect,
+    send,
+    startAutoRefresh,
+    ttsEnabled,
+    ttsVoice,
+    pendingQuestion,
+    submitQuestionAnswer,
+  };
 }

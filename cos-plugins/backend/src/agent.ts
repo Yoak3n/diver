@@ -79,7 +79,10 @@ export async function applyModelChange(ctx: Context, state: WebState, provider?:
   state.agentHandle = null
 }
 
-/** 构造一条用户消息。 */
-export function userMessage(text: string) {
-  return createUserMessage(text, { kind: 'human' })
+/** 构造一条用户消息（可附带图片：base64，不含 data: 前缀）。 */
+export function userMessage(
+  text: string,
+  images?: ReadonlyArray<{ mime: string; data: string; name?: string }>,
+) {
+  return createUserMessage(text, { kind: 'human' }, images)
 }

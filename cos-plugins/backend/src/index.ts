@@ -34,6 +34,8 @@ import type {} from '@cos/plugin-api'
 
 import { applyModelChange, ensureAgent } from './agent.ts'
 import { healthInfo } from './health.ts'
+import { createIdleGate } from './idle-gate.ts'
+import { idleGateConfigOf, readPetInteractionSettings } from './interaction.ts'
 import { applyProviderConfigs, catalogModels, isConfigured, persistedProvider, providerDecls } from './providers.ts'
 import { startPresenceScheduler } from './presence.ts'
 import { mountServer } from './server.ts'
@@ -51,6 +53,11 @@ export function apply(ctx: Context, config: { uiDist?: string }) {
   const uiDist = config?.uiDist ?? process.env.DIVER_UI_DIST ?? resolve(process.cwd(), '..', 'dist')
 
   const state = createWebState()
+  // 闲时门控：互动事件与 presence 共用（配置热读 diver-settings.petInteraction）
+  state.idleGate = createIdleGate(
+    () => state.busy,
+    () => idleGateConfigOf(readPetInteractionSettings()),
+  )
   const broadcast = createBroadcast(state)
   attachEventListeners(ctx, state, broadcast)
 
@@ -73,6 +80,7 @@ export function apply(ctx: Context, config: { uiDist?: string }) {
   mountServer(ctx, deps)
 
   // presence 日程调度：到点主动问候 + 原生通知（配置存 $COS_HOME/presence-schedule.json）。
+  // 与互动事件共用 idleGate，避免正忙/刚聊过时双源抢话。
   startPresenceScheduler(ctx, state, {
     isModelConfigured: () => isConfigured(ctx, persistedProvider(ctx)),
     ensureAgent: () => ensureAgent(ctx, state),

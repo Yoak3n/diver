@@ -41,3 +41,25 @@ export function textOf(blocks: unknown): string {
     .map((b) => b.text)
     .join('\n')
 }
+
+/** 抽出消息中的图片块（mime + base64 data + 可选文件名）。 */
+export function imagesOf(blocks: unknown): Array<{ mime: string; data: string; name?: string }> {
+  if (!Array.isArray(blocks)) return []
+  const out: Array<{ mime: string; data: string; name?: string }> = []
+  for (const b of blocks) {
+    if (
+      b &&
+      b.type === 'image' &&
+      typeof b.mime === 'string' &&
+      typeof b.data === 'string' &&
+      b.data !== ''
+    ) {
+      out.push({
+        mime: b.mime,
+        data: b.data,
+        ...(typeof b.name === 'string' && b.name !== '' ? { name: b.name } : {}),
+      })
+    }
+  }
+  return out
+}

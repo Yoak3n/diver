@@ -2,6 +2,7 @@
 import { computed } from "vue";
 import type { ChatMessage, ToolActivity } from "../types";
 import ThinkingBlock from "./ThinkingBlock.vue";
+import { renderMarkdownHtml } from "../markdown";
 
 const props = defineProps<{
   msg: ChatMessage;
@@ -12,11 +13,16 @@ const props = defineProps<{
 defineEmits<{ speak: [msg: ChatMessage] }>();
 
 const hasContent = computed(() => (props.msg.content ?? "") !== "");
+const contentHtml = computed(() => renderMarkdownHtml(props.msg.content ?? ""));
 const hasThinking = computed(() => (props.msg.thinking ?? "") !== "");
 const toolList = computed(() => props.msg.tools ?? []);
 const hasTools = computed(() => toolList.value.length > 0);
-/** 无正文气泡（仅思考 / 工具记录）：不占空气泡，左侧对齐到头像列。 */
-const metaOnly = computed(() => !hasContent.value && (hasThinking.value || hasTools.value));
+const metaOnly = computed(
+  () =>
+    !hasContent.value &&
+    (props.msg.images?.length ?? 0) === 0 &&
+    (hasThinking.value || hasTools.value),
+);
 const showBubble = computed(() => hasContent.value);
 
 function fmtTime(ts: number): string {
@@ -46,7 +52,12 @@ function toolPreview(t: ToolActivity): string {
         :streaming="msg.thinkingStreaming"
       />
       <div v-if="hasTools" class="tool-records">
-        <div v-for="(t, i) in toolList" :key="t.callId ?? i" class="tool-record" :class="[t.status, { error: t.isError }]">
+        <div
+          v-for="(t, i) in toolList"
+          :key="t.callId ?? i"
+          class="tool-record"
+          :class="[t.status, { error: t.isError }]"
+        >
           <span class="tool-icon" aria-hidden="true">⚙</span>
           <span class="tool-name">{{ t.name }}</span>
           <span class="sep">·</span>
@@ -55,10 +66,20 @@ function toolPreview(t: ToolActivity): string {
           <span v-if="toolPreview(t)" class="tool-summary">{{ toolPreview(t) }}</span>
         </div>
       </div>
-      <template v-if="showBubble">
-        <div class="bubble" :class="{ streaming: msg.streaming }">
+      <template v-if="showBubble || (msg.images?.length ?? 0) > 0">
+        <div v-if="(msg.images?.length ?? 0) > 0" class="msg-images">
+          <img
+            v-for="(img, i) in msg.images"
+            :key="i"
+            class="msg-image"
+            :src="`data:${img.mime};base64,${img.data}`"
+            :alt="img.name || '图片'"
+          />
+        </div>
+        <div v-if="showBubble" class="bubble" :class="{ streaming: msg.streaming }">
           <span v-if="msg.origin === 'presence'" class="origin-tag">主动</span>
-          <span v-html="msg.content.replace(/\n/g, '<br/>')"></span>
+          <span v-else-if="msg.origin === 'interaction'" class="origin-tag">互动</span>
+          <div class="md-body" v-html="contentHtml"></div>
           <span v-if="msg.streaming" class="cursor">▍</span>
         </div>
         <div class="bubble-foot">
@@ -69,7 +90,7 @@ function toolPreview(t: ToolActivity): string {
             title="朗读"
             @click="$emit('speak', msg)"
           >
-            🔊
+            朗读
           </button>
         </div>
       </template>
@@ -80,7 +101,7 @@ function toolPreview(t: ToolActivity): string {
 <style scoped>
 .msg-row {
   display: flex;
-  gap: 10px;
+  gap: 12px;
   align-items: flex-start;
   min-width: 0;
   max-width: 100%;
@@ -94,16 +115,15 @@ function toolPreview(t: ToolActivity): string {
 .msg-row.system .bubble {
   background: transparent;
   border: none;
-  color: #8d89a1;
+  color: var(--ink-dim);
   font-size: 12px;
-  padding: 4px 10px;
+  padding: 2px 8px;
 }
-/* 无正文时没有头像，用 44px 对齐到有头像消息的内容起点 */
 .msg-row.meta-only .bubble-wrap {
-  padding-left: 44px;
+  padding-left: 34px;
 }
 .bubble-wrap {
-  max-width: 76%;
+  max-width: 82%;
   min-width: 0;
   display: flex;
   flex-direction: column;
@@ -113,51 +133,74 @@ function toolPreview(t: ToolActivity): string {
   max-width: 100%;
   min-width: 0;
 }
-/* 展开到整行时，子内容统一收回到正文同宽 */
 .bubble-wrap.with-thinking > *,
 .bubble-wrap.with-tools > * {
-  max-width: min(76%, 720px);
+  max-width: min(82%, 680px);
 }
 .msg-row.user .bubble-wrap {
   align-items: flex-end;
 }
+.msg-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 6px;
+}
+.msg-row.user .msg-images {
+  justify-content: flex-end;
+}
+.msg-image {
+  max-width: min(220px, 48vw);
+  max-height: 180px;
+  border-radius: var(--radius);
+  border: 1px solid var(--rule);
+  object-fit: contain;
+  background: var(--paper-sunken);
+  display: block;
+}
+/* 纸感：平面填色 + 细线，不用渐变气泡 */
 .bubble {
-  padding: 10px 14px;
-  border-radius: 14px;
+  padding: 12px 14px;
+  border-radius: var(--radius-lg);
   font-size: 14px;
   line-height: 1.7;
   word-break: break-word;
-  white-space: pre-wrap;
 }
 .msg-row.assistant .bubble {
-  background: #232336;
-  border: 1px solid rgba(255, 255, 255, 0.07);
-  border-top-left-radius: 4px;
-  color: #e8e6f0;
+  background: var(--paper-raised);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-lg);
+  color: var(--ink);
 }
 .msg-row.user .bubble {
-  background: linear-gradient(135deg, #4a3f6e, #5b4d8a);
-  border-top-right-radius: 4px;
-  color: #f4f2fa;
+  background: var(--user-fill);
+  color: var(--user-ink);
+  border: 1px solid transparent;
 }
 .bubble.streaming {
-  border-color: rgba(255, 176, 124, 0.4);
+  border-color: var(--rule-strong);
 }
 .cursor {
-  color: #ffb07c;
-  animation: pulse 0.9s infinite;
+  color: var(--ink-dim);
+  animation: pulse 0.9s ease infinite;
 }
 @keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.35; }
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
 }
 .origin-tag {
   display: inline-block;
   font-size: 10px;
-  color: #ffb07c;
-  border: 1px solid rgba(255, 176, 124, 0.4);
-  border-radius: 8px;
-  padding: 0 6px;
+  font-weight: 500;
+  color: var(--ink-muted);
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius-pill);
+  padding: 0 7px;
   margin-right: 6px;
   vertical-align: 1px;
 }
@@ -166,7 +209,7 @@ function toolPreview(t: ToolActivity): string {
   margin: 2px 0 6px;
   font-size: 12px;
   line-height: 1.55;
-  color: #8d89a1;
+  color: var(--ink-muted);
 }
 .tool-record {
   display: flex;
@@ -179,70 +222,80 @@ function toolPreview(t: ToolActivity): string {
 .tool-icon {
   flex-shrink: 0;
   font-size: 11px;
-  color: #6f6b85;
+  color: var(--ink-dim);
 }
 .tool-name {
   flex-shrink: 0;
   font-weight: 500;
-  color: #9a96ad;
+  color: var(--ink-soft);
 }
 .tool-record .sep {
   flex-shrink: 0;
-  color: #5c5870;
+  color: var(--ink-faint);
 }
 .tool-status {
   flex-shrink: 0;
-  color: #7a768f;
+  color: var(--ink-dim);
 }
 .tool-record.call .tool-status {
-  color: #ffb07c;
+  color: var(--warn);
 }
 .tool-record.error .tool-status {
-  color: #d37d7d;
+  color: var(--err);
 }
 .tool-summary {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: #7a768f;
+  color: var(--ink-dim);
   flex: 1;
 }
 .bubble-foot {
   display: flex;
-  gap: 6px;
+  gap: 10px;
   align-items: center;
-  margin-top: 3px;
-  padding: 0 4px;
+  margin-top: 4px;
+  padding: 0 2px;
 }
 .time {
   font-size: 11px;
-  color: #6f6b85;
+  color: var(--ink-dim);
 }
 .speak-btn {
   background: none;
   border: none;
-  color: #8d89a1;
-  font-size: 12px;
+  color: var(--ink-dim);
+  font-size: 11px;
   cursor: pointer;
   padding: 0;
+  font-family: inherit;
+  transition:
+    color var(--dur-hover) ease,
+    transform var(--dur-press) var(--ease-out);
 }
-.speak-btn:hover {
-  color: #ffb07c;
+@media (hover: hover) and (pointer: fine) {
+  .speak-btn:hover {
+    color: var(--ink);
+  }
 }
+.speak-btn:active {
+  transform: scale(0.97);
+}
+/* 纸面印章式头像：墨色方章，无渐变 */
 .avatar.small {
-  width: 34px;
-  height: 34px;
-  font-size: 15px;
-  box-shadow: none;
-  border-radius: 50%;
+  width: 26px;
+  height: 26px;
+  font-size: 12px;
+  border-radius: 5px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-weight: 700;
-  color: #fff;
-  background: linear-gradient(135deg, #ff9d6c, #b06ab3 60%, #6a8cff);
+  font-weight: 600;
+  color: var(--paper);
+  background: var(--ink);
   user-select: none;
   flex-shrink: 0;
+  margin-top: 2px;
 }
 </style>

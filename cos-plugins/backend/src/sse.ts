@@ -2,7 +2,8 @@
 
 import type { ServerResponse } from 'node:http'
 import type { Context } from 'cordis'
-import { textOf } from './session-helpers.ts'
+import { isInteractionUserMessage } from './interaction.ts'
+import { textOf, imagesOf } from './session-helpers.ts'
 import { SESSION_ID } from './agent.ts'
 import type { WebState } from './state.ts'
 
@@ -28,10 +29,26 @@ export function attachEventListeners(
     const time = Number(ev.time) || Date.now()
     switch (ev.type) {
       case 'user/message': {
-        // 过滤框架的运行时上下文快照（source.kind === 'plugin'），只透传真实用户消息
-        if (ev.data.source?.kind !== 'human') break
+        // 对话活动：推进闲时门控（互动 / presence 共用）
+        const interaction = isInteractionUserMessage(ev.data.source)
+        const isHuman = ev.data.source?.kind === 'human'
+        if (isHuman && !textOf(ev.data.content).startsWith('[presence]')) {
+          state.idleGate?.noteUserChat(time)
+        } else {
+          state.idleGate?.noteChat(time)
+        }
+        // 过滤框架的运行时上下文快照（source.kind === 'plugin'），
+        // 但放行桌宠互动痕迹（detail === 'pet-interaction'）
+        if (!isHuman && !interaction) break
         const text = textOf(ev.data.content)
-        if (text.startsWith('[presence]')) {
+        if (interaction) {
+          // UI 折叠为一行「（互动）」；完整文案只进模型/历史详情
+          broadcast({
+            type: 'message', kind: 'system', sessionId: String(session.id),
+            messageId: ev.data.id, content: '（互动）',
+            origin: 'interaction', time,
+          })
+        } else if (text.startsWith('[presence]')) {
           state.presencePending = true
           broadcast({
             type: 'message', kind: 'system', sessionId: String(session.id),
@@ -39,9 +56,11 @@ export function attachEventListeners(
             origin: 'presence', time,
           })
         } else {
+          const images = imagesOf(ev.data.content)
           broadcast({
             type: 'message', kind: 'user', sessionId: String(session.id),
             messageId: ev.data.id, content: text, origin: 'user', time,
+            ...(images.length > 0 ? { images } : {}),
           })
         }
         break
@@ -58,6 +77,7 @@ export function attachEventListeners(
         break
       }
       case 'assistant/message': {
+        state.idleGate?.noteChat(time)
         const text = textOf(ev.data.message.content)
         // 纯工具调用步骤无文本 → 跳过空气泡（工具另有 tool 事件）。
         if (text === '') break
@@ -112,6 +132,7 @@ export function attachEventListeners(
         break
       }
       case 'turn/end': {
+        state.idleGate?.noteChat(time)
         broadcast({ type: 'turn', state: 'end', reason: ev.data.reason?.kind })
         break
       }

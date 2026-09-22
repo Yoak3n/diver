@@ -22,7 +22,6 @@
       - P5 `@diver/native-bridge` 原生 RPC 收口 ✅
 - [ ] **代码签名**：安装包与 `Diver.exe` 未签名，Windows SmartScreen 会提示；
       分发前建议用 EV 证书签名（或接受提示）。
-- [ ] **原生通知**：agent 主动消息到达时托盘通知（`tauri-plugin-notification`）
 - [x] **全局快捷键**唤起窗口（`tauri-plugin-global-shortcut`，热插拔：运行时注册/注销，
       设置页「快捷键」Tab 编辑，保存立即生效，无需重启）
 - [x] **原生通知**：agent 主动消息/日程提醒到达时托盘通知（`tauri-plugin-notification`；
@@ -31,8 +30,6 @@
       配置存 `$COS_HOME/presence-schedule.json`（不再硬编码 patch）；设置页「日程」Tab
       编辑，30s tick 热生效；到点注入 `[presence]` 主动问候 + 原生通知
 - [ ] **语音输入**（麦克风，STT）
-- [ ] **日程提醒的持久化配置界面**（presence schedule 目前硬编码在 patch 里）
-- [ ] **模型供应商扩展**：自定义 base URL / 自定义 provider
 - [x] **模型供应商扩展（自定义 base URL）**：deepseek-official / commandcode 适配器新增
       `baseUrl` 设置字段（`store: 'settings'`，设置面板动态渲染），运行时时读取
       `$COS_HOME/diver-settings.json` 的 `<provider>.baseUrl`，热生效无需重启

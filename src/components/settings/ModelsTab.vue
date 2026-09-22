@@ -11,102 +11,102 @@ defineProps<{
 </script>
 
 <template>
-  <!-- 提供商卡片选择 -->
   <label class="group-title">提供商</label>
-    <div class="provider-grid">
-      <button
-        v-for="p in providerDecls"
-        :key="p.provider"
-        class="provider-card"
-        :class="{ active: state.provider === p.provider }"
-        @click="state.provider = p.provider"
-      >
-        <div class="provider-card-head">
-          <span class="provider-name">{{ p.name }}</span>
-          <span
-            class="provider-dot"
-            :class="
-              p.fields.some((f) => f.secret && f.required)
-                ? p.fields.some((f) => f.secret && f.required && f.configured)
-                  ? 'on'
-                  : 'off'
-                : 'on'
-            "
-          ></span>
-        </div>
-        <p class="provider-desc">{{ p.description }}</p>
-      </button>
-    </div>
-
-    <!-- 模型选择（与当前提供商联动） -->
-    <label class="group-title">模型</label>
-    <select v-model="state.model" class="model-select">
-      <option v-for="m in currentProviderModels" :key="m.id" :value="m.id">{{ m.id }}</option>
-    </select>
-
-    <!-- 当前提供商配置（插件声明驱动） -->
-    <template v-if="currentProviderDecl">
-      <label class="group-title">{{ currentProviderDecl.name }} 配置</label>
-      <div class="config-card">
-        <template v-for="f in currentProviderDecl.fields" :key="f.key">
-          <label class="field-label">{{ f.label }}</label>
-          <input
-            v-if="f.type === 'password'"
-            v-model="state.configInputs[currentProviderDecl.provider][f.key]"
-            type="password"
-            :placeholder="f.configured ? '已配置，留空不修改' : (f.placeholder ?? '')"
-            autocomplete="off"
-          />
-          <input
-            v-else
-            v-model="state.configInputs[currentProviderDecl.provider][f.key]"
-            type="text"
-            :placeholder="f.placeholder ?? ''"
-          />
-          <p class="hint">
-            {{ f.hint ?? "" }}
-            <template v-if="f.secret">
-              · {{ f.configured ? "已配置 ✓" : "未配置" }}
-            </template>
-            <template v-else-if="f.store === 'settings'">
-              · 当前：{{ (state.configInputs[currentProviderDecl.provider][f.key] ?? f.value ?? "") || "默认" }}
-            </template>
-          </p>
-        </template>
+  <div class="provider-grid">
+    <button
+      v-for="p in providerDecls"
+      :key="p.provider"
+      class="provider-card"
+      :class="{ active: state.provider === p.provider }"
+      @click="state.provider = p.provider"
+    >
+      <div class="provider-card-head">
+        <span class="provider-name">{{ p.name }}</span>
+        <span
+          class="provider-dot"
+          :class="
+            p.fields.some((f) => f.secret && f.required)
+              ? p.fields.some((f) => f.secret && f.required && f.configured)
+                ? 'on'
+                : 'off'
+              : 'on'
+          "
+        ></span>
       </div>
-    </template>
+      <p class="provider-desc">{{ p.description }}</p>
+    </button>
+  </div>
+
+  <label class="group-title">模型</label>
+  <select v-model="state.model" class="model-select">
+    <option v-for="m in currentProviderModels" :key="m.id" :value="m.id">{{ m.id }}</option>
+  </select>
+
+  <template v-if="currentProviderDecl">
+    <label class="group-title">{{ currentProviderDecl.name }} 配置</label>
+    <div class="config-card">
+      <template v-for="f in currentProviderDecl.fields" :key="f.key">
+        <label class="field-label">{{ f.label }}</label>
+        <input
+          v-if="f.type === 'password'"
+          v-model="state.configInputs[currentProviderDecl.provider][f.key]"
+          type="password"
+          :placeholder="f.configured ? '已配置，留空不修改' : (f.placeholder ?? '')"
+          autocomplete="off"
+        />
+        <input
+          v-else
+          v-model="state.configInputs[currentProviderDecl.provider][f.key]"
+          type="text"
+          :placeholder="f.placeholder ?? ''"
+        />
+        <p class="hint">
+          {{ f.hint ?? "" }}
+          <template v-if="f.secret">
+            · {{ f.configured ? "已配置 ✓" : "未配置" }}
+          </template>
+          <template v-else-if="f.store === 'settings'">
+            · 当前：{{
+              (state.configInputs[currentProviderDecl.provider][f.key] ?? f.value ?? "") || "默认"
+            }}
+          </template>
+        </p>
+      </template>
+    </div>
+  </template>
 </template>
 
 <style scoped>
-.group-title {
-  display: block;
-  font-size: 12px;
-  color: #8d89a1;
-  letter-spacing: 1px;
-  margin-top: 4px;
-}
 .provider-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 8px;
 }
 .provider-card {
-  background: #141420;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 10px;
-  padding: 10px 12px;
+  background: var(--paper-raised);
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius);
+  padding: 12px 14px;
   text-align: left;
   cursor: pointer;
   font-family: inherit;
-  color: #e8e6f0;
-  transition: border-color 0.15s, background 0.15s;
+  color: var(--ink);
+  transition:
+    transform var(--dur-press) var(--ease-out),
+    border-color var(--dur-hover) ease,
+    background var(--dur-hover) ease;
 }
-.provider-card:hover {
-  border-color: rgba(255, 176, 124, 0.35);
+@media (hover: hover) and (pointer: fine) {
+  .provider-card:hover {
+    background: var(--paper-hover);
+  }
+}
+.provider-card:active {
+  transform: scale(0.98);
 }
 .provider-card.active {
-  border-color: #ffb07c;
-  background: rgba(255, 176, 124, 0.08);
+  border-color: var(--ink);
+  background: var(--paper-active);
 }
 .provider-card-head {
   display: flex;
@@ -117,24 +117,25 @@ defineProps<{
 .provider-name {
   font-size: 13px;
   font-weight: 600;
+  letter-spacing: -0.01em;
 }
 .provider-dot {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
-  background: #6f6b85;
+  background: var(--ink-dim);
   flex-shrink: 0;
 }
 .provider-dot.on {
-  background: #59d99a;
+  background: var(--ok);
 }
 .provider-dot.off {
-  background: #d35d5d;
+  background: var(--err);
 }
 .provider-desc {
   margin: 6px 0 0;
   font-size: 11px;
-  color: #8d89a1;
+  color: var(--ink-muted);
   line-height: 1.5;
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -142,45 +143,27 @@ defineProps<{
   overflow: hidden;
 }
 .config-card {
-  background: rgba(20, 20, 32, 0.6);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 10px;
-  padding: 12px 14px;
+  background: transparent;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  padding: 14px 16px;
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 6px;
 }
 .field-label {
   margin-top: 4px;
   font-size: 13px;
-  color: #b9b5cc;
+  color: var(--ink-soft);
 }
 .model-select {
-  background: #141420;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 10px;
-  color: #e8e6f0;
-  padding: 9px 12px;
+  background: var(--paper-raised);
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius);
+  color: var(--ink);
+  padding: 8px 11px;
   font-size: 13px;
   outline: none;
   font-family: inherit;
-}
-.hint {
-  font-size: 11px;
-  color: #6f6b85;
-  margin: 0;
-}
-.modal-body input[type="password"],
-.modal-body input[type="text"],
-.modal-body select {
-  background: #141420;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 10px;
-  color: #e8e6f0;
-  padding: 9px 12px;
-  font-size: 13px;
-  outline: none;
-  font-family: inherit;
-  width: 100%;
 }
 </style>

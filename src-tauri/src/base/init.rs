@@ -29,6 +29,7 @@ pub fn generate_handlers() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + 
         tts_list_voices,
         tts_list_models,
         tts_synthesize,
+        is_pet_window_open,
         notify,
         get_window_startup_config,
         set_window_startup_config,

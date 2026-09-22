@@ -53,22 +53,23 @@ function onPick(id: string) {
   display: block;
   width: 100%;
   text-align: left;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 12px;
+  background: var(--paper-raised);
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius);
   padding: 12px 14px;
   cursor: pointer;
   font-family: inherit;
-  color: #d9d6e6;
-  transition: border-color 0.15s, background 0.15s;
+  color: var(--ink);
+  transition: background var(--dur-hover) ease, border-color var(--dur-hover) ease;
 }
-.model-card:hover:not(:disabled) {
-  background: rgba(255, 176, 124, 0.1);
-  border-color: rgba(255, 176, 124, 0.35);
+@media (hover: hover) and (pointer: fine) {
+  .model-card:hover:not(:disabled) {
+    background: var(--paper-hover);
+  }
 }
 .model-card.active {
-  border-color: rgba(255, 157, 108, 0.65);
-  background: rgba(255, 157, 108, 0.12);
+  border-color: var(--ink);
+  background: var(--paper-active);
 }
 .model-card:disabled {
   cursor: wait;
@@ -82,32 +83,33 @@ function onPick(id: string) {
 .model-name {
   flex: 1;
   font-size: 13px;
-  color: #f0eef8;
+  font-weight: 500;
+  color: var(--ink);
 }
 .model-badge {
   font-size: 11px;
-  color: #ffb07c;
-  background: rgba(255, 176, 124, 0.16);
-  border-radius: 999px;
+  color: var(--ink);
+  background: var(--paper-active);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-pill);
   padding: 2px 8px;
   flex-shrink: 0;
 }
 .model-badge.dim {
-  color: #8d89a1;
-  background: rgba(255, 255, 255, 0.06);
+  color: var(--ink-dim);
+  background: transparent;
 }
 .model-note {
   margin: 6px 0 0;
   font-size: 11px;
   line-height: 1.5;
-  color: #8d89a1;
+  color: var(--ink-muted);
 }
 .model-note.dim {
-  color: #6f6b85;
+  color: var(--ink-dim);
 }
 .compact .model-card {
   padding: 10px 12px;
-  border-radius: 10px;
 }
 .compact .model-name {
   font-size: 12px;

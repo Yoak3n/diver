@@ -175,6 +175,15 @@ pub fn tts_list_models(provider: String) -> Vec<String> {
     tts::list_models(crate::config::tts::TtsProvider::parse(&provider))
 }
 
+/// 桌宠窗口是否在线（朗读路由分流：在线时只允许桌宠播放，防双窗口叠音）。
+#[tauri::command]
+pub fn is_pet_window_open(app: AppHandle) -> bool {
+    use tauri::Manager as _;
+    app.get_webview_window(crate::base::window::pet::PET_WINDOW_LABEL)
+        .map(|w| w.is_visible().unwrap_or(true))
+        .unwrap_or(false)
+}
+
 /// 在线合成语音（返回 base64 音频）。`voice` 可覆盖配置中的声线。
 #[tauri::command]
 pub async fn tts_synthesize(

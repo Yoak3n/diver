@@ -195,8 +195,20 @@ export async function probeNoFollow(absolutePath: string): Promise<PathInfo | nu
 // ─── 读取 ──────────────────────────────────────────────────────────────────
 
 function notTextError(verb: 'read' | 'edit', displayPath: string): DiverFsError {
-  return new DiverFsError(`cannot ${verb} "${displayPath}": invalid UTF-8 text`, 'FS_NOT_TEXT')
+  return new DiverFsError(
+    `cannot ${verb} "${displayPath}": invalid UTF-8 text. ` +
+      `This is not plain text — do not retry read/edit on it. ` +
+      BINARY_GUIDANCE,
+    'FS_NOT_TEXT',
+  )
 }
+
+/** 二进制拒绝时给模型的下一步指引（减少「反复 cat / 以为自己能看」的死循环）。 */
+const BINARY_GUIDANCE =
+  'Next steps: ' +
+  '(1) If this is an image (png/jpg/jpeg/webp/gif/bmp), call read on that path — read returns the image as a multimodal block you can see. ' +
+  '(2) If it is another binary (pdf/zip/exe/audio/video/office), do not cat or print raw bytes. Use sh with type-specific tools (e.g. file, unzip -l, pdfinfo) for metadata only, or ask the user to export/convert to text/image first. ' +
+  '(3) Use ls/find to confirm the file type before choosing a tool.'
 
 function decodeUtf8(buffer: Uint8Array, verb: 'read' | 'edit', displayPath: string): string {
   try {
@@ -240,7 +252,10 @@ export async function readWholeText(target: LocalTarget, signal?: AbortSignal): 
   const raw = await readFileAbortable(target.targetKey, 'read', signal)
   throwIfAborted(signal, 'read')
   if (raw.subarray(0, BINARY_SAMPLE_BYTES).includes(0)) {
-    throw new DiverFsError(`cannot read "${target.displayPath}": binary file`, 'FS_NOT_TEXT')
+    throw new DiverFsError(
+      `cannot read "${target.displayPath}": binary file. ` + BINARY_GUIDANCE,
+      'FS_NOT_TEXT',
+    )
   }
   return decodeUtf8(raw, 'read', target.displayPath)
 }
@@ -256,7 +271,10 @@ export async function* streamWholeText(target: LocalTarget, signal?: AbortSignal
     if (sampledBytes >= BINARY_SAMPLE_BYTES) return
     const sample = chunk.subarray(0, Math.min(chunk.length, BINARY_SAMPLE_BYTES - sampledBytes))
     if (sample.includes(0)) {
-      throw new DiverFsError(`cannot read "${target.displayPath}": binary file`, 'FS_NOT_TEXT')
+      throw new DiverFsError(
+        `cannot read "${target.displayPath}": binary file. ` + BINARY_GUIDANCE,
+        'FS_NOT_TEXT',
+      )
     }
     sampledBytes += sample.length
   }
@@ -441,7 +459,12 @@ export async function readForEdit(
   throwIfAborted(signal, 'edit')
   const buffer = await readFileAbortable(absolutePath, 'edit', signal)
   throwIfAborted(signal, 'edit')
-  if (buffer.includes(0)) throw new DiverFsError(`cannot edit "${displayPath}": binary file`, 'FS_NOT_TEXT')
+  if (buffer.includes(0)) {
+    throw new DiverFsError(
+      `cannot edit "${displayPath}": binary file. ` + BINARY_GUIDANCE,
+      'FS_NOT_TEXT',
+    )
+  }
   const raw = decodeUtf8(buffer, 'edit', displayPath)
   return { content: normalizeLineEndings(raw), lineEndings: detectLineEndings(raw) }
 }

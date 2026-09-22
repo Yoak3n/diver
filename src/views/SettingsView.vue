@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // 设置页：全屏标签布局（左导航 + 右内容），路由 /settings/:tab。
-// 不用 modal —— 与聊天页并列的独立页面；返回聊天保留会话状态（keep-alive）。
+// 窗口标题栏由 App 壳提供；本页只负责导航与内容。
 import { computed, onMounted, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import {
@@ -39,7 +39,6 @@ const tabFromRoute = computed<SettingsTab>(() => {
   return id && isSettingsTab(id) ? id : "models";
 });
 
-// 路由 ↔ activeTab 双向同步
 watch(
   tabFromRoute,
   (tab) => {
@@ -54,10 +53,6 @@ function selectTab(tab: SettingsTab) {
   void router.replace({ name: "settings", params: { tab } });
 }
 
-function backToChat() {
-  void router.push({ name: "chat" });
-}
-
 onMounted(() => {
   void openSettings();
 });
@@ -67,11 +62,6 @@ const tabs = SETTINGS_TABS;
 
 <template>
   <div class="settings-page">
-    <header class="settings-head">
-      <button class="icon-btn" title="返回聊天" @click="backToChat">←</button>
-      <h2>设置</h2>
-    </header>
-
     <div class="settings-body">
       <nav class="side-nav">
         <button
@@ -94,11 +84,7 @@ const tabs = SETTINGS_TABS;
           :current-provider-models="currentProviderModels"
         />
         <VoiceTab v-else-if="state.activeTab === 'voice'" :state="state" />
-        <McpTab
-          v-else-if="state.activeTab === 'mcp'"
-          :state="state"
-          @restart="doRestartSidecar"
-        />
+        <McpTab v-else-if="state.activeTab === 'mcp'" :state="state" @restart="doRestartSidecar" />
         <PluginsTab v-else-if="state.activeTab === 'plugins'" />
         <ShortcutsTab v-else-if="state.activeTab === 'shortcuts'" />
         <ScheduleTab v-else-if="state.activeTab === 'schedule'" />
@@ -131,23 +117,10 @@ const tabs = SETTINGS_TABS;
 .settings-page {
   display: flex;
   flex-direction: column;
-  height: 100vh;
-  background: linear-gradient(180deg, #171826 0%, #141420 100%);
-  color: #e8e6f0;
-  font-family: "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
-}
-.settings-head {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px 18px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
-  flex-shrink: 0;
-}
-.settings-head h2 {
-  margin: 0;
-  font-size: 16px;
-  font-weight: 600;
+  flex: 1;
+  min-height: 0;
+  background: transparent;
+  color: var(--ink);
 }
 .settings-body {
   flex: 1;
@@ -157,84 +130,58 @@ const tabs = SETTINGS_TABS;
 .side-nav {
   width: 168px;
   flex-shrink: 0;
-  padding: 14px 10px;
-  border-right: 1px solid rgba(255, 255, 255, 0.07);
+  padding: 18px 12px;
+  border-right: 1px solid var(--rule);
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
   overflow-y: auto;
+  background: transparent;
 }
 .nav-item {
   text-align: left;
   background: transparent;
   border: none;
-  border-radius: 8px;
-  color: #9a96ad;
+  border-radius: var(--radius-sm);
+  color: var(--ink-muted);
   font-size: 13px;
-  padding: 9px 12px;
+  padding: 8px 10px;
   cursor: pointer;
   font-family: inherit;
+  transition:
+    background var(--dur-hover) ease,
+    color var(--dur-hover) ease,
+    transform var(--dur-press) var(--ease-out);
 }
-.nav-item:hover {
-  color: #d9d6e6;
-  background: rgba(255, 255, 255, 0.05);
+@media (hover: hover) and (pointer: fine) {
+  .nav-item:hover {
+    color: var(--ink);
+    background: var(--paper-hover);
+  }
+}
+.nav-item:active {
+  transform: scale(0.98);
 }
 .nav-item.active {
-  color: #ffb07c;
-  background: rgba(255, 176, 124, 0.1);
-  font-weight: 600;
+  color: var(--ink);
+  background: var(--paper-active);
+  font-weight: 500;
 }
 .content {
   flex: 1;
   min-width: 0;
   overflow-y: auto;
-  padding: 18px 22px 24px;
+  padding: 24px 32px 28px;
   display: flex;
   flex-direction: column;
   gap: 14px;
 }
 .save-bar {
   margin-top: auto;
-  padding-top: 12px;
+  padding-top: 14px;
   display: flex;
   align-items: center;
   justify-content: flex-end;
   gap: 12px;
-}
-.btn.primary {
-  background: linear-gradient(135deg, #ff9d6c, #c06ab3);
-  border: none;
-  font-weight: 600;
-  color: #fff;
-  border-radius: 10px;
-  padding: 8px 16px;
-  font-size: 13px;
-  cursor: pointer;
-  font-family: inherit;
-}
-.btn.primary:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-}
-.ok-msg {
-  color: #59d99a;
-  font-size: 12px;
-}
-.error-msg {
-  color: #e8a3a3;
-  font-size: 12px;
-}
-.icon-btn {
-  background: transparent;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  color: #c9c6da;
-  border-radius: 8px;
-  width: 32px;
-  height: 32px;
-  cursor: pointer;
-  font-size: 15px;
-}
-.icon-btn:hover {
-  background: rgba(255, 255, 255, 0.08);
 }
 </style>

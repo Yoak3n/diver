@@ -346,19 +346,25 @@ onBeforeUnmount(() => {
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
-  padding: 10px 0;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  padding: 12px 0;
+  border-bottom: 1px solid var(--rule);
+}
+.plugin-row:last-of-type {
+  border-bottom: none;
 }
 .plugin-config {
   width: 100%;
   margin-top: 0.5rem;
-  padding: 0.5rem;
-  border: 1px solid var(--border, #ddd);
-  border-radius: 6px;
+  padding: 0.75rem;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--paper-raised);
 }
 .config-title {
   font-weight: 600;
-  margin-bottom: 0.35rem;
+  font-size: 13px;
+  color: var(--ink);
+  margin-bottom: 0.5rem;
 }
 .config-field {
   display: grid;
@@ -368,10 +374,14 @@ onBeforeUnmount(() => {
   margin-bottom: 0.35rem;
   font-size: 0.9rem;
 }
+.config-label {
+  color: var(--ink-soft);
+  font-size: 12px;
+}
 .config-desc {
   grid-column: 2;
-  opacity: 0.7;
   font-size: 0.8rem;
+  color: var(--ink-muted);
 }
 .profile-row {
   display: flex;
@@ -382,7 +392,8 @@ onBeforeUnmount(() => {
 }
 .profile-name {
   font-size: 13px;
-  color: #c9c6da;
+  color: var(--ink);
+  font-weight: 500;
 }
 .profile-actions {
   display: flex;
@@ -395,28 +406,22 @@ onBeforeUnmount(() => {
 }
 .install-input {
   flex: 1;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 8px;
-  color: #e8e6f0;
-  padding: 6px 10px;
-  font-size: 12px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 .plugin-actions {
   display: flex;
   align-items: center;
   gap: 8px;
   flex-shrink: 0;
+  padding-top: 2px;
 }
 .plugin-kind {
   margin-top: 4px;
   font-size: 11px;
-  color: #8ec8a0;
+  color: var(--ok);
 }
 .btn.small.danger {
-  color: #e0a0a0;
-  border-color: rgba(224, 160, 160, 0.35);
+  color: var(--err);
+  border-color: var(--err-border);
 }
 .plugin-main {
   flex: 1;
@@ -430,33 +435,35 @@ onBeforeUnmount(() => {
 }
 .plugin-name {
   font-weight: 600;
-  color: #eee;
+  font-size: 13px;
+  color: var(--ink);
 }
 .plugin-id {
   font-size: 12px;
-  opacity: 0.55;
+  color: var(--ink-dim);
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 .plugin-desc {
   margin-top: 4px;
   font-size: 12px;
-  opacity: 0.75;
-  line-height: 1.4;
+  color: var(--ink-muted);
+  line-height: 1.5;
 }
 .plugin-advisory {
   margin-top: 4px;
   font-size: 12px;
-  color: #d4a574;
+  color: var(--warn);
 }
 .badge {
   font-size: 11px;
   padding: 1px 6px;
-  border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--rule-strong);
+  color: var(--ink-muted);
 }
 .badge.warn {
-  color: #e0b070;
-  border-color: rgba(224, 176, 112, 0.4);
+  color: var(--warn);
+  border-color: var(--warn);
 }
 .toolbar {
   margin-top: 12px;
@@ -468,82 +475,22 @@ onBeforeUnmount(() => {
   margin: 14px 0 8px;
   font-size: 13px;
   font-weight: 600;
-  opacity: 0.9;
+  color: var(--ink);
 }
 .hint {
   font-size: 12px;
-  opacity: 0.65;
-  line-height: 1.45;
+  color: var(--ink-muted);
+  line-height: 1.5;
   margin: 0 0 8px;
 }
 .error-msg {
-  color: #f0a0a0;
+  color: var(--err);
   font-size: 12px;
   margin-bottom: 8px;
 }
 .ok-msg {
-  color: #9dcea0;
+  color: var(--ok);
   font-size: 12px;
   margin-top: 8px;
-}
-.switch {
-  position: relative;
-  display: inline-block;
-  width: 40px;
-  height: 22px;
-  flex-shrink: 0;
-  margin-top: 2px;
-}
-.switch input {
-  opacity: 0;
-  width: 0;
-  height: 0;
-}
-.slider {
-  position: absolute;
-  cursor: pointer;
-  inset: 0;
-  background: rgba(255, 255, 255, 0.15);
-  border-radius: 999px;
-  transition: 0.15s;
-}
-.slider:before {
-  position: absolute;
-  content: "";
-  height: 16px;
-  width: 16px;
-  left: 3px;
-  bottom: 3px;
-  background: #ddd;
-  border-radius: 50%;
-  transition: 0.15s;
-}
-.switch input:checked + .slider {
-  background: #6b8cce;
-}
-.switch input:checked + .slider:before {
-  transform: translateX(18px);
-}
-.switch input:disabled + .slider {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-.btn.small {
-  padding: 4px 10px;
-  font-size: 12px;
-  border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(255, 255, 255, 0.06);
-  color: #ddd;
-  cursor: pointer;
-}
-.btn.small:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-code {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 11px;
-  opacity: 0.9;
 }
 </style>

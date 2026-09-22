@@ -26,11 +26,13 @@ impl WindowConfig {
                 window_type,
                 // 聊天主窗口默认尺寸（逻辑像素）：800×600 偏挤，放大到 1100×750
                 inner_size: (1100.0, 750.0),
-                min_inner_size: (400.0, 80.0),
-                decorations: true,
+                min_inner_size: (480.0, 560.0),
+                // 无系统标题栏：由前端自建 TitleBar（可拖动 + 最小化/最大化/关闭）
+                decorations: false,
                 transparent: false,
                 skip_taskbar: false,
-                shadow: false,
+                // 无边框仍保留系统投影，Win11 观感更接近原生窗口
+                shadow: true,
                 always_on_top: false,
                 maximizable: true,
                 focused: true,

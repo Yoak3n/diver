@@ -143,7 +143,7 @@ async function preview() {
     stopSpeaking();
     // 试听用短句；未保存的 secret 不生效，走已存配置
     await persist();
-    await speakMessageText("你好，很高兴认识你。", voice.value || undefined);
+    await speakMessageText("你好，很高兴认识你。", voice.value || undefined, undefined, { force: true });
     msg.value = "试听完成";
   } catch (e) {
     err.value = e instanceof Error ? e.message : String(e);
@@ -273,6 +273,7 @@ onMounted(() => void load());
           {{ saving ? "保存中…" : "保存" }}
         </button>
         <button class="btn" type="button" :disabled="saving" @click="preview">试听</button>
+        <button class="btn" type="button" @click="stopSpeaking">停止</button>
       </div>
       <p v-if="msg" class="hint ok">{{ msg }}</p>
       <p v-if="err" class="hint bad">{{ err }}</p>
@@ -288,22 +289,23 @@ onMounted(() => void load());
   gap: 8px;
   cursor: pointer;
   font-size: 13px;
-  color: #b9b5cc;
+  color: var(--ink);
 }
 .group-title {
   display: block;
   font-size: 12px;
-  color: #8d89a1;
-  letter-spacing: 1px;
+  font-weight: 500;
+  color: var(--ink-dim);
+  letter-spacing: 0.06em;
   margin-top: 10px;
 }
 .model-select,
 .text-input {
-  background: #141420;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 10px;
-  color: #e8e6f0;
-  padding: 9px 12px;
+  background: var(--paper-raised);
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius);
+  color: var(--ink);
+  padding: 8px 11px;
   font-size: 13px;
   outline: none;
   font-family: inherit;
@@ -312,6 +314,7 @@ onMounted(() => void load());
 }
 .range {
   width: 100%;
+  accent-color: var(--ink);
 }
 .row {
   display: flex;
@@ -322,10 +325,10 @@ onMounted(() => void load());
   margin-top: 14px;
 }
 .btn {
-  background: #2a2740;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 10px;
-  color: #e8e6f0;
+  background: var(--paper-raised);
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius);
+  color: var(--ink);
   padding: 8px 14px;
   font-size: 13px;
   cursor: pointer;
@@ -342,29 +345,29 @@ onMounted(() => void load());
   margin-top: 8px;
 }
 .chip {
-  background: #1b1a2b;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 999px;
+  background: var(--paper-sunken);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-pill);
   padding: 4px 10px;
   font-size: 12px;
-  color: #c9c5dc;
+  color: var(--ink-soft);
 }
 .chip-x {
   border: 0;
   background: transparent;
-  color: #8d89a1;
+  color: var(--ink-dim);
   cursor: pointer;
   margin-left: 4px;
 }
 .hint {
   font-size: 11px;
-  color: #6f6b85;
+  color: var(--ink-dim);
   margin: 8px 0 0;
 }
 .hint.ok {
-  color: #7dcea0;
+  color: var(--ok);
 }
 .hint.bad {
-  color: #e78a8a;
+  color: var(--err);
 }
 </style>

@@ -20,6 +20,8 @@ export function SessionId(id: string): SessionId {
 /** Model-visible message content blocks. */
 export type MessageContent = Array<
   | { type: 'text'; text: string }
+  /** 图片附件：data 为 base64（不含 data: 前缀），mime 形如 image/png。 */
+  | { type: 'image'; mime: string; data: string; name?: string }
   | { type: 'tool-call'; id: string; name: string; arguments: string }
   | { type: 'tool-result'; callId: string; isError: boolean; content: string }
 >
@@ -41,6 +43,8 @@ export interface ToolResultMessage {
   callId: string
   content: string
   isError: boolean
+  /** 工具返回的图片（如 read 读图）：data 为 base64，不含 data: 前缀。 */
+  images?: Array<{ mime: string; data: string; name?: string }>
 }
 
 export interface ToolSchema {
@@ -237,12 +241,28 @@ export interface Session {
   deriveMessages(): ModelMessage[]
 }
 
-/** Create a user message with a stable identity. */
-export function createUserMessage(text: string, source: UserMessage['source'] = { kind: 'human' }): UserMessage {
+/** Create a user message with a stable identity. Optional images attach as image blocks. */
+export function createUserMessage(
+  text: string,
+  source: UserMessage['source'] = { kind: 'human' },
+  images?: ReadonlyArray<{ mime: string; data: string; name?: string }>,
+): UserMessage {
+  const content: MessageContent = []
+  if (images) {
+    for (const img of images) {
+      content.push({
+        type: 'image',
+        mime: img.mime,
+        data: img.data,
+        ...(img.name !== undefined ? { name: img.name } : {}),
+      })
+    }
+  }
+  content.push({ type: 'text', text })
   return {
     id: randomUUID(),
     role: 'user',
-    content: [{ type: 'text', text }],
+    content,
     source,
   }
 }

@@ -151,6 +151,21 @@ export class StandardWriter {
       case 'user/message': {
         const data = event.data
         const parent = this.lastId
+        // 保留 text + image 块，重启 resume 后图片仍在模型可见历史里
+        const content: Array<Record<string, unknown>> = []
+        for (const block of data.content) {
+          if (block.type === 'text') {
+            content.push({ type: 'text', text: block.text })
+          } else if (block.type === 'image') {
+            content.push({
+              type: 'image',
+              mime: block.mime,
+              data: block.data,
+              ...(block.name !== undefined ? { name: block.name } : {}),
+            })
+          }
+        }
+        if (content.length === 0) content.push({ type: 'text', text: textOf(data.content) })
         const line: StandardEvent = {
           type: 'message',
           id: hexId(event.seq),
@@ -158,7 +173,7 @@ export class StandardWriter {
           timestamp: iso(event.time),
           message: {
             role: 'user',
-            content: [{ type: 'text', text: textOf(data.content) }],
+            content,
             timestamp: event.time,
           },
         }
@@ -206,6 +221,17 @@ export class StandardWriter {
         const toolName = this.callNames.get(String(data.callId)) ?? 'tool'
         // 兄弟 toolResult 共享 assistant 父节点；链尾仍推进到本行 id。
         const parent = this.toolParent ?? this.lastId
+        const content: Array<Record<string, unknown>> = [
+          { type: 'text', text: String(data.message.content ?? '') },
+        ]
+        for (const img of data.message.images ?? []) {
+          content.push({
+            type: 'image',
+            mime: img.mime,
+            data: img.data,
+            ...(img.name !== undefined ? { name: img.name } : {}),
+          })
+        }
         const line: StandardEvent = {
           type: 'message',
           id: hexId(event.seq),
@@ -215,7 +241,7 @@ export class StandardWriter {
             role: 'toolResult',
             toolCallId: String(data.callId),
             toolName,
-            content: [{ type: 'text', text: String(data.message.content ?? '') }],
+            content,
             isError: data.message.isError === true,
             timestamp: event.time,
           },
@@ -255,8 +281,26 @@ export class StandardReader {
     const seq = this.out.length
     if (role === 'user') {
       const blocks = Array.isArray(message.content) ? message.content : []
-      const text = textOf(blocks)
-      if (text === '') return
+      const content: Array<
+        | { type: 'text'; text: string }
+        | { type: 'image'; mime: string; data: string; name?: string }
+      > = []
+      for (const block of blocks) {
+        const b = block as Record<string, unknown> | null
+        if (b === null || typeof b !== 'object') continue
+        if (b.type === 'text') {
+          content.push({ type: 'text', text: String(b.text ?? '') })
+        } else if (b.type === 'image' && typeof b.data === 'string' && b.data !== '') {
+          content.push({
+            type: 'image',
+            mime: String(b.mime ?? 'image/png'),
+            data: b.data,
+            ...(typeof b.name === 'string' && b.name !== '' ? { name: b.name } : {}),
+          })
+        }
+      }
+      const text = content.filter((c) => c.type === 'text').map((c) => (c as { text: string }).text).join('\n')
+      if (text === '' && content.every((c) => c.type !== 'image')) return
       this.turn += 1
       this.step = 0
       this.out.push({
@@ -266,7 +310,7 @@ export class StandardReader {
         data: {
           id: line.id,
           role: 'user',
-          content: [{ type: 'text', text }],
+          content: content.length > 0 ? content : [{ type: 'text', text }],
           source: { kind: 'human' },
         },
       } as unknown as SessionEvent)
@@ -302,6 +346,18 @@ export class StandardReader {
     if (role === 'toolResult') {
       const callId = String(message.toolCallId ?? '')
       const content = textOf(message.content)
+      const images: Array<{ mime: string; data: string; name?: string }> = []
+      const blocks = Array.isArray(message.content) ? message.content : []
+      for (const block of blocks) {
+        const b = block as Record<string, unknown> | null
+        if (b && b.type === 'image' && typeof b.data === 'string' && b.data !== '') {
+          images.push({
+            mime: String(b.mime ?? 'image/png'),
+            data: b.data,
+            ...(typeof b.name === 'string' && b.name !== '' ? { name: b.name } : {}),
+          })
+        }
+      }
       this.out.push({
         type: 'tool/result',
         seq,
@@ -310,7 +366,12 @@ export class StandardReader {
           turn: this.turn,
           step: this.step,
           callId,
-          message: { callId, content, isError: message.isError === true },
+          message: {
+            callId,
+            content,
+            isError: message.isError === true,
+            ...(images.length > 0 ? { images } : {}),
+          },
         },
       } as unknown as SessionEvent)
     }

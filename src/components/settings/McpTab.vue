@@ -101,29 +101,27 @@ async function handleSave(): Promise<void> {
 .group-title {
   display: block;
   font-size: 12px;
-  color: #8d89a1;
-  letter-spacing: 1px;
+  font-weight: 500;
+  color: var(--ink-dim);
+  letter-spacing: 0.06em;
   margin-top: 4px;
 }
 .hint {
   font-size: 11px;
-  color: #6f6b85;
+  color: var(--ink-dim);
   margin: 0;
   line-height: 1.7;
 }
 .hint code {
-  color: #9a96ad;
-  background: rgba(255, 255, 255, 0.06);
-  padding: 1px 4px;
-  border-radius: 4px;
+  color: var(--ink-soft);
 }
 .mcp-editor {
   width: 100%;
   min-height: 220px;
-  background: #141420;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 8px;
-  color: #e8e6f0;
+  background: var(--paper-sunken);
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius);
+  color: var(--ink);
   font-family: "Cascadia Code", Consolas, "Courier New", monospace;
   font-size: 12px;
   line-height: 1.5;
@@ -140,30 +138,13 @@ async function handleSave(): Promise<void> {
   gap: 8px;
   margin-top: 10px;
 }
-.btn.small {
-  padding: 5px 14px;
-  font-size: 12px;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  color: #e8e6f0;
-  border-radius: 10px;
-  cursor: pointer;
-  font-family: inherit;
-}
-.btn.small:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.12);
-}
-.btn.small:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
 .ok-msg {
-  color: #59d99a;
+  color: var(--ok);
   font-size: 12px;
   margin-top: 8px;
 }
 .error-msg {
-  color: #e8a3a3;
+  color: var(--err);
   font-size: 12px;
   margin-top: 8px;
   word-break: break-all;

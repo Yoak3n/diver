@@ -1,8 +1,9 @@
-// @diver/basic-tools — read 工具：UTF-8 文本文件按行读取（移植自 DSH 上游
-// @deepseek-ai/dsh-tool-fs/read）。窗口读取、字节预算、流式大文件、二进制/非法
-// UTF-8 拒绝，全部对齐上游；输出 OpenCode 风格带行号 envelope。
+// @diver/basic-tools — read 工具：UTF-8 文本按行读取；图片文件返回多模态图片块
+// （模型可直接「看」截图/插图）。窗口读取、字节预算、流式大文件、二进制拒绝
+// 对齐 DSH 上游；输出 OpenCode 风格带行号 envelope。
 
-import { stat } from 'node:fs/promises'
+import { readFile, stat } from 'node:fs/promises'
+import { extname } from 'node:path'
 import type { Context } from 'cordis'
 
 import { DiverFsError, resolveLocalTarget, streamWholeText, readWholeText } from './fsio.ts'
@@ -21,6 +22,22 @@ export const READ_MAX_LINE_LENGTH = 2000
 
 /** 选中行最大字节数。 */
 export const READ_MAX_BYTES = 50 * 1024
+
+/** 图片读取上限（base64 后约 1.33×，须控制上下文体积）。 */
+const IMAGE_MAX_BYTES = 4 * 1024 * 1024
+
+const IMAGE_MIME: Record<string, string> = {
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
+  '.gif': 'image/gif',
+  '.bmp': 'image/bmp',
+}
+
+function imageMimeOf(path: string): string | null {
+  return IMAGE_MIME[extname(path).toLowerCase()] ?? null
+}
 
 export interface ReadCaps {
   workspaceRoot: string
@@ -47,7 +64,7 @@ function parseReadArgs(args: ReadArgs): { filePath: string; offset: number; limi
   const offset = args.offset === undefined ? 1 : parsePositiveInteger(args.offset, 'offset')
   const limit = args.limit === undefined ? READ_LIMIT : parsePositiveInteger(args.limit, 'limit')
   if (limit > READ_LIMIT) throw new Error(`limit must be less than or equal to ${READ_LIMIT}`)
-  return { filePath: args.file_path, offset, limit }
+  return { filePath: args.file_path.trim(), offset, limit }
 }
 
 /** 解析目标并 stat 一次：检查存在性与常规文件。 */
@@ -67,18 +84,57 @@ async function resolveRegularReadTarget(
   return { target, size: info.size }
 }
 
+/** 图片文件：整读为 base64 图片块，让多模态模型直接看到画面。 */
+async function readImageResult(target: LocalTarget, size: number | undefined) {
+  const tooLarge = (n: number) =>
+    new DiverFsError(
+      `cannot read "${target.displayPath}": image too large (${n} bytes; max ${IMAGE_MAX_BYTES}). ` +
+        'Next steps: crop/downscale first (e.g. sh + PowerShell/System.Drawing or ffmpeg scale), save a smaller file, then read that. Do not attempt to read raw bytes.',
+      'FS_NOT_TEXT',
+    )
+  if (size !== undefined && size > IMAGE_MAX_BYTES) throw tooLarge(size)
+  const raw = await readFile(target.targetKey)
+  if (raw.length > IMAGE_MAX_BYTES) throw tooLarge(raw.length)
+  const mime = imageMimeOf(target.targetKey) ?? imageMimeOf(target.displayPath) ?? 'image/png'
+  const data = raw.toString('base64')
+  const name = target.displayPath.split(/[\\/]/).pop() ?? target.displayPath
+  const content =
+    `Read image "${target.displayPath}" (${mime}, ${raw.length} bytes). ` +
+    `The image is attached as a multimodal block for visual inspection — describe what you see.`
+  return {
+    content,
+    images: [{ mime, data, name }],
+  }
+}
+
 /** 注册 read 工具。 */
 export function applyReadTool(ctx: Context, caps: ReadCaps): void {
   ctx.systemPrompt.section({
     name: 'tool:read',
     order: 100,
-    text: 'Use the read tool — not shell commands like cat — to inspect text files. Results include line numbers. Use offset and limit to continue reading large files.',
+    text:
+      'Use the read tool — not shell commands like cat — to inspect text files. Results include line numbers. ' +
+      'Use offset and limit to continue reading large files. ' +
+      'For image files (png/jpg/webp/gif/bmp), read returns the actual image so you can see it — use this after taking screenshots. Absolute paths are allowed (e.g. Temp screenshots).',
   })
 
   ctx.tools.register('read', async (args, signal) => {
     const input = parseReadArgs(args as ReadArgs)
 
     const { target, size } = await resolveRegularReadTarget(caps.workspaceRoot, input.filePath)
+
+    // 图片：多模态直读（截图/插图），不再当二进制拒掉
+    const mime = imageMimeOf(target.targetKey) ?? imageMimeOf(target.displayPath)
+    if (mime) {
+      const result = await readImageResult(target, size)
+      try {
+        const observed = await stat(target.targetKey, { bigint: true })
+        caps.observation.markObserved(target.targetKey, `${observed.dev}:${observed.ino}:${observed.size}:${observed.mtimeNs}:${observed.ctimeNs}`)
+      } catch {
+        /* 并发删除等竞态：观察失败不阻断本次已成功的读 */
+      }
+      return result
+    }
 
     // 文件大或尺寸未知时流式，避免整文件缓冲。
     const chunks = size === undefined || size >= STREAM_MIN_SIZE
@@ -105,13 +161,14 @@ export function applyReadTool(ctx: Context, caps: ReadCaps): void {
       ...window.truncatedByBytes ? { truncatedByBytes: true as const } : {},
     }) }
   }, {
-    description: 'Read a UTF-8 text file and return line-numbered content.',
+    description:
+      'Read a file. Text: line-numbered UTF-8 content. Images (png/jpg/webp/gif/bmp): returns the image for visual inspection (screenshots, figures). Absolute paths allowed.',
     parameters: {
       type: 'object',
       properties: {
-        file_path: { type: 'string', description: 'Path to read; relative paths resolve against the workspace root.' },
-        offset: { type: 'number', description: '1-based first line to return. Defaults to 1.' },
-        limit: { type: 'number', description: `Maximum number of lines to return. Defaults to ${READ_LIMIT}.` },
+        file_path: { type: 'string', description: 'Path to read; relative paths resolve against the workspace root. Absolute paths (e.g. Temp screenshots) are allowed.' },
+        offset: { type: 'number', description: '1-based first line to return (text only). Defaults to 1.' },
+        limit: { type: 'number', description: `Maximum number of lines to return (text only). Defaults to ${READ_LIMIT}.` },
       },
       required: ['file_path'],
     },

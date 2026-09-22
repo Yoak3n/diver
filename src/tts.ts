@@ -1,32 +1,79 @@
 // 在线 TTS 朗读：壳层 Rust 合成 → WebView `<audio>` 播放（无本地 SAPI）。
 //
-// 防重叠策略（短消息连发时尤其重要）：
-// 1. 串行播放队列 —— 自动朗读按到达顺序一路接一路，绝不双开 Audio
-// 2. 生成令牌 —— 合成是异步的，过期结果直接丢弃，避免旧句在新句之后诈尸
-// 3. 消息认领 —— 主窗口 / 桌宠对同一句只读一次
-// 4. 手动朗读 force —— 清空队列并打断当前，立即响应
+// 队列策略：
+// 1. 正在播放的句子播完，不因新句插入而打断
+// 2. 播放期间若又来多句，待播位只保留【最后一条】，中间的直接跳过
+// 3. stopSpeaking() / 前端停止按钮：中断当前 + 清空待播
+//
+// 双窗口：桌宠在线时只由桌宠播放（口型同窗口）；主窗口只发事件。
 
-import { synthesizeTts, tauriAvailable } from "./tauri";
+import {
+  emitTauriEvent,
+  isPetWindowOpen,
+  onTauriEvent,
+  synthesizeTts,
+  tauriAvailable,
+} from "./tauri";
+
+export const TTS_SPEAK_REQUEST = "tts://speak-request";
+export const TTS_SPEAK_ACK = "tts://speak-ack";
+export const TTS_SPEAK_DONE = "tts://speak-done";
+export const TTS_STOP = "tts://stop";
+
+export interface TtsSpeakRequest {
+  requestId: string;
+  text: string;
+  voice?: string;
+  messageId?: string;
+  /** true = 打断当前立即播（仅设置试听用）；默认 false 走「播完当前 + 只留最新」。 */
+  force?: boolean;
+}
 
 let currentAudio: HTMLAudioElement | null = null;
 let currentUrl: string | null = null;
-
-/** 单调递增令牌：+1 表示「已换新任务」，在飞合成回来时若不匹配则丢弃。 */
 let generation = 0;
-/** 串行播放是否进行中。 */
 let draining = false;
-/** 待播队列（FIFO）。 */
+
 type SpeakJob = {
   text: string;
   voice?: string;
   resolve: () => void;
   reject: (err: unknown) => void;
 };
-const queue: SpeakJob[] = [];
+/** 待播位：只保留最新一条（latest-wins）。 */
+let pendingJob: SpeakJob | null = null;
+/** 当前播放 Promise 的 resolve（被 stop/force 打断时收尾）。 */
+let playWaiter: (() => void) | null = null;
 
-/** 已朗读过的消息：key → 时间戳（跨窗口弱去重）。 */
 const spokenMarks = new Map<string, number>();
-const SPOKEN_TTL_MS = 8000;
+const SPOKEN_TTL_MS = 60_000;
+
+// ---- 播放状态（给停止按钮显隐） ----
+type SpeakingListener = (speaking: boolean) => void;
+const speakingListeners = new Set<SpeakingListener>();
+let speakingFlag = false;
+
+function setSpeaking(v: boolean) {
+  if (speakingFlag === v) return;
+  speakingFlag = v;
+  for (const fn of speakingListeners) {
+    try {
+      fn(v);
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+export function isTtsSpeaking(): boolean {
+  return speakingFlag;
+}
+
+export function onTtsSpeakingChange(fn: SpeakingListener): () => void {
+  speakingListeners.add(fn);
+  fn(speakingFlag);
+  return () => speakingListeners.delete(fn);
+}
 
 // ---- 响度电平（桌宠口型） ----
 let audioCtx: AudioContext | null = null;
@@ -70,10 +117,6 @@ function teardownAnalyser() {
   lastLevel = 0;
 }
 
-/**
- * 当前 TTS 响度电平（0~1），供 Live2D 口型。
- * 未在播放时返回 0（调用方回退正弦）。
- */
 export function getSpeechLevel(): number {
   if (!analyser || !levelData || !currentAudio || currentAudio.paused) {
     return (lastLevel = 0);
@@ -111,6 +154,10 @@ function stopCurrent() {
     currentUrl = null;
   }
   lastLevel = 0;
+  // 唤醒等待中的 playOne，避免 stop 后 Promise 悬挂
+  const w = playWaiter;
+  playWaiter = null;
+  w?.();
 }
 
 function base64ToBlob(base64: string, mime: string): Blob {
@@ -120,9 +167,8 @@ function base64ToBlob(base64: string, mime: string): Blob {
   return new Blob([bytes], { type: mime });
 }
 
-/** 消息认领：同一句 8s 内只自动朗读一次（主窗口 / 桌宠去重）。 */
-export function claimSpeech(messageId: string | undefined, text: string): boolean {
-  const key = messageId || `text:${text.trim().slice(0, 200)}`;
+export function claimSpeech(_messageId: string | undefined, text: string): boolean {
+  const key = `text:${text.replace(/\s+/g, " ").trim().slice(0, 300)}`;
   const now = Date.now();
   for (const [k, t] of spokenMarks) {
     if (now - t > SPOKEN_TTL_MS) spokenMarks.delete(k);
@@ -133,36 +179,43 @@ export function claimSpeech(messageId: string | undefined, text: string): boolea
   return true;
 }
 
-/** 合成 + 播放一句；`gen` 过期则丢弃结果（不播）。 */
 async function playOne(text: string, voice: string | undefined, gen: number): Promise<void> {
   stopCurrent();
-  const audio = await synthesizeTts(text, voice);
-  if (gen !== generation) return; // 已被更新任务作废，禁止叠播/插队
-  const blob = base64ToBlob(audio.base64, audio.mime);
-  const url = URL.createObjectURL(blob);
-  const el = new Audio(url);
-  currentAudio = el;
-  currentUrl = url;
-  ensureAnalyser(el);
-  await new Promise<void>((resolve) => {
-    const done = () => {
-      el.onended = null;
-      el.onerror = null;
-      if (currentAudio === el) stopCurrent();
-      resolve();
-    };
-    el.onended = done;
-    el.onerror = done;
-    el.play().catch(done);
-  });
+  setSpeaking(true);
+  try {
+    const audio = await synthesizeTts(text, voice);
+    if (gen !== generation) return;
+    const blob = base64ToBlob(audio.base64, audio.mime);
+    const url = URL.createObjectURL(blob);
+    const el = new Audio(url);
+    currentAudio = el;
+    currentUrl = url;
+    ensureAnalyser(el);
+    await new Promise<void>((resolve) => {
+      playWaiter = resolve;
+      const done = () => {
+        el.onended = null;
+        el.onerror = null;
+        playWaiter = null;
+        if (currentAudio === el) stopCurrent();
+        resolve();
+      };
+      el.onended = done;
+      el.onerror = done;
+      el.play().catch(done);
+    });
+  } finally {
+    if (!pendingJob) setSpeaking(false);
+  }
 }
 
 async function drain(): Promise<void> {
   if (draining) return;
   draining = true;
   try {
-    while (queue.length > 0) {
-      const job = queue.shift()!;
+    while (pendingJob) {
+      const job = pendingJob;
+      pendingJob = null;
       const gen = ++generation;
       try {
         await playOne(job.text, job.voice, gen);
@@ -173,14 +226,74 @@ async function drain(): Promise<void> {
     }
   } finally {
     draining = false;
+    setSpeaking(false);
   }
 }
 
 /**
- * 朗读一段文本（在线 TTS）。
- *
- * 自动朗读进入串行队列，Promise 在**本句**播完时 resolve（不含后续排队句），
- * 便于桌宠口型只对齐本句。手动朗读（force）清空队列并立即打断。
+ * 本窗口播放。
+ * - 默认：不打断当前；待播位只留最新（中间句跳过）
+ * - force：打断当前立即播（设置试听）
+ */
+export async function speakLocal(
+  text: string,
+  voice?: string,
+  opts?: { force?: boolean },
+): Promise<void> {
+  if (!text.trim() || !tauriAvailable()) return;
+  return new Promise<void>((resolve, reject) => {
+    const job: SpeakJob = { text, voice, resolve, reject };
+
+    if (opts?.force) {
+      // 明确要求立即播：打断当前 + 丢掉待播
+      if (pendingJob) {
+        pendingJob.resolve();
+        pendingJob = null;
+      }
+      generation++;
+      stopCurrent();
+      pendingJob = job;
+      void drain();
+      return;
+    }
+
+    // 默认策略：当前播完；若已有待播，被新的替换（中间句 resolve 掉 = 跳过）
+    if (pendingJob) {
+      pendingJob.resolve();
+    }
+    pendingJob = job;
+    setSpeaking(true);
+    void drain();
+  });
+}
+
+function waitEventOnce<T>(
+  event: string,
+  match: (p: T) => boolean,
+  timeoutMs: number,
+): Promise<T | null> {
+  return new Promise((resolve) => {
+    let un: (() => void) | null = null;
+    let settled = false;
+    const finish = (v: T | null) => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timer);
+      un?.();
+      resolve(v);
+    };
+    const timer = window.setTimeout(() => finish(null), timeoutMs);
+    void onTauriEvent<T>(event, (p) => {
+      if (match(p)) finish(p);
+    }).then((u) => {
+      un = u;
+    });
+  });
+}
+
+/**
+ * 朗读入口。
+ * 桌宠在线 → 只交给桌宠播（口型）；否则本地播。
  */
 export async function speakMessageText(
   text: string,
@@ -191,25 +304,36 @@ export async function speakMessageText(
   if (!text.trim() || !tauriAvailable()) return;
   if (!opts?.force && !claimSpeech(messageId, text)) return;
 
-  return new Promise<void>((resolve, reject) => {
-    if (opts?.force) {
-      // 手动：丢掉排队中的自动句，作废在飞合成，立刻打断当前
-      for (const j of queue.splice(0, queue.length)) {
-        j.resolve(); // 被取消的自动句安静结束
-      }
-      generation++;
-      stopCurrent();
-    }
-    queue.push({ text, voice, resolve, reject });
-    void drain();
-  });
+  const petOpen = await isPetWindowOpen();
+  if (!petOpen) {
+    return speakLocal(text, voice, opts);
+  }
+
+  const requestId = `tts-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const req: TtsSpeakRequest = {
+    requestId,
+    text,
+    voice,
+    messageId,
+    force: opts?.force,
+  };
+  const doneP = waitEventOnce<{ requestId: string }>(
+    TTS_SPEAK_DONE,
+    (p) => p?.requestId === requestId,
+    120_000,
+  );
+  await emitTauriEvent(TTS_SPEAK_REQUEST, req);
+  await doneP;
 }
 
-/** 中断当前朗读并清空队列。 */
+/** 停止朗读：中断当前 + 清空待播；并通知桌宠窗口。 */
 export function stopSpeaking(): void {
   generation++;
-  for (const j of queue.splice(0, queue.length)) {
-    j.resolve();
+  if (pendingJob) {
+    pendingJob.resolve();
+    pendingJob = null;
   }
   stopCurrent();
+  setSpeaking(false);
+  void emitTauriEvent(TTS_STOP, {});
 }

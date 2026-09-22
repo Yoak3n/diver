@@ -11,6 +11,8 @@ import type { ToolDefinition, ToolSchema } from '@cos/types'
 
 export interface ToolResult {
   content: string
+  /** 工具返回的图片（如 read 读图）：data 为 base64，不含 data: 前缀。 */
+  images?: Array<{ mime: string; data: string; name?: string }>
   isError?: boolean
   concludesTurn?: boolean
 }
@@ -176,7 +178,8 @@ export class ToolsService extends Service {
       return Promise.resolve({ content: `unknown tool: ${name}`, isError: true })
     }
     return Promise.resolve(entry.executor(args, signal)).catch((error: unknown) => ({
-      content: String(error),
+      // 保留 Error.message（含工具给出的下一步指引），避免 String(error) 变成 "Error: ..."
+      content: error instanceof Error ? error.message : String(error),
       isError: true,
     }))
   }

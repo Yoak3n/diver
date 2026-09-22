@@ -9,7 +9,6 @@ const props = defineProps<{
 
 const emit = defineEmits<{ answer: [answers: UserQuestionAnswerItem[]] }>();
 
-/** 每个问题的选择状态。 */
 const selections = ref<Record<string, string[]>>({});
 const customs = ref<Record<string, string>>({});
 
@@ -29,8 +28,6 @@ function selected(q: UserQuestion): string {
 }
 
 function canSubmit(): boolean {
-  // 至少一个问题有答案即可提交；未答问题以 { id, selected: [] } 跳过
-  // （dsh user-questions 协议支持 skipped item）
   return props.questions.some((q) => {
     const sel = selections.value[q.id] ?? [];
     const custom = (customs.value[q.id] ?? "").trim();
@@ -86,20 +83,20 @@ function submit() {
 <style scoped>
 .question-card {
   align-self: center;
-  width: min(92%, 560px);
-  background: rgba(35, 36, 58, 0.96);
-  border: 1px solid rgba(255, 176, 124, 0.35);
-  border-radius: 16px;
-  padding: 16px 18px;
+  width: min(100%, 560px);
+  background: var(--paper-raised);
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius-lg);
+  padding: 18px 20px;
   display: flex;
   flex-direction: column;
   gap: 14px;
-  box-shadow: 0 10px 34px rgba(0, 0, 0, 0.45);
 }
 .q-head {
-  font-size: 12px;
-  color: #ffb07c;
-  letter-spacing: 1px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--ink-muted);
+  letter-spacing: 0.08em;
 }
 .q-item {
   display: flex;
@@ -108,20 +105,21 @@ function submit() {
 }
 .q-header {
   font-size: 12px;
-  color: #9a96ad;
+  color: var(--ink-muted);
 }
 .q-text {
   font-size: 14px;
-  color: #eceaf5;
+  color: var(--ink);
   line-height: 1.6;
 }
 .q-detail {
   font-size: 12px;
-  color: #9a96ad;
+  color: var(--ink-muted);
   white-space: pre-wrap;
   word-break: break-word;
-  background: rgba(255, 255, 255, 0.04);
-  border-radius: 10px;
+  background: var(--paper-sunken);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-sm);
   padding: 10px 12px;
   max-height: 200px;
   overflow-y: auto;
@@ -137,65 +135,48 @@ function submit() {
   align-items: flex-start;
   gap: 2px;
   text-align: left;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 10px;
-  padding: 8px 12px;
-  color: #d9d6e6;
+  background: transparent;
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius);
+  padding: 9px 12px;
+  color: var(--ink-soft);
   cursor: pointer;
   font-family: inherit;
+  transition:
+    transform var(--dur-press) var(--ease-out),
+    background var(--dur-hover) ease,
+    border-color var(--dur-hover) ease,
+    color var(--dur-hover) ease;
 }
-.opt-btn:hover {
-  background: rgba(255, 255, 255, 0.1);
+@media (hover: hover) and (pointer: fine) {
+  .opt-btn:hover {
+    background: var(--paper-hover);
+  }
+}
+.opt-btn:active {
+  transform: scale(0.97);
 }
 .opt-btn.picked {
-  background: rgba(255, 176, 124, 0.16);
-  border-color: rgba(255, 176, 124, 0.55);
-  color: #ffe3c4;
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--paper);
+}
+.opt-btn.picked .opt-desc {
+  color: var(--ink-faint);
 }
 .opt-label {
   font-size: 13px;
 }
 .opt-desc {
   font-size: 11px;
-  color: #9a96ad;
-}
-.q-custom input {
-  width: 100%;
-  box-sizing: border-box;
-  background: #141420;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 10px;
-  color: #e8e6f0;
-  font-size: 13px;
-  padding: 8px 12px;
-  outline: none;
-  font-family: inherit;
-}
-.q-custom input:focus {
-  border-color: rgba(255, 176, 124, 0.5);
+  color: var(--ink-muted);
 }
 .q-selected {
   font-size: 11px;
-  color: #8d89a1;
+  color: var(--ink-dim);
 }
 .q-actions {
   display: flex;
   justify-content: flex-end;
-}
-.btn.primary {
-  background: linear-gradient(135deg, #ff9d6c, #c06ab3);
-  border: none;
-  font-weight: 600;
-  color: #fff;
-  border-radius: 10px;
-  padding: 8px 18px;
-  font-size: 13px;
-  cursor: pointer;
-  font-family: inherit;
-}
-.btn.primary:disabled {
-  opacity: 0.4;
-  cursor: default;
 }
 </style>

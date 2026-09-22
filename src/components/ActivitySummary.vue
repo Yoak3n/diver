@@ -3,7 +3,6 @@ import type { ChatMessage } from "../types";
 
 const props = defineProps<{
   msg: ChatMessage;
-  /** 该组是否展开（由父层持有，便于成员消息联动显示）。 */
   expanded: boolean;
 }>();
 
@@ -14,8 +13,9 @@ const label = `${props.msg.toolCount ?? 0} 次工具调用 · ${props.msg.messag
 
 <template>
   <button class="activity-summary" type="button" @click="$emit('toggle')">
-    <span class="label">{{ label }}</span>
     <span class="chevron" :class="{ open: expanded }">›</span>
+    <span class="label">{{ label }}</span>
+    <span class="hint">{{ expanded ? "收起" : "展开" }}</span>
   </button>
 </template>
 
@@ -25,28 +25,43 @@ const label = `${props.msg.toolCount ?? 0} 次工具调用 · ${props.msg.messag
   align-items: center;
   gap: 8px;
   width: 100%;
-  margin: 4px 0;
-  padding: 6px 2px;
-  background: none;
+  margin: 2px 0;
+  padding: 8px 4px;
+  background: transparent;
   border: none;
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-  color: #8d89a1;
+  border-top: 1px solid var(--rule);
+  border-bottom: 1px solid var(--rule);
+  border-radius: 0;
+  color: var(--ink-muted);
   font: inherit;
   font-size: 12px;
   text-align: left;
   cursor: pointer;
+  transition:
+    color var(--dur-hover) ease,
+    background var(--dur-hover) ease,
+    transform var(--dur-press) var(--ease-out);
 }
-.activity-summary:hover {
-  color: #b0acc2;
+@media (hover: hover) and (pointer: fine) {
+  .activity-summary:hover {
+    color: var(--ink);
+    background: var(--paper-hover);
+  }
+}
+.activity-summary:active {
+  transform: scale(0.99);
 }
 .label {
   flex: 1;
 }
+.hint {
+  color: var(--ink-dim);
+  font-size: 11px;
+}
 .chevron {
   font-size: 14px;
-  color: #6f6b85;
-  transition: transform 0.15s ease;
+  color: var(--ink-dim);
+  transition: transform var(--dur-ui) var(--ease-out);
 }
 .chevron.open {
   transform: rotate(90deg);

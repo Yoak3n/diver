@@ -116,14 +116,32 @@ export function createChatTransport(state: ChatState) {
 
   async function send() {
     const content = state.composer.value.trim();
-    if (!content) return;
+    const images = state.attachments.value.map((a) => ({
+      mime: a.mime,
+      data: a.data,
+      ...(a.name !== undefined ? { name: a.name } : {}),
+    }));
+    if (!content && images.length === 0) return;
     if (!state.canSend.value) return;
+    const previewImages = state.attachments.value.map((a) => ({
+      mime: a.mime,
+      data: a.data,
+      ...(a.name !== undefined ? { name: a.name } : {}),
+    }));
     state.composer.value = "";
+    state.clearAttachments();
     const localId = `local-${Date.now()}`;
-    state.upsertMessage({ id: localId, kind: "user", content, origin: "user", time: Date.now() });
+    state.upsertMessage({
+      id: localId,
+      kind: "user",
+      content,
+      origin: "user",
+      time: Date.now(),
+      ...(previewImages.length > 0 ? { images: previewImages } : {}),
+    });
     state.busy.value = true;
     try {
-      await sendChat(content);
+      await sendChat(content, images);
     } catch (err) {
       state.error.value = err instanceof Error ? err.message : String(err);
       const idx = state.messages.value.findIndex((m) => m.id === localId);

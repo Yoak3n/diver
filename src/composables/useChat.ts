@@ -51,6 +51,8 @@ export function useChat() {
 
   async function maybeSpeak(msg?: ChatMessage) {
     if (!msg || msg.kind !== "assistant" || msg.streaming) return;
+    // 历史加载 / 重启恢复：不朗读，避免旧句被反复重放
+    if (msg.fromHistory) return;
     const tts = ttsSource?.();
     if (!tts?.enabled || !msg.content.trim()) return;
     try {

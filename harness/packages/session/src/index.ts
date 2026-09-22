@@ -126,10 +126,22 @@ export class Session implements SessionShape {
       } else if (event.type === 'assistant/message') {
         messages.push({ role: 'assistant', content: event.data.message.content })
       } else if (event.type === 'tool/result') {
+        const content: MessageContent = [{ type: 'text', text: event.data.message.content }]
+        const images = event.data.message.images
+        if (images) {
+          for (const img of images) {
+            content.push({
+              type: 'image',
+              mime: img.mime,
+              data: img.data,
+              ...(img.name !== undefined ? { name: img.name } : {}),
+            })
+          }
+        }
         messages.push({
           role: 'tool',
           callId: event.data.callId,
-          content: [{ type: 'text', text: event.data.message.content }],
+          content,
         })
       }
     }

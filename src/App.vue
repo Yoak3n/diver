@@ -1,19 +1,63 @@
 <script setup lang="ts">
-// 应用根组件：路由容器。
+// 应用根组件：主窗口壳 = 自定义标题栏 + 路由内容。
 //   /                 → ChatView（主聊天界面）
 //   /settings/:tab?   → SettingsView（设置，左导航标签页）
-//   /pet              → PetView（Live2D 桌宠）
-// keep-alive 保留聊天/设置的挂载状态，切换路由不丢 SSE 连接与未保存表单。
-// UI 由 Tauri 内置静态托管提供（dev 为 Vite，release 为 frontendDist），
-// 不依赖 sidecar 的 HTTP 端口 —— sidecar 只提供 /api。
+//   /pet              → PetView（Live2D 桌宠，独立透明窗口，不套壳）
+import { computed } from "vue";
+import { useRoute, useRouter } from "vue-router";
+import TitleBar from "./components/TitleBar.vue";
+
+const route = useRoute();
+const router = useRouter();
+
+const isPet = computed(() => route.name === "pet");
+const isChat = computed(() => route.name === "chat");
+const isSettings = computed(() => route.name === "settings");
+
+function goChat() {
+  void router.push({ name: "chat" });
+}
+
+function openSettings() {
+  void router.push({ name: "settings", params: { tab: "models" } });
+}
 </script>
 
 <template>
-  <router-view v-slot="{ Component, route }">
-    <!-- 桌宠窗口不 keep-alive（无跨页状态需求） -->
-    <keep-alive v-if="route.name !== 'pet'">
-      <component :is="Component" />
-    </keep-alive>
-    <component :is="Component" v-else />
-  </router-view>
+  <!-- 桌宠窗口：透明无边框，不渲染主窗口壳 -->
+  <router-view v-if="isPet" />
+
+  <div v-else class="app-shell">
+    <TitleBar
+      :show-status="isChat"
+      :show-back="isSettings"
+      :subtitle="isSettings ? '设置' : ''"
+      @back="goChat"
+      @open-settings="openSettings"
+    />
+    <div class="app-body">
+      <router-view v-slot="{ Component }">
+        <keep-alive>
+          <component :is="Component" />
+        </keep-alive>
+      </router-view>
+    </div>
+  </div>
 </template>
+
+<style scoped>
+.app-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: var(--paper);
+  color: var(--ink);
+  overflow: hidden;
+}
+.app-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+</style>

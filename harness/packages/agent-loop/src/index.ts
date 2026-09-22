@@ -465,7 +465,12 @@ export class LoopAgent implements Agent {
           turn,
           step,
           callId: call.id,
-          message: { callId: call.id, content: result.content, isError: result.isError === true },
+          message: {
+            callId: call.id,
+            content: result.content,
+            isError: result.isError === true,
+            ...(result.images !== undefined && result.images.length > 0 ? { images: result.images } : {}),
+          },
         })
       }
       // The tool results join history, then the model is asked again in a new step.

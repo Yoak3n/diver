@@ -135,6 +135,15 @@ class DeepSeekLlmAdapter extends LlmAdapter {
           placeholder: 'sk-…',
           hint: `存于 secrets 文件（${this.apiKeyRef}）${this.apiKeyEnv === undefined ? '' : `，环境变量 ${this.apiKeyEnv} 兜底`}`,
         },
+        {
+          key: 'baseUrl',
+          label: 'API Base URL',
+          type: 'text',
+          store: 'settings',
+          required: false,
+          placeholder: 'https://api.deepseek.com',
+          hint: '留空用官方端点；自定义（如中转/代理）时填写，保存后热生效（无需重启）',
+        },
       ],
     }
   }
@@ -146,7 +155,9 @@ class DeepSeekLlmAdapter extends LlmAdapter {
 
   async *stream(request: GenerateOptions): AsyncGenerator<StreamChunk> {
     const model = request.model === '' ? this.defaultModel : request.model
-    const response = await fetch(`${this.baseUrl}/chat/completions`, {
+    // 运行时 baseUrl：优先 settings UI 写入的 <provider>.baseUrl（热生效），否则构造期默认。
+    const baseUrl = this.settingsValue(PROVIDER, 'baseUrl') ?? this.baseUrl
+    const response = await fetch(`${baseUrl}/chat/completions`, {
       method: 'POST',
       headers: {
         'content-type': 'application/json',

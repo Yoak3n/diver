@@ -162,6 +162,11 @@ class CommandCodeLlmAdapter extends LlmAdapter {
     }
   }
 
+  /** 运行时 baseUrl：优先 settings UI 写入的 <provider>.baseUrl（热生效），否则构造期默认。 */
+  private resolvedBaseUrl(): string {
+    return (this.settingsValue(PROVIDER, 'baseUrl') ?? this.baseUrl).replace(/\/+$/, '')
+  }
+
   providerInfo(provider: string): LlmProviderInfo {
     return { id: provider, name: 'Command Code' }
   }
@@ -186,6 +191,15 @@ class CommandCodeLlmAdapter extends LlmAdapter {
           placeholder: 'cmd_…',
           hint: `Studio → API Keys 创建。存于 secrets 文件（${this.apiKeyRef}）${this.apiKeyEnv === undefined ? '' : `，环境变量 ${this.apiKeyEnv} 兜底`}`,
         },
+        {
+          key: 'baseUrl',
+          label: 'API Base URL',
+          type: 'text',
+          store: 'settings',
+          required: false,
+          placeholder: DEFAULT_BASE_URL,
+          hint: '留空用默认端点；自定义（如中转/代理）时填写，保存后热生效（无需重启）',
+        },
       ],
     }
   }
@@ -203,7 +217,7 @@ class CommandCodeLlmAdapter extends LlmAdapter {
     if (!this.fetchModels) return this.fallbackModels()
     if (this.catalogCache !== null) return this.catalogCache
     try {
-      const response = await fetch(`${this.baseUrl}/models`, {
+      const response = await fetch(`${this.resolvedBaseUrl()}/models`, {
         method: 'GET',
         headers: { accept: 'application/json' },
         signal: AbortSignal.timeout(this.catalogTimeoutMs),
@@ -244,7 +258,7 @@ class CommandCodeLlmAdapter extends LlmAdapter {
 
   async *stream(request: GenerateOptions): AsyncGenerator<StreamChunk> {
     const model = request.model === '' ? this.defaultModel : request.model
-    const response = await fetch(`${this.baseUrl}/chat/completions`, {
+    const response = await fetch(`${this.resolvedBaseUrl()}/chat/completions`, {
       method: 'POST',
       headers: {
         'content-type': 'application/json',

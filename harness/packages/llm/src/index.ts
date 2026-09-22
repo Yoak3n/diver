@@ -8,6 +8,8 @@
  * @module @cos/llm
  */
 
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { Service } from 'cordis'
 import type { Context } from 'cordis'
 import type { GenerateOptions, LlmCallConfig, ModelBlock, StreamChunk } from '@cos/types'
@@ -84,6 +86,29 @@ export abstract class LlmAdapter {
   /** Display metadata for a provider route this adapter owns. */
   providerInfo(provider: string): LlmProviderInfo {
     return { id: provider, name: provider }
+  }
+
+  /**
+   * Read a provider-scoped runtime setting (e.g. `baseUrl`) from the cos home
+   * settings file (`$COS_HOME/diver-settings.json`, key `<provider>.<key>`).
+   *
+   * The shell/backend writes these via the settings UI (`store: 'settings'`
+   * fields); adapters should prefer this at call time over a construction-time
+   * default so config changes take effect without a sidecar restart.
+   *
+   * Returns `undefined` when the file/value is absent (caller falls back).
+   */
+  protected settingsValue(provider: string, key: string): string | undefined {
+    const home = process.env.COS_HOME ?? ''
+    if (home === '') return undefined
+    try {
+      const content = readFileSync(join(home, 'diver-settings.json'), 'utf8')
+      const settings = JSON.parse(content) as Record<string, unknown>
+      const value = settings[`${provider}.${key}`]
+      return typeof value === 'string' && value.trim() !== '' ? value.trim() : undefined
+    } catch {
+      return undefined
+    }
   }
 
   /** Models this adapter advertises for one owned provider, advisory only. */

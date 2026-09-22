@@ -33,6 +33,10 @@
 - [ ] **语音输入**（麦克风，STT）
 - [ ] **日程提醒的持久化配置界面**（presence schedule 目前硬编码在 patch 里）
 - [ ] **模型供应商扩展**：自定义 base URL / 自定义 provider
+- [x] **模型供应商扩展（自定义 base URL）**：deepseek-official / commandcode 适配器新增
+      `baseUrl` 设置字段（`store: 'settings'`，设置面板动态渲染），运行时时读取
+      `$COS_HOME/diver-settings.json` 的 `<provider>.baseUrl`，热生效无需重启
+      （引擎侧 `LlmAdapter.settingsValue()` helper）
 - [ ] **自动更新**：NSIS 安装器可接 tauri-plugin-updater（需先解决签名）
 
 ## 技术债 / 注意事项

@@ -31,13 +31,18 @@
 若持久化的 provider 已不在 harness 注册表（如改用了别的 overlay），后端自动钳制到
 当前注册表的第一个适配器。
 
+**自定义 base URL**：`store: 'settings'` 的字段（如 `baseUrl`）由设置面板写入
+`diver-settings.json`（`<provider>.baseUrl`），适配器在**调用时**经
+`LlmAdapter.settingsValue(provider, key)`（`@cos/llm`）动态读取——保存即生效，
+无需重启 sidecar。
+
 ## 当前已注册的 provider 声明
 
 | 提供商 | 声明来源 | 声明字段 | 说明 |
 |---|---|---|---|
-| `deepseek-official` | `@cos/llm-deepseek` 的 `providerConfig()` | apiKey（password/credentials，必填，env 兜底 `DEEPSEEK_API_KEY`） | 官方 API（`deepseek-v4-flash` / `deepseek-v4-pro`） |
+| `deepseek-official` | `@cos/llm-deepseek` 的 `providerConfig()` | apiKey（password/credentials，必填，env 兜底 `DEEPSEEK_API_KEY`）+ baseUrl（text/settings，可自定义端点） | 官方 API（`deepseek-v4-flash` / `deepseek-v4-pro`） |
 | `mock` | `@cos/mock-llm` 的 `providerConfig()` | （无） | 本地 mock（离线 / 无 key 调试） |
-| `commandcode` | `@diver/llm-commandcode` 的 `providerConfig()`（`cos-plugins/` 第三方插件，经 `@diver/bundle-companion` 挂载） | apiKey（password/credentials，必填，env 兜底 `COMMANDCODE_API_KEY`） | [Command Code Provider API](https://commandcode.ai/docs/provider)，适配 [GOAT 套餐](https://commandcode.ai/docs/plans/goat)：$10/月解锁 30+ 模型，同一把 key（Studio 创建）按套餐额度计量；模型目录经公开 `GET /provider/v1/models` 实时拉取（advisory） |
+| `commandcode` | `@diver/llm-commandcode` 的 `providerConfig()`（`cos-plugins/` 第三方插件，经 `@diver/bundle-companion` 挂载） | apiKey（password/credentials，必填，env 兜底 `COMMANDCODE_API_KEY`）+ baseUrl（text/settings，可自定义端点） | [Command Code Provider API](https://commandcode.ai/docs/provider)，适配 [GOAT 套餐](https://commandcode.ai/docs/plans/goat)：$10/月解锁 30+ 模型，同一把 key（Studio 创建）按套餐额度计量；模型目录经公开 `GET /provider/v1/models` 实时拉取（advisory） |
 
 ## 扩展新 provider
 

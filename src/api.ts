@@ -50,8 +50,6 @@ export function saveSettings(body: {
   providerConfigs?: Record<string, Record<string, string>>;
   provider?: string;
   model?: string;
-  ttsEnabled?: boolean;
-  ttsVoice?: string;
 }): Promise<{ modelConfigured: boolean; provider: string; model: string }> {
   return json("/settings", { method: "POST", body: JSON.stringify(body) });
 }

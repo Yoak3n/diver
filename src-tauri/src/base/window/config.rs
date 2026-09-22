@@ -24,7 +24,8 @@ impl WindowConfig {
         match window_type {
             WindowType::Main => Self {
                 window_type,
-                inner_size: (800.0, 600.0),
+                // 聊天主窗口默认尺寸（逻辑像素）：800×600 偏挤，放大到 1100×750
+                inner_size: (1100.0, 750.0),
                 min_inner_size: (400.0, 80.0),
                 decorations: true,
                 transparent: false,

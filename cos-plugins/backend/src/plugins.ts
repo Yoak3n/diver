@@ -391,6 +391,16 @@ export async function nativeStatus(): Promise<unknown> {
   const probes = []
   if (url) {
     for (const entry of NATIVE_RPC_METHODS) {
+      // 有副作用的方法（如 notify::show）禁止真调探测——否则设置页会弹出
+      // 真实桌面通知。连通性由同通道的 notify::ping 覆盖。
+      if (entry.probeSafe === false) {
+        probes.push({
+          method: entry.method,
+          ok: true,
+          detail: 'skipped (side effect; see notify::ping)',
+        })
+        continue
+      }
       const params =
         entry.method === 'grep::search'
           ? { pattern: '__diver_native_probe__', path: '.', maxMatches: 1 }

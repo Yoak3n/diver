@@ -19,7 +19,6 @@
     "active": true,
     "targets": ["nsis"],
     "resources": {
-      "resources/speak.ps1": "resources/speak.ps1",
       "resources/sidecar": "resources/sidecar"
     },
     "icon": [

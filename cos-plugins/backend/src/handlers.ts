@@ -370,8 +370,6 @@ export async function handleRequest(
           model: h.model,
           models: await deps.catalogModels(),
           providers: await deps.providerDecls(),
-          ttsEnabled: !!readDiverSettings().ttsEnabled,
-          ttsVoice: (readDiverSettings().ttsVoice as string) ?? '',
           sidecar: { state: 'running', port: deps.port },
         })
         return
@@ -384,8 +382,6 @@ export async function handleRequest(
         const patch: Record<string, unknown> = {}
         if (typeof body.provider === 'string' && body.provider) patch.provider = body.provider
         if (typeof body.model === 'string' && body.model) patch.model = body.model
-        if (typeof body.ttsEnabled === 'boolean') patch.ttsEnabled = body.ttsEnabled
-        if (typeof body.ttsVoice === 'string') patch.ttsVoice = body.ttsVoice
         writeDiverSettings(patch)
         if (patch.model || patch.provider) {
           const s = readDiverSettings()

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // 日程提醒设置页：presence 主动问候的持久化配置（$COS_HOME/presence-schedule.json）。
-// 到点 agent 主动发起问候，并弹原生通知；保存后热生效，无需重启。
+// 到点 agent 主动发起问候，并弹原生通知；任何编辑即保存、热生效，无需手动点保存。
 import { onMounted, ref } from "vue";
 import {
   getPresenceApi,
@@ -19,6 +19,8 @@ const hint = ref("");
 const newTime = ref("09:00");
 const newPrompt = ref("");
 const adding = ref(false);
+
+let saveTimer: number | null = null;
 
 async function refresh() {
   if (!tauriAvailable()) return;
@@ -48,6 +50,15 @@ async function save() {
   } finally {
     saving.value = false;
   }
+}
+
+/** 编辑防抖保存（300ms），与增删的立即保存对齐「改完即生效」语义。 */
+function scheduleSave() {
+  if (saveTimer !== null) window.clearTimeout(saveTimer);
+  saveTimer = window.setTimeout(() => {
+    saveTimer = null;
+    void save();
+  }, 300);
 }
 
 async function onAdd() {
@@ -85,8 +96,8 @@ onMounted(refresh);
 
 <template>
   <p class="hint">
-    到点 agent 会主动发起问候（聊天区显示为系统消息）并弹原生通知。保存后
-    <b>立即生效</b>；时间格式 <code>HH:mm</code>（24 小时制，本地时区）。
+    到点 agent 会主动发起问候（聊天区显示为系统消息）并弹原生通知。修改后
+    <b>自动保存并立即生效</b>；时间格式 <code>HH:mm</code>（24 小时制，本地时区）。
   </p>
 
   <div v-if="loading && !entries.length" class="hint">加载中…</div>
@@ -99,21 +110,30 @@ onMounted(refresh);
         type="time"
         :value="e.time"
         :disabled="saving"
-        @change="e.time = ($event.target as HTMLInputElement).value"
+        @change="
+          e.time = ($event.target as HTMLInputElement).value;
+          scheduleSave();
+        "
       />
       <input
         class="prompt-input"
         :value="e.prompt"
         :disabled="saving"
         placeholder="提醒内容，如：该休息一下啦"
-        @change="e.prompt = ($event.target as HTMLInputElement).value"
+        @change="
+          e.prompt = ($event.target as HTMLInputElement).value;
+          scheduleSave();
+        "
       />
       <label class="switch" :title="e.enabled ? '点击停用' : '点击启用'">
         <input
           type="checkbox"
           :checked="e.enabled"
           :disabled="saving"
-          @change="e.enabled = ($event.target as HTMLInputElement).checked"
+          @change="
+            e.enabled = ($event.target as HTMLInputElement).checked;
+            scheduleSave();
+          "
         />
         <span class="slider"></span>
       </label>
@@ -133,12 +153,6 @@ onMounted(refresh);
     />
     <button class="btn small" :disabled="adding || !newPrompt.trim() || !newTime" @click="onAdd">
       新增
-    </button>
-  </div>
-
-  <div v-if="entries.length" class="save-row">
-    <button class="btn small primary" :disabled="saving" @click="save">
-      {{ saving ? "保存中…" : "保存日程" }}
     </button>
   </div>
 

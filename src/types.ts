@@ -30,6 +30,8 @@ export interface ConfigFieldDecl {
   options?: string[];
   /** 服务端解析的当前状态（secret 字段只回传布尔）。 */
   configured?: boolean;
+  /** 非 secret 的 settings 字段当前值（供回填/清空；secret 不回传）。 */
+  value?: string;
 }
 
 export interface ProviderConfigDecl {
@@ -45,8 +47,6 @@ export interface SettingsInfo {
   model: string;
   models: ModelEntry[];
   providers: ProviderConfigDecl[];
-  ttsEnabled: boolean;
-  ttsVoice: string;
   sidecar: {
     state: "stopped" | "starting" | "running" | "crashed";
     port: number;
@@ -103,3 +103,47 @@ export type StreamEvent =
   | { type: "busy"; value: boolean }
   | { type: "question"; requestId: string; questions: UserQuestion[] }
   | { type: "error"; message: string };
+
+/** 在线 TTS 声线。 */
+export interface TtsVoice {
+  id: string;
+  name: string;
+  lang: string;
+}
+
+/** 在线 TTS 配置视图（secret 只回 has_* 布尔）。 */
+export interface TtsConfigView {
+  enabled: boolean;
+  provider: string;
+  providerLabel: string;
+  voice: string;
+  model: string;
+  speed: number;
+  apiHost: string;
+  hasApiKey: boolean;
+  resourceId: string;
+  styleInstruction: string;
+  format: string;
+  customVoices: string[];
+}
+
+/** 保存 TTS 配置时的补丁（secret 空串 = 留空不改）。 */
+export interface TtsConfigPatch {
+  enabled?: boolean;
+  provider?: string;
+  voice?: string;
+  model?: string;
+  speed?: number;
+  apiKey?: string;
+  apiHost?: string;
+  resourceId?: string;
+  styleInstruction?: string;
+  format?: string;
+  customVoices?: string[];
+}
+
+/** 合成结果（base64 音频）。 */
+export interface TtsAudio {
+  base64: string;
+  mime: string;
+}

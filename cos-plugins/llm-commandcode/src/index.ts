@@ -152,9 +152,7 @@ class CommandCodeLlmAdapter extends LlmAdapter {
     try {
       return this.credentials.get(this.apiKeyRef)
     } catch (error) {
-      // 注意：LlmError(code, message) —— 与 @cos/llm-deepseek 的 (message, code) 传参
-      // 相反（那是既有 bug）；这里按 types 的构造签名正确传参，让 code 字段可被
-      // agent-loop 的 NO_ADAPTER 类检测使用。
+      // LlmError(code, message)——按 types 的构造签名传参。
       throw new LlmError(
         'PROVIDER_ERROR',
         `commandcode: ${(error as Error).message}（设置面板 → Command Code 配置 API Key，或设 ${this.apiKeyEnv}）`,
@@ -198,7 +196,7 @@ class CommandCodeLlmAdapter extends LlmAdapter {
           store: 'settings',
           required: false,
           placeholder: DEFAULT_BASE_URL,
-          hint: '留空用默认端点；自定义（如中转/代理）时填写，保存后热生效（无需重启）',
+          hint: '留空用默认端点；自定义（如中转/代理）时填写，保存后热生效（无需重启）。清空并保存即恢复默认。',
         },
       ],
     }

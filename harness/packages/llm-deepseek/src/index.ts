@@ -92,7 +92,7 @@ class DeepSeekLlmAdapter extends LlmAdapter {
 
   constructor(credentials: Context['credentials'], config: DeepSeekConfig) {
     super()
-    this.baseUrl = config.baseUrl ?? 'https://api.deepseek.com'
+    this.baseUrl = (config.baseUrl ?? 'https://api.deepseek.com').replace(/\/+$/, '')
     this.models = config.models ?? ['deepseek-v4-flash', 'deepseek-v4-pro']
     this.defaultModel = config.defaultModel ?? 'deepseek-v4-flash'
     this.apiKeyRef = config.apiKeyKey ?? API_KEY_REF
@@ -142,7 +142,7 @@ class DeepSeekLlmAdapter extends LlmAdapter {
           store: 'settings',
           required: false,
           placeholder: 'https://api.deepseek.com',
-          hint: '留空用官方端点；自定义（如中转/代理）时填写，保存后热生效（无需重启）',
+          hint: '留空用官方端点；自定义（如中转/代理）时填写，保存后热生效（无需重启）。清空并保存即恢复默认。',
         },
       ],
     }
@@ -156,7 +156,7 @@ class DeepSeekLlmAdapter extends LlmAdapter {
   async *stream(request: GenerateOptions): AsyncGenerator<StreamChunk> {
     const model = request.model === '' ? this.defaultModel : request.model
     // 运行时 baseUrl：优先 settings UI 写入的 <provider>.baseUrl（热生效），否则构造期默认。
-    const baseUrl = this.settingsValue(PROVIDER, 'baseUrl') ?? this.baseUrl
+    const baseUrl = (this.settingsValue(PROVIDER, 'baseUrl') ?? this.baseUrl).replace(/\/+$/, '')
     const response = await fetch(`${baseUrl}/chat/completions`, {
       method: 'POST',
       headers: {
@@ -172,7 +172,7 @@ class DeepSeekLlmAdapter extends LlmAdapter {
       signal: request.signal,
     })
     if (!response.ok || response.body === null) {
-      throw new LlmError(`deepseek request failed: ${response.status} ${await response.text()}`, 'PROVIDER_ERROR')
+      throw new LlmError('PROVIDER_ERROR', `deepseek request failed: ${response.status} ${await response.text()}`)
     }
     const decoder = new TextDecoder()
     const reader = response.body.getReader()
@@ -227,6 +227,8 @@ class DeepSeekLlmAdapter extends LlmAdapter {
         const block = toolBlocks.get(index)
         yield { type: 'block-end', index, block: { type: 'tool-call', id: block?.id ?? '', name: block?.name ?? '', arguments: block?.arguments ?? '' } }
       }
+      // 契约：finish 必须是最后一个 chunk（与 mock-llm / commandcode 一致）。
+      yield { type: 'finish', reason: { kind: toolBlocks.size > 0 ? 'tool-calls' : 'stop' } }
     } finally {
       reader.releaseLock()
     }

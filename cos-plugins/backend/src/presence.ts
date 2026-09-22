@@ -72,11 +72,18 @@ interface SchedulerDeps {
 export function startPresenceScheduler(ctx: Context, state: WebState, deps: SchedulerDeps) {
   // 已触发标记：`entryId@YYYY-MM-DD HH:mm`，防止同一分钟重复触发。
   const fired = new Set<string>()
+  let firedDay = ''
 
   const tick = async () => {
     const now = new Date()
     const hhmm = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
     const dayKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+
+    // 跨天清空，避免 fired 集合随运行时长无限增长。
+    if (firedDay !== dayKey) {
+      fired.clear()
+      firedDay = dayKey
+    }
 
     for (const entry of loadSchedule().entries) {
       if (!entry.enabled) continue
@@ -87,7 +94,8 @@ export function startPresenceScheduler(ctx: Context, state: WebState, deps: Sche
       if (fired.has(fireKey)) continue
 
       if (state.busy) {
-        // 正在对话：不打断，留给下一分钟（不标记 fired）
+        // 正在对话：不打断。同一分钟内下一次 tick（30s 后）还会再试；
+        // 分钟过后本条当天不再补发（entry.time 已不匹配）。
         continue
       }
       if (!(await deps.isModelConfigured())) {

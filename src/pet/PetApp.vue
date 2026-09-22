@@ -3,7 +3,8 @@ import { nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { usePetChat } from "./usePetChat";
 import { inferEmotion, loadEmotionMap, motionGroupsFor } from "./emotion";
 import type { PetEmotion } from "./emotion";
-import { speakText, tauriAvailable, onTauriEvent, startPetMouseStream, movePetWindow, cancelPetMoveAnimation, setPetDragging } from "../tauri";
+import { tauriAvailable, onTauriEvent, startPetMouseStream, movePetWindow, cancelPetMoveAnimation, setPetDragging } from "../tauri";
+import { speakMessageText } from "../tts";
 import { MODEL_HEIGHT_RATIO, PET_MOUSE_MOVE_EVENT } from "./constants";
 import type { PetModelHandle } from "./live2d";
 
@@ -552,16 +553,14 @@ async function speak(text: string) {
   stopMouth?.();
   stopMouth = pet.startMouth();
   try {
-    await speakText(text, ttsVoice.value);
+    // 在线 TTS：Promise 在真实音频结束时 resolve，口型时长对齐播放
+    await speakMessageText(text, ttsVoice.value || undefined);
   } catch {
     /* 忽略 */
   }
-  const duration = Math.max(800, Math.min(text.length * 220, 20000));
-  window.setTimeout(() => {
-    speaking = false;
-    stopMouth?.();
-    stopMouth = null;
-  }, duration);
+  speaking = false;
+  stopMouth?.();
+  stopMouth = null;
 }
 
 // 助手最终消息到达时自动朗读（历史加载/重启恢复的消息不朗读，避免重放）

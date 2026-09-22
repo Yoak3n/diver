@@ -53,9 +53,15 @@ export async function providerDecls(ctx: Context): Promise<ProviderDeclView[]> {
       description: undefined,
       fields: [],
     }
-    const fields: Array<AdapterConfigField & { configured: boolean }> = []
+    const fields: Array<AdapterConfigField & { configured: boolean; value?: string }> = []
     for (const field of decl.fields) {
-      fields.push({ ...field, configured: await fieldConfigured(ctx, live.id, field) })
+      const configured = await fieldConfigured(ctx, live.id, field)
+      // 非 secret 的 settings 字段回传当前值，设置面板可回填/清空。
+      if (field.store === 'settings' && !field.secret) {
+        fields.push({ ...field, configured, value: settingsFieldValue(live.id, field.key) })
+      } else {
+        fields.push({ ...field, configured })
+      }
     }
     out.push({ ...decl, fields })
   }
@@ -73,9 +79,13 @@ export async function fieldConfigured(ctx: Context, provider: string, field: Ada
     return false
   }
   // store === 'settings'
-  const s = readDiverSettings()
-  const value = s[`${provider}.${field.key}`]
-  return typeof value === 'string' && value.trim().length > 0
+  return settingsFieldValue(provider, field.key).length > 0
+}
+
+/** settings 字段当前值（非 secret；供设置面板回填，便于查看/清空）。 */
+function settingsFieldValue(provider: string, key: string): string {
+  const value = readDiverSettings()[`${provider}.${key}`]
+  return typeof value === 'string' ? value : ''
 }
 
 /** 模型目录（各 provider 适配器自行声明，advisory）。 */
@@ -119,13 +129,18 @@ export async function applyProviderConfigs(
     const decl = ctx.llm.adapterConfig(provider)
     if (!decl || !values || typeof values !== 'object') continue
     for (const field of decl.fields) {
+      // 键不存在 = 不改动；空串对 settings 字段表示「清空、回退适配器默认」。
+      if (!(field.key in values)) continue
       const raw = values[field.key]
-      if (typeof raw !== 'string' || !raw.trim()) continue
+      if (typeof raw !== 'string') continue
       const value = raw.trim()
       if (field.store === 'credentials' || field.secret) {
+        // secret 空串 = 留空不修改（与设置面板 placeholder 一致）
+        if (value === '') continue
         writeSecret(field.credentialRef ?? `${provider}.${field.key}`, value, secretsFileOf(ctx))
       } else {
         // settings 字段带 provider 前缀落盘（如 opencode-go.baseUrl 形态，泛化为 <provider>.<key>）
+        // 空串显式写入，settingsValue 视为空并回退默认端点。
         patch[`${provider}.${field.key}`] = value
       }
     }

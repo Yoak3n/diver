@@ -7,7 +7,7 @@
 - **Node.js ≥ 22**（companion bundle 用原生 type-stripping 直接运行 TS，零构建）
 - **pnpm ≥ 10**（workspace：前端 + harness）
 - **Rust 工具链**（Tauri 2 依赖；`pnpm tauri dev` 会自动装 CLI）
-- **Windows 10/11**（TTS 使用系统 SAPI；tool-pwsh 只在 Windows 启用）
+- **Windows 10/11**（在线 TTS 需网络；tool-pwsh 只在 Windows 启用）
 
 ## 安装与运行
 
@@ -34,7 +34,7 @@ diver/
 │  │                       # timer / state / init / cmd / handle
 │  ├─ src/config/          # window_startup 配置
 │  ├─ src/services/        # 本地服务：axum /rpc + memory RPC handler
-│  └─ resources/speak.ps1  # TTS 脚本
+│  └─ config/tts.json     # 在线 TTS 配置
 ├─ crates/diver-memory/    # Rust 记忆后端 crate（SQLite 存储 + 确定性逻辑）
 ├─ harness/                # Node sidecar workspace（pnpm，自研 cos）
 │  ├─ packages/            # 所有 @cos/* 工作区插件包

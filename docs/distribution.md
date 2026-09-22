@@ -39,7 +39,7 @@ src-tauri/resources/sidecar/                                      # 打进安装
 安装到 %LOCALAPPDATA%\Diver（perUser，无需管理员）
 ├─ Diver.exe                     # Tauri 壳
 └─ resources/
-   ├─ speak.ps1                  # TTS 脚本
+   ├─ tts.json                  # 在线 TTS 配置
    └─ sidecar/                   # sidecar 运行时（本目录即进程 cwd）
       ├─ node.exe                # 随包 Node 运行时
       ├─ node_modules/npm/       # 随包 npm（插件依赖安装用）

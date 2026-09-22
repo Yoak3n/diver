@@ -50,6 +50,14 @@ export function apply(ctx: Context) {
       }
       const probes = []
       for (const entry of NATIVE_RPC_METHODS) {
+        if (entry.probeSafe === false) {
+          probes.push({
+            method: entry.method,
+            ok: true,
+            detail: 'skipped (side effect; see notify::ping)',
+          })
+          continue
+        }
         const params =
           entry.method === 'grep::search'
             ? { pattern: '__diver_native_probe__', path: '.', maxMatches: 1 }

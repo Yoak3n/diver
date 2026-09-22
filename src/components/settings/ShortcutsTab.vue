@@ -1,6 +1,7 @@
 <script setup lang="ts">
 // 全局快捷键设置页（热插拔：保存即注册/注销，无需重启 sidecar/应用）。
-import { onMounted, ref } from "vue";
+// 组合键经按键捕获生成，词法对齐 tauri-plugin-global-shortcut（global-hotkey parse_hotkey）。
+import { onBeforeUnmount, onMounted, ref } from "vue";
 import {
   listShortcuts,
   setShortcut,
@@ -10,6 +11,7 @@ import {
   type ShortcutAction,
   type ShortcutBinding,
 } from "../../tauri";
+import { eventToAccelerator, isCaptureCancel, modifierHint } from "../../hotkey";
 
 const bindings = ref<ShortcutBinding[]>([]);
 const loading = ref(false);
@@ -21,6 +23,10 @@ const hint = ref("");
 const newAction = ref<ShortcutAction>("show-main");
 const newAccelerator = ref("");
 const adding = ref(false);
+
+// 录制：null = 未录制；"__new__" = 新增表单；其余为绑定 id
+const capturingId = ref<string | null>(null);
+const capturePreview = ref("");
 
 const actionLabels = SHORTCUT_ACTION_LABELS;
 const actionOptions = Object.entries(actionLabels) as [ShortcutAction, string][];
@@ -36,6 +42,49 @@ async function refresh() {
   } finally {
     loading.value = false;
   }
+}
+
+function stopCapture() {
+  capturingId.value = null;
+  capturePreview.value = "";
+  window.removeEventListener("keydown", onCaptureKey, true);
+}
+
+function startCapture(id: string) {
+  stopCapture();
+  capturingId.value = id;
+  capturePreview.value = "";
+  window.addEventListener("keydown", onCaptureKey, true);
+}
+
+function onCaptureKey(e: KeyboardEvent) {
+  // 录制期间吞掉按键，避免触发页面快捷键 / 输入框
+  e.preventDefault();
+  e.stopPropagation();
+
+  if (isCaptureCancel(e)) {
+    stopCapture();
+    return;
+  }
+
+  const accel = eventToAccelerator(e);
+  if (accel === null) {
+    // 只按了修饰键：显示前缀提示
+    capturePreview.value = modifierHint(e);
+    return;
+  }
+
+  const target = capturingId.value;
+  stopCapture();
+  if (target === null) return;
+
+  if (target === "__new__") {
+    newAccelerator.value = accel;
+    void onAdd();
+    return;
+  }
+  const binding = bindings.value.find((b) => b.id === target);
+  if (binding) void onSaveAccelerator(binding, accel);
 }
 
 async function onToggle(binding: ShortcutBinding, enabled: boolean) {
@@ -117,12 +166,15 @@ async function onAdd() {
 }
 
 onMounted(refresh);
+onBeforeUnmount(stopCapture);
 </script>
 
 <template>
   <p class="hint">
-    全局快捷键：修改后<b>立即生效</b>（运行时注册/注销，无需重启）。格式：
-    <code>ctrl+shift+m</code>、<code>alt+1</code>、<code>cmdorctrl+f5</code>，修饰键在前、单个主键。
+    全局快捷键：点「录制」后按下组合键，保存后<b>立即生效</b>（无需重启）。
+    词法对齐 <code>tauri-plugin-global-shortcut</code>：
+    修饰键在前、单个主键在后，如 <code>ctrl+shift+m</code>、<code>alt+1</code>、<code>cmdorctrl+f5</code>。
+    录制中按 <code>Esc</code> 取消。
   </p>
 
   <div v-if="loading && !bindings.length" class="hint">加载中…</div>
@@ -132,15 +184,30 @@ onMounted(refresh);
     <div v-for="b in bindings" :key="b.id" class="binding-row">
       <div class="binding-info">
         <div class="binding-accel">
-          <input
-            class="accel-input"
-            :value="b.accelerator"
+          <button
+            type="button"
+            class="accel-capture"
+            :class="{ recording: capturingId === b.id }"
             :disabled="busyId === b.id"
-            spellcheck="false"
-            @change="
-              onSaveAccelerator(b, ($event.target as HTMLInputElement).value)
+            :title="capturingId === b.id ? '按 Esc 取消' : '点击录制组合键'"
+            @click="
+              capturingId === b.id ? stopCapture() : startCapture(b.id)
             "
-          />
+          >
+            <template v-if="capturingId === b.id">
+              {{ capturePreview || "" }}按下快捷键…（Esc 取消）
+            </template>
+            <template v-else>{{ b.accelerator }}</template>
+          </button>
+          <button
+            type="button"
+            class="btn tiny"
+            :disabled="busyId === b.id || capturingId === b.id"
+            title="重新录制"
+            @click="startCapture(b.id)"
+          >
+            录制
+          </button>
         </div>
         <div class="binding-action">{{ actionLabels[b.action] }}</div>
       </div>
@@ -163,13 +230,21 @@ onMounted(refresh);
         {{ label }}
       </option>
     </select>
-    <input
-      v-model="newAccelerator"
-      class="accel-input"
-      placeholder="ctrl+shift+1"
-      spellcheck="false"
-      @keyup.enter="onAdd"
-    />
+    <button
+      type="button"
+      class="accel-capture grow"
+      :class="{ recording: capturingId === '__new__' }"
+      :disabled="adding"
+      :title="capturingId === '__new__' ? '按 Esc 取消' : '点击录制组合键'"
+      @click="
+        capturingId === '__new__' ? stopCapture() : startCapture('__new__')
+      "
+    >
+      <template v-if="capturingId === '__new__'">
+        {{ capturePreview || "" }}按下快捷键…（Esc 取消）
+      </template>
+      <template v-else>{{ newAccelerator || "点击录制组合键" }}</template>
+    </button>
     <button class="btn small" :disabled="adding || !newAccelerator.trim()" @click="onAdd">
       新增
     </button>
@@ -199,29 +274,59 @@ onMounted(refresh);
   min-width: 0;
 }
 .binding-accel {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-weight: 600;
   color: #eee;
+}
+.accel-capture {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  color: #eee;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 4px 8px;
+  cursor: pointer;
+  outline: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.accel-capture:hover {
+  border-color: rgba(255, 255, 255, 0.25);
+}
+.accel-capture.recording {
+  border-color: #ffb07c;
+  background: rgba(255, 176, 124, 0.1);
+  color: #ffb07c;
+  animation: pulse 1.2s ease-in-out infinite;
+}
+.accel-capture:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.accel-capture.grow {
+  flex: 1;
+}
+@keyframes pulse {
+  0%,
+  100% {
+    border-color: rgba(255, 176, 124, 0.45);
+  }
+  50% {
+    border-color: rgba(255, 176, 124, 1);
+  }
 }
 .binding-action {
   font-size: 12px;
   opacity: 0.65;
   margin-top: 2px;
-}
-.accel-input {
-  width: 100%;
-  box-sizing: border-box;
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: 6px;
-  color: #eee;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 13px;
-  padding: 2px 6px;
-  outline: none;
-}
-.accel-input:focus {
-  border-color: rgba(255, 255, 255, 0.25);
-  background: rgba(255, 255, 255, 0.05);
 }
 .toolbar {
   margin-top: 12px;
@@ -237,13 +342,6 @@ onMounted(refresh);
   font-size: 12px;
   padding: 4px 8px;
   font-family: inherit;
-}
-.group-title {
-  display: block;
-  margin: 14px 0 8px;
-  font-size: 13px;
-  font-weight: 600;
-  opacity: 0.9;
 }
 .hint {
   font-size: 12px;
@@ -317,7 +415,18 @@ code {
   color: #ddd;
   cursor: pointer;
 }
-.btn.small:disabled {
+.btn.tiny {
+  padding: 3px 8px;
+  font-size: 11px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.06);
+  color: #ddd;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.btn.small:disabled,
+.btn.tiny:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }

@@ -91,6 +91,8 @@ impl ShortcutManager {
     /// 热插拔：注册/更新单个绑定（写配置 + 运行时注册）。
     ///
     /// 已存在的绑定（按 id 匹配）先注销旧快捷键，再按新值注册。
+    /// 校验全部通过后才改运行时；任一后续步骤失败会回滚，避免
+    /// 「OS 已注销但配置文件仍是旧值」的不一致。
     pub fn set_binding(
         &self,
         app: &AppHandle,
@@ -105,21 +107,19 @@ impl ShortcutManager {
 
         let mut config = load_config(app);
         let gs = app.global_shortcut();
+        let accelerator = binding.accelerator.trim().to_string();
 
-        // 先注销旧绑定（若同 id 已存在且 accelerator 不同）。
-        if let Some(old) = config.bindings.iter().find(|b| b.id == binding.id) {
-            if old.enabled {
-                gs.unregister(old.accelerator.as_str())
-                    .map_err(|e| format!("注销旧快捷键失败: {e}"))?;
-            }
-            config.bindings.retain(|b| b.id != binding.id);
-        }
-        // 冲突检测：同一 accelerator 已被其它启用绑定占用。
+        // 1) 语法校验（失败不触碰运行时）。
+        accelerator
+            .parse::<Shortcut>()
+            .map_err(|e| format!("快捷键语法错误 ({accelerator}): {e}"))?;
+
+        // 2) 冲突检测：同一 accelerator 已被其它启用绑定占用（虚拟移除同 id 旧绑定）。
         if binding.enabled
             && config.bindings.iter().any(|b| {
                 b.enabled
                     && b.id != binding.id
-                    && b.accelerator.to_lowercase() == binding.accelerator.to_lowercase()
+                    && b.accelerator.eq_ignore_ascii_case(&binding.accelerator)
             })
         {
             return Err(format!(
@@ -128,11 +128,39 @@ impl ShortcutManager {
             ));
         }
 
-        if binding.enabled {
-            self.register_one(app, &binding)?;
+        let old = config.bindings.iter().find(|b| b.id == binding.id).cloned();
+
+        // 3) 运行时切换：先注销旧，再注册新；失败则回滚到旧绑定。
+        if let Some(old) = &old {
+            if old.enabled {
+                gs.unregister(old.accelerator.as_str())
+                    .map_err(|e| format!("注销旧快捷键失败: {e}"))?;
+                self.forget_accelerator(&old.accelerator);
+            }
         }
-        config.bindings.push(binding);
+        if binding.enabled {
+            if let Err(e) = self.register_one(app, &binding) {
+                if let Some(old) = &old {
+                    if old.enabled {
+                        let _ = self.register_one(app, old);
+                    }
+                }
+                return Err(e);
+            }
+        }
+        // 4) 持久化；失败则回滚运行时到旧绑定。
+        config.bindings.retain(|b| b.id != binding.id);
+        config.bindings.push(binding.clone());
         if !save_config(app, &config) {
+            if binding.enabled {
+                let _ = gs.unregister(binding.accelerator.as_str());
+                self.forget_accelerator(&binding.accelerator);
+            }
+            if let Some(old) = &old {
+                if old.enabled {
+                    let _ = self.register_one(app, old);
+                }
+            }
             return Err("保存快捷键配置失败".into());
         }
         Ok(config.bindings)
@@ -152,12 +180,20 @@ impl ShortcutManager {
             app.global_shortcut()
                 .unregister(binding.accelerator.as_str())
                 .map_err(|e| format!("注销快捷键失败: {e}"))?;
+            self.forget_accelerator(&binding.accelerator);
         }
         config.bindings.retain(|b| b.id != id);
         if !save_config(app, &config) {
             return Err("保存快捷键配置失败".into());
         }
         Ok(config.bindings)
+    }
+
+    /// 从运行时映射移除某 accelerator 对应的 HotKeyId。
+    fn forget_accelerator(&self, accelerator: &str) {
+        if let Ok(shortcut) = accelerator.parse::<Shortcut>() {
+            self.registered.lock().unwrap().remove(&shortcut.id());
+        }
     }
 
     /// 运行时注册单个绑定（不改配置；调用方负责持久化）。

@@ -23,21 +23,32 @@ export const NATIVE_RPC_METHODS = [
     method: 'stats',
     service: 'memory',
     description: '记忆库统计（topics / events / promises）',
+    /** false = 有副作用，禁止真调探测（否则会弹真实系统通知）。 */
+    probeSafe: true as boolean,
   },
   {
     method: 'snapshot',
     service: 'memory',
     description: '关系卡 + topics/promises/events 快照',
+    probeSafe: true as boolean,
   },
   {
     method: 'grep::search',
     service: 'grep',
     description: 'ripgrep 文件内容搜索（diver-search crate）',
+    probeSafe: true as boolean,
   },
   {
     method: 'notify::show',
     service: 'notify',
     description: '原生托盘通知（agent 主动消息 / 日程提醒到达时弹通知）',
+    probeSafe: false as boolean,
+  },
+  {
+    method: 'notify::ping',
+    service: 'notify',
+    description: '通知通道连通性探测（不弹通知）',
+    probeSafe: true as boolean,
   },
 ] as const
 

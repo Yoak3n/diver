@@ -24,7 +24,7 @@
 │ Tauri 壳（Rust）                                  │
 │  · sidecar 生命周期管理（spawn/就绪检测/日志/重启） │
 │  · 托盘 / 窗口管理 / 轻量模式 / 开机自启 / 单实例   │
-│  · 本地 TTS（Windows SAPI 语音朗读）               │
+│  · 在线 TTS（MiMo / MiniMax / 火山，壳层合成）     │
 │  · 本地服务（axum）：SQLite 记忆后端 JSON-RPC      │
 ├──────────────────────────────────────────────────┤
 │ WebView：Vue 3 陪伴 UI（单会话连续聊天）            │
@@ -63,11 +63,11 @@
 diver/
 ├─ src/                    # Vue 3 陪伴 UI（聊天、设置含插件页、TTS）
 │  └─ pet/                 # Live2D 桌宠（PetApp/live2d/pet.html）
-├─ src-tauri/              # Rust 壳（sidecar 管理、插件启停、托盘、TTS、本地服务）
+├─ src-tauri/              # Rust 壳（sidecar 管理、插件启停、托盘、在线 TTS、本地服务）
 │  ├─ src/plugins/         # 壳端插件管理（profile 启停）
 │  ├─ src/base/            # sidecar / tts / tray / window / lightweight 等
 │  ├─ src/services/        # 本地服务：axum /rpc（SQLite 记忆后端）
-│  └─ resources/speak.ps1  # TTS 脚本
+│  └─ config/tts.json     # 在线 TTS 配置
 ├─ crates/diver-memory/    # Rust 记忆后端 crate（SQLite 存储 + 确定性逻辑）
 ├─ crates/diver-search/    # Rust grep 搜索后端 crate（ripgrep 引擎库）
 ├─ harness/                # Node sidecar workspace（pnpm，自研 cos）
@@ -126,7 +126,7 @@ node scripts/opencode-test.mjs # opencode-go provider 直测
 
 屏幕右下角常驻 **Live2D 桌宠**（透明/置顶/无边框，`src/pet/`）：pixi-live2d-display +
 Cubism 4 Core，模型为官方示例「Hiyori」；点按随机动作、底部气泡面板轻量聊天
-（最近 8 条）、回复自动 TTS 朗读 + **口型同步**（ParamMouthOpenY 正弦驱动）。
+（最近 8 条）、回复自动 TTS 朗读 + **口型同步**（ParamMouthOpenY，按真实音频时长驱动）。
 主窗口关闭（隐藏到托盘）不影响桌宠；与主窗口共用同一会话/记忆。
 详见 [docs/live2d-pet.md](docs/live2d-pet.md)。
 
@@ -151,7 +151,7 @@ chat/completions / responses / anthropic 三端点）。
 
 - Node.js ≥ 22、pnpm ≥ 10
 - Rust 工具链（Tauri 2 依赖）
-- Windows 10/11（TTS 使用系统 SAPI）
+- Windows 10/11（在线 TTS 需可访问服务商 API）
 
 ## 已知限制 / 后续方向
 

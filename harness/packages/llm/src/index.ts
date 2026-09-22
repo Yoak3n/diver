@@ -153,11 +153,11 @@ export class BlockAssembler {
         ? { type: 'text', text: '' }
         : { type: 'tool-call', id: '', name: '', arguments: '' })
     } else if (chunk.type === 'text-delta') {
-      if (!this.open.has(chunk.index)) throw new LlmError(`text-delta without open block ${chunk.index}`, 'INVALID_STREAM')
+      if (!this.open.has(chunk.index)) throw new LlmError('INVALID_STREAM', `text-delta without open block ${chunk.index}`)
       const block = this.blockMap.get(chunk.index)
       if (block !== undefined && block.type === 'text') block.text += chunk.text
     } else if (chunk.type === 'tool-call-delta') {
-      if (!this.open.has(chunk.index)) throw new LlmError(`tool-call-delta without open block ${chunk.index}`, 'INVALID_STREAM')
+      if (!this.open.has(chunk.index)) throw new LlmError('INVALID_STREAM', `tool-call-delta without open block ${chunk.index}`)
       const block = this.blockMap.get(chunk.index)
       if (block !== undefined && block.type === 'tool-call') {
         if (block.id === '') block.id = chunk.id
@@ -165,7 +165,7 @@ export class BlockAssembler {
         block.arguments += chunk.argumentsDelta
       }
     } else if (chunk.type === 'block-end') {
-      if (!this.open.delete(chunk.index)) throw new LlmError(`block-end without open block ${chunk.index}`, 'INVALID_STREAM')
+      if (!this.open.delete(chunk.index)) throw new LlmError('INVALID_STREAM', `block-end without open block ${chunk.index}`)
       const existing = this.blockMap.get(chunk.index)
       if (chunk.block.type === 'text' && existing !== undefined) {
         // Text content is carried by deltas; the finalization payload for a
@@ -211,17 +211,17 @@ export class LlmRuntime extends Service {
   registerAdapter(providers: readonly string[], adapter: LlmAdapter): () => void {
     const owned = new Set<string>()
     const commit = (): void => {
-      if (providers.length === 0) throw new LlmError('an adapter must register at least one provider', 'INVALID_ADAPTER')
+      if (providers.length === 0) throw new LlmError('INVALID_ADAPTER', 'an adapter must register at least one provider')
       for (const provider of providers) {
-        if (provider.length === 0) throw new LlmError('adapter provider names must be non-empty', 'INVALID_ADAPTER')
+        if (provider.length === 0) throw new LlmError('INVALID_ADAPTER', 'adapter provider names must be non-empty')
         if (this.adapters.has(provider) && !owned.has(provider)) {
-          throw new LlmError(`an adapter for provider "${provider}" is already registered`, 'DUPLICATE_ADAPTER')
+          throw new LlmError('DUPLICATE_ADAPTER', `an adapter for provider "${provider}" is already registered`)
         }
       }
       for (const provider of providers) {
         const info = adapter.providerInfo(provider)
         if (info.id !== provider || info.name.length === 0) {
-          throw new LlmError(`adapter metadata for provider "${provider}" must preserve its id`, 'INVALID_ADAPTER')
+          throw new LlmError('INVALID_ADAPTER', `adapter metadata for provider "${provider}" must preserve its id`)
         }
         this.adapters.set(provider, { adapter, provider: { ...info } })
         owned.add(provider)
@@ -276,8 +276,8 @@ export class LlmRuntime extends Service {
     const registration = this.registration(config.provider)
     if (config.model === '') {
       throw new LlmError(
-        `provider "${config.provider}" requires an explicit model; set AgentOptions.model (advertised: ${(await this.listModels(config.provider)).join(', ')})`,
         'NO_MODEL',
+        `provider "${config.provider}" requires an explicit model; set AgentOptions.model (advertised: ${(await this.listModels(config.provider)).join(', ')})`,
       )
     }
     await registration.adapter.resolveModel(config.provider, config.model, signal)
@@ -298,7 +298,7 @@ export class LlmRuntime extends Service {
     const registration = this.find(provider)
     if (registration === undefined) {
       const available = [...this.adapters.keys()].join(', ') || 'none'
-      throw new LlmError(`no adapter registered for provider "${provider}" (registered: ${available})`, 'NO_ADAPTER')
+      throw new LlmError('NO_ADAPTER', `no adapter registered for provider "${provider}" (registered: ${available})`)
     }
     return registration
   }

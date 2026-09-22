@@ -11,7 +11,7 @@
 
 | 通道 | 方向 | 用途 |
 |---|---|---|
-| Tauri `invoke` | WebView → Rust | 窗口/桌宠/TTS/插件启停/MCP 配置/sidecar 状态 |
+| Tauri `invoke` | WebView → Rust | 窗口/桌宠/在线 TTS/插件启停/MCP 配置/sidecar 状态 |
 | HTTP/SSE `:53620` | WebView → Node backend | chat / settings / history / stream / shutdown |
 | HTTP `/rpc` | **Node agent → Rust** | memory SQLite、grep |
 | 文件（COS_HOME） | 壳 ↔ sidecar 插件 | profile 启停、mcp-servers、diver-settings |

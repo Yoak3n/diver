@@ -1,26 +1,284 @@
 <script setup lang="ts">
+import { computed, onMounted, ref, watch } from "vue";
 import type { SettingsState } from "../../composables/useSettings";
-import { tauriAvailable } from "../../tauri";
+import {
+  getTtsConfig,
+  listTtsModels,
+  listTtsVoices,
+  setTtsConfig,
+  tauriAvailable,
+} from "../../tauri";
+import type { TtsVoice } from "../../types";
+import { speakMessageText, stopSpeaking } from "../../tts";
 
-defineProps<{
+const props = defineProps<{
   state: SettingsState;
 }>();
+
+const ready = ref(false);
+const saving = ref(false);
+const msg = ref("");
+const err = ref("");
+
+const enabled = ref(false);
+const provider = ref("mimo");
+const voice = ref("冰糖");
+const model = ref("mimo-v2.5-tts");
+const speed = ref(1);
+const apiHost = ref("");
+const resourceId = ref("");
+const styleInstruction = ref("");
+const format = ref("mp3");
+const customVoices = ref<string[]>([]);
+const newCustomVoice = ref("");
+
+const apiKey = ref("");
+const hasApiKey = ref(false);
+
+const voices = ref<TtsVoice[]>([]);
+const models = ref<string[]>([]);
+
+const PROVIDERS = [
+  { id: "mimo", label: "MiMo TTS", needsKey: true },
+  { id: "minimax", label: "MiniMax", needsKey: true },
+  { id: "volcengine", label: "火山引擎 Agent", needsKey: true },
+] as const;
+
+const currentProviderLabel = computed(
+  () => PROVIDERS.find((p) => p.id === provider.value)?.label ?? provider.value,
+);
+
+const isMimo = computed(() => provider.value === "mimo");
+const isMinimax = computed(() => provider.value === "minimax");
+const isVolc = computed(() => provider.value === "volcengine");
+
+function applyView(v: Awaited<ReturnType<typeof getTtsConfig>>) {
+  enabled.value = v.enabled;
+  provider.value = v.provider;
+  voice.value = v.voice;
+  model.value = v.model;
+  speed.value = v.speed;
+  apiHost.value = v.apiHost;
+  resourceId.value = v.resourceId;
+  styleInstruction.value = v.styleInstruction;
+  format.value = v.format;
+  customVoices.value = [...v.customVoices];
+  hasApiKey.value = v.hasApiKey;
+  apiKey.value = "";
+  props.state.ttsEnabled = v.enabled;
+  props.state.ttsVoice = v.voice;
+}
+
+async function refreshVoicesModels() {
+  try {
+    voices.value = await listTtsVoices(provider.value);
+  } catch {
+    voices.value = [];
+  }
+  try {
+    models.value = await listTtsModels(provider.value);
+  } catch {
+    models.value = [];
+  }
+  if (!voice.value && voices.value.length > 0) {
+    voice.value = voices.value[0].id;
+  }
+  if (models.value.length > 0 && !models.value.includes(model.value)) {
+    model.value = models.value[0];
+  }
+}
+
+async function load() {
+  if (!tauriAvailable()) return;
+  try {
+    applyView(await getTtsConfig());
+    await refreshVoicesModels();
+    ready.value = true;
+  } catch (e) {
+    err.value = e instanceof Error ? e.message : String(e);
+  }
+}
+
+async function persist() {
+  if (!tauriAvailable()) return;
+  saving.value = true;
+  err.value = "";
+  msg.value = "";
+  try {
+    const view = await setTtsConfig({
+      enabled: enabled.value,
+      provider: provider.value,
+      voice: voice.value,
+      model: model.value,
+      speed: speed.value,
+      apiHost: apiHost.value,
+      resourceId: resourceId.value,
+      styleInstruction: styleInstruction.value,
+      format: format.value,
+      customVoices: [...customVoices.value],
+      // secret：空串 = 留空不改
+      apiKey: apiKey.value.trim(),
+    });
+    applyView(view);
+    msg.value = "已保存";
+    await refreshVoicesModels();
+  } catch (e) {
+    err.value = e instanceof Error ? e.message : String(e);
+  } finally {
+    saving.value = false;
+  }
+}
+
+async function onProviderChange() {
+  model.value = "";
+  apiHost.value = "";
+  await refreshVoicesModels();
+  await persist();
+}
+
+async function preview() {
+  err.value = "";
+  msg.value = "";
+  try {
+    stopSpeaking();
+    // 试听用短句；未保存的 secret 不生效，走已存配置
+    await persist();
+    await speakMessageText("你好，很高兴认识你。", voice.value || undefined);
+    msg.value = "试听完成";
+  } catch (e) {
+    err.value = e instanceof Error ? e.message : String(e);
+  }
+}
+
+function addCustomVoice() {
+  const id = newCustomVoice.value.trim();
+  if (!id || customVoices.value.includes(id)) return;
+  customVoices.value.push(id);
+  newCustomVoice.value = "";
+  void persist();
+}
+
+function removeCustomVoice(id: string) {
+  customVoices.value = customVoices.value.filter((v) => v !== id);
+  void persist();
+}
+
+watch(enabled, () => void persist());
+watch(voice, () => {
+  props.state.ttsVoice = voice.value;
+  void persist();
+});
+watch(model, () => void persist());
+watch(speed, () => void persist());
+watch(format, () => void persist());
+watch(apiHost, () => void persist());
+watch(resourceId, () => void persist());
+watch(styleInstruction, () => void persist());
+
+onMounted(() => void load());
 </script>
 
 <template>
-  <label class="switch-row">
-    <input v-model="state.ttsEnabled" type="checkbox" />
-    <span>语音朗读回复（本地 TTS）</span>
-  </label>
-  <template v-if="state.ttsEnabled">
-    <label class="group-title">语音</label>
-    <select v-model="state.ttsVoice" class="model-select">
-      <option v-for="v in state.voices" :key="v" :value="v">{{ v }}</option>
-    </select>
+  <p v-if="!tauriAvailable()" class="hint">在线 TTS 需要在 Diver 桌面应用中使用。</p>
+  <template v-else>
+    <label class="switch-row">
+      <input v-model="enabled" type="checkbox" />
+      <span>语音朗读回复（在线 TTS）</span>
+    </label>
+
+    <template v-if="enabled || ready">
+      <label class="group-title">服务商</label>
+      <select v-model="provider" class="model-select" @change="onProviderChange">
+        <option v-for="p in PROVIDERS" :key="p.id" :value="p.id">{{ p.label }}</option>
+      </select>
+
+      <label class="group-title">声线</label>
+      <select v-model="voice" class="model-select">
+        <option v-for="v in voices" :key="v.id" :value="v.id">{{ v.name }}（{{ v.id }}）</option>
+      </select>
+      <div class="row">
+        <input
+          v-model="newCustomVoice"
+          class="text-input"
+          type="text"
+          placeholder="自定义声线 ID"
+          @keydown.enter.prevent="addCustomVoice"
+        />
+        <button class="btn" type="button" @click="addCustomVoice">添加</button>
+      </div>
+      <div v-if="customVoices.length" class="chips">
+        <span v-for="id in customVoices" :key="id" class="chip">
+          {{ id }}
+          <button type="button" class="chip-x" @click="removeCustomVoice(id)">×</button>
+        </span>
+      </div>
+
+      <template v-if="models.length">
+        <label class="group-title">模型</label>
+        <select v-model="model" class="model-select">
+          <option v-for="m in models" :key="m" :value="m">{{ m }}</option>
+        </select>
+      </template>
+
+      <label class="group-title">语速 {{ speed.toFixed(2) }}x</label>
+      <input v-model.number="speed" type="range" min="0.5" max="2" step="0.05" class="range" />
+
+      <label class="group-title">音频格式</label>
+      <select v-model="format" class="model-select">
+        <option value="mp3">mp3</option>
+        <option value="wav">wav</option>
+      </select>
+
+      <template v-if="isMimo">
+        <label class="group-title">风格指令（可选）</label>
+        <input
+          v-model="styleInstruction"
+          class="text-input"
+          type="text"
+          placeholder="例如：用轻快上扬的语调，语速稍快"
+        />
+        <label class="group-title">API 地址</label>
+        <input v-model="apiHost" class="text-input" type="text" placeholder="https://api.xiaomimimo.com/v1" />
+        <label class="group-title">API Key {{ hasApiKey ? "（已配置）" : "" }}</label>
+        <input v-model="apiKey" class="text-input" type="password" placeholder="留空则不修改" />
+      </template>
+
+      <template v-else-if="isMinimax">
+        <label class="group-title">API Host</label>
+        <select v-model="apiHost" class="model-select">
+          <option value="https://api.minimax.io">Official (api.minimax.io)</option>
+          <option value="https://api.minimaxi.chat">Global (api.minimaxi.chat)</option>
+          <option value="https://api.minimax.chat">Mainland China (api.minimax.chat)</option>
+        </select>
+        <label class="group-title">API Key {{ hasApiKey ? "（已配置）" : "" }}</label>
+        <input v-model="apiKey" class="text-input" type="password" placeholder="留空则不修改" />
+      </template>
+
+      <template v-else-if="isVolc">
+        <label class="group-title">API 端点</label>
+        <input
+          v-model="apiHost"
+          class="text-input"
+          type="text"
+          placeholder="https://openspeech.bytedance.com/api/v3/tts/unidirectional"
+        />
+        <label class="group-title">Resource ID（可选）</label>
+        <input v-model="resourceId" class="text-input" type="text" placeholder="如 volc.service_type.10029" />
+        <label class="group-title">API Key {{ hasApiKey ? "（已配置）" : "" }}</label>
+        <input v-model="apiKey" class="text-input" type="password" placeholder="留空则不修改" />
+      </template>
+
+      <div class="row actions">
+        <button class="btn" type="button" :disabled="saving" @click="persist">
+          {{ saving ? "保存中…" : "保存" }}
+        </button>
+        <button class="btn" type="button" :disabled="saving" @click="preview">试听</button>
+      </div>
+      <p v-if="msg" class="hint ok">{{ msg }}</p>
+      <p v-if="err" class="hint bad">{{ err }}</p>
+      <p class="hint">当前：{{ currentProviderLabel }} · 请求由应用壳发起，不再使用本地 SAPI。</p>
+    </template>
   </template>
-  <p v-if="!tauriAvailable()" class="hint">
-    （浏览器模式使用系统语音，Tauri 应用内使用本地 SAPI 语音）
-  </p>
 </template>
 
 <style scoped>
@@ -37,9 +295,10 @@ defineProps<{
   font-size: 12px;
   color: #8d89a1;
   letter-spacing: 1px;
-  margin-top: 4px;
+  margin-top: 10px;
 }
-.model-select {
+.model-select,
+.text-input {
   background: #141420;
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 10px;
@@ -48,10 +307,64 @@ defineProps<{
   font-size: 13px;
   outline: none;
   font-family: inherit;
+  width: 100%;
+  box-sizing: border-box;
+}
+.range {
+  width: 100%;
+}
+.row {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+.actions {
+  margin-top: 14px;
+}
+.btn {
+  background: #2a2740;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  color: #e8e6f0;
+  padding: 8px 14px;
+  font-size: 13px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+.chip {
+  background: #1b1a2b;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 12px;
+  color: #c9c5dc;
+}
+.chip-x {
+  border: 0;
+  background: transparent;
+  color: #8d89a1;
+  cursor: pointer;
+  margin-left: 4px;
 }
 .hint {
   font-size: 11px;
   color: #6f6b85;
-  margin: 0;
+  margin: 8px 0 0;
+}
+.hint.ok {
+  color: #7dcea0;
+}
+.hint.bad {
+  color: #e78a8a;
 }
 </style>

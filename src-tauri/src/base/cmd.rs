@@ -124,22 +124,59 @@ pub fn get_sidecar_url() -> String {
     SidecarManager::global().api_base_url()
 }
 
-/// 本地 TTS 朗读文本。
+/// 读取在线 TTS 配置（secret 只回 has_* 布尔）。
 #[tauri::command]
-pub fn speak(app: AppHandle, text: String, voice: Option<String>) -> bool {
-    tts::speak(&app, &text, voice.as_deref())
+pub fn get_tts_config(app: AppHandle) -> crate::config::tts::TtsConfigView {
+    crate::config::tts::load_config(&app).to_view()
+}
+
+/// 保存在线 TTS 配置（secret 空串 = 留空不改）。
+#[tauri::command]
+pub fn set_tts_config(
+    app: AppHandle,
+    config: crate::config::tts::TtsConfigPatch,
+) -> Result<crate::config::tts::TtsConfigView, String> {
+    let mut cfg = crate::config::tts::load_config(&app);
+    cfg.merge_from(&config);
+    if !crate::config::tts::save_config(&app, &cfg) {
+        return Err("写入 TTS 配置失败".into());
+    }
+    Ok(cfg.to_view())
+}
+
+/// 列出当前服务商的声线（内置预设 + 自定义）。
+#[tauri::command]
+pub fn tts_list_voices(
+    app: AppHandle,
+    provider: Option<String>,
+) -> Vec<crate::config::tts::TtsVoice> {
+    let mut cfg = crate::config::tts::load_config(&app);
+    if let Some(p) = provider {
+        cfg.provider = crate::config::tts::TtsProvider::parse(&p);
+    }
+    tts::list_voices(&cfg)
+}
+
+/// 列出当前服务商可选模型（advisory）。
+#[tauri::command]
+pub fn tts_list_models(provider: String) -> Vec<String> {
+    tts::list_models(crate::config::tts::TtsProvider::parse(&provider))
+}
+
+/// 在线合成语音（返回 base64 音频）。`voice` 可覆盖配置中的声线。
+#[tauri::command]
+pub async fn tts_synthesize(
+    app: AppHandle,
+    text: String,
+    voice: Option<String>,
+) -> Result<crate::config::tts::TtsAudio, String> {
+    tts::synthesize_from_config(&app, &text, voice.as_deref()).await
 }
 
 /// 弹出原生通知（托盘通知；前端可直接调用，Node 侧经 /rpc notify::show）。
 #[tauri::command]
 pub fn notify(app: AppHandle, title: String, body: String) {
     crate::base::notify::show(&app, &title, &body);
-}
-
-/// 列出系统已安装的 TTS 语音。
-#[tauri::command]
-pub fn list_voices(app: AppHandle) -> Vec<String> {
-    tts::list_voices(&app)
 }
 
 /// 读取启动窗口配置。

@@ -9,6 +9,10 @@ use serde_json::Value;
 /// 参数：`{ "title": "...", "body": "..." }`；均缺省时用占位文案。
 pub fn dispatch(method: &str, params: &Value) -> Result<Value, String> {
     match method {
+        "notify::ping" => {
+            // 连通性探测：不弹通知（native_status 用这个，绝不能拿 show 当探测）。
+            Ok(Value::Null)
+        }
         "notify::show" => {
             let title = params
                 .get("title")

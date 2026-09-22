@@ -1,6 +1,6 @@
 // Diver 陪伴 UI — Tauri 原生能力封装（无 Tauri 环境时优雅降级）
 
-import type { SidecarStatus } from "./types";
+import type { SidecarStatus, TtsAudio, TtsConfigPatch, TtsConfigView, TtsVoice } from "./types";
 
 declare global {
   interface Window {
@@ -20,14 +20,29 @@ async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T
   return invoke<T>(cmd, args);
 }
 
-/** 本地 TTS 朗读。 */
-export function speakText(text: string, voice?: string): Promise<boolean> {
-  return invoke<boolean>("speak", { text, voice: voice || null });
+/** 读取在线 TTS 配置（secret 只回 has_*）。 */
+export function getTtsConfig(): Promise<TtsConfigView> {
+  return invoke<TtsConfigView>("get_tts_config");
 }
 
-/** 列出系统 TTS 语音。 */
-export function listVoices(): Promise<string[]> {
-  return invoke<string[]>("list_voices");
+/** 保存在线 TTS 配置（secret 空串 = 留空不改）。 */
+export function setTtsConfig(config: TtsConfigPatch): Promise<TtsConfigView> {
+  return invoke<TtsConfigView>("set_tts_config", { config });
+}
+
+/** 列出服务商声线。 */
+export function listTtsVoices(provider?: string): Promise<TtsVoice[]> {
+  return invoke<TtsVoice[]>("tts_list_voices", { provider: provider || null });
+}
+
+/** 列出服务商可选模型。 */
+export function listTtsModels(provider: string): Promise<string[]> {
+  return invoke<string[]>("tts_list_models", { provider });
+}
+
+/** 在线合成语音（base64 音频）。 */
+export function synthesizeTts(text: string, voice?: string): Promise<TtsAudio> {
+  return invoke<TtsAudio>("tts_synthesize", { text, voice: voice || null });
 }
 
 /** sidecar 状态。 */

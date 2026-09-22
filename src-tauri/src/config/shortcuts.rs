@@ -49,7 +49,9 @@ impl ShortcutAction {
 pub struct ShortcutBinding {
     /// 稳定 id（持久化主键；修改 accelerator/action 时保持不变）。
     pub id: String,
-    /// 全局快捷键（global_hotkey 语法：修饰键在前，如 `ctrl+shift+m` / `alt+` 前缀）。
+    /// 全局快捷键（global-hotkey / tauri-plugin-global-shortcut 词法：
+    /// 修饰键在前 + 单个主键，如 `ctrl+shift+m` / `alt+1` / `cmdorctrl+f5`。
+    /// 前端按键捕获（src/hotkey.ts）按同一词法生成，勿单方面改格式）。
     pub accelerator: String,
     /// 触发的动作。
     pub action: ShortcutAction,

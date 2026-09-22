@@ -1,19 +1,19 @@
 <script setup lang="ts">
 import { computed } from "vue";
+import { useRouter } from "vue-router";
 import { useChat } from "../composables/chat";
 import { useSettings } from "../composables/useSettings";
 import TopBar from "../components/TopBar.vue";
 import ChatArea from "../components/ChatArea.vue";
 import ComposerBar from "../components/ComposerBar.vue";
-import SettingsPanel from "../components/SettingsPanel.vue";
 
+const router = useRouter();
 const chat = useChat();
-const settings = useSettings(chat);
+const settings = useSettings();
 
 // 解构到顶层：模板中 ref 自动解包
 const {
   healthInfo,
-  settingsInfo,
   messages,
   tools,
   busy,
@@ -29,23 +29,17 @@ const {
   pendingQuestion,
   submitQuestionAnswer,
 } = chat;
-const {
-  state,
-  providerDecls,
-  currentProviderDecl,
-  currentProviderModels,
-  openSettings,
-  save,
-  doRestartSidecar,
-  toggleWindowStartup,
-  changePetSize,
-} = settings;
+const { state, doRestartSidecar } = settings;
 
-// TTS 状态（开关/语音）由设置面板持有，注入给聊天核心做自动朗读
+// TTS 状态（开关/语音）由设置状态持有，注入给聊天核心做自动朗读
 chat.setTtsSource(() => ({
   enabled: state.ttsEnabled,
   voice: state.ttsVoice,
 }));
+
+function openSettings() {
+  void router.push({ name: "settings", params: { tab: "models" } });
+}
 
 const dotClass = computed(() => (canSend.value ? "on" : busy.value ? "busy" : "off"));
 </script>
@@ -84,21 +78,6 @@ const dotClass = computed(() => (canSend.value ? "on" : busy.value ? "busy" : "o
       :model-configured="modelConfigured"
       :error="error"
       @send="send"
-    />
-
-    <SettingsPanel
-      :open="state.open"
-      :state="state"
-      :health-info="healthInfo"
-      :settings-info="settingsInfo"
-      :provider-decls="providerDecls"
-      :current-provider-decl="currentProviderDecl"
-      :current-provider-models="currentProviderModels"
-      @close="state.open = false"
-      @save="save"
-      @restart="doRestartSidecar"
-      @toggle-window-startup="toggleWindowStartup"
-      @change-pet-size="changePetSize"
     />
   </div>
 </template>

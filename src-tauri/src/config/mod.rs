@@ -12,6 +12,7 @@ pub mod mcp;
 pub mod pet_window;
 pub mod profile;
 pub mod shortcuts;
+pub mod tts;
 pub mod window_startup;
 
 use std::path::PathBuf;

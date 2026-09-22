@@ -15,7 +15,7 @@ Diver 是三层架构的桌面陪伴 agent：Rust 负责壳与原生扩展，Web
 │  · sidecar 生命周期管理（spawn/就绪检测/日志/重启） │
 │  · 插件启停（profile 补丁 + 重启，见 plugins.md）   │
 │  · 托盘 / 窗口管理 / 轻量模式 / 开机自启            │
-│  · 本地 TTS（Windows SAPI 语音朗读）               │
+│  · 在线 TTS（MiMo / MiniMax / 火山，reqwest 合成） │
 │  · 本地服务（axum）：SQLite 记忆后端 JSON-RPC      │
 │  · 单实例（命名管道通知已有实例）                   │
 ├──────────────────────────────────────────────────┤
@@ -113,7 +113,7 @@ SQLite 文件 `diver-memory.sqlite3`。
 |---|---|
 | `get_sidecar_status` / `restart_sidecar` / `get_sidecar_url` | sidecar 状态 / 重启 / UI 地址 |
 | `list_plugins` / `set_plugin_enabled` / `toggle_plugin` / `get_plugin_paths` | 插件启停（见 [plugins.md](plugins.md)） |
-| `speak` / `list_voices` | TTS 朗读（`resources/speak.ps1` 调 SAPI）/ 枚举语音 |
+| `get/set_tts_config` / `tts_list_voices` / `tts_list_models` / `tts_synthesize` | 在线 TTS 配置与合成（MiMo / MiniMax / 火山） |
 | `show_main_window` | 从托盘/桌宠唤起主窗口 |
 | `get/set_window_startup_config` | 窗口启动配置读写 |
 
@@ -135,4 +135,4 @@ sidecar 状态变更通过事件 `sidecar://status` 推给前端。
 `src/api.ts` 封装 sidecar HTTP API（`/api/health`、`/api/chat`、`/api/settings`、
 `/api/question-answer`），`streamEvents` 用 EventSource/SSE 消费流式事件；
 `composables/useChat.ts`（主窗口）与 `pet/usePetChat.ts`（桌宠）各自连接同一 SSE，
-消息互通（共用同一会话/记忆）。TTS 由前端调 `speak` command 触发，口型同步在桌宠侧驱动。
+消息互通（共用同一会话/记忆）。TTS 由前端调 `tts_synthesize` 合成后经 `<audio>` 播放，口型同步在桌宠侧按真实音频时长驱动。

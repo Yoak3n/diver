@@ -1,7 +1,7 @@
 // 桌宠轻量聊天：只保留最近几条消息 + 发送 + SSE 事件流（与主窗口并存）
 
 import { computed, onBeforeUnmount, ref } from "vue";
-import { answerQuestion, getHistory, getSettings, health, sendChat, streamEvents } from "../api";
+import { answerQuestion, getHistory, health, sendChat, streamEvents } from "../api";
 import type { ChatMessage, StreamEvent, UserQuestion, UserQuestionAnswerItem } from "../types";
 import { onTauriEvent, tauriAvailable, waitForSidecarReady } from "../tauri";
 
@@ -197,9 +197,12 @@ export function usePetChat() {
   /** 同步 TTS 开关/语音（与主窗口共享 diver 设置）。 */
   async function refreshSettings() {
     try {
-      const s = await getSettings();
-      ttsEnabled.value = !!s.ttsEnabled;
-      ttsVoice.value = s.ttsVoice ?? "";
+      // TTS 开关/声线来自壳层在线 TTS 配置（tts.json）
+      const { getTtsConfig } = await import("../tauri");
+      const cfg = await getTtsConfig();
+      ttsEnabled.value = !!cfg.enabled;
+      ttsVoice.value = cfg.voice ?? "";
+      
     } catch {
       /* 设置读取失败不阻断 */
     }

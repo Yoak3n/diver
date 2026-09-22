@@ -10,9 +10,9 @@ import type { WebState } from './state.ts'
 export type { WebState } from './state.ts'
 export type { PluginInfo } from './plugins.ts'
 
-/** provider 声明 + 每个字段的当前状态（secret 字段只回传布尔，供设置面板渲染）。 */
+/** provider 声明 + 每个字段的当前状态（secret 字段只回传布尔，settings 非 secret 字段附当前值）。 */
 export interface ProviderDeclView extends Omit<ProviderConfigDecl, 'fields'> {
-  fields: Array<AdapterConfigField & { configured: boolean }>
+  fields: Array<AdapterConfigField & { configured: boolean; value?: string }>
 }
 
 export interface WebHandlerDeps {

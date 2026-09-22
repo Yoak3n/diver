@@ -11,9 +11,8 @@ defineProps<{
 </script>
 
 <template>
-  <template v-if="state.activeTab === 'models'">
-    <!-- 提供商卡片选择 -->
-    <label class="group-title">提供商</label>
+  <!-- 提供商卡片选择 -->
+  <label class="group-title">提供商</label>
     <div class="provider-grid">
       <button
         v-for="p in providerDecls"
@@ -69,11 +68,13 @@ defineProps<{
             <template v-if="f.secret">
               · {{ f.configured ? "已配置 ✓" : "未配置" }}
             </template>
+            <template v-else-if="f.store === 'settings'">
+              · 当前：{{ (state.configInputs[currentProviderDecl.provider][f.key] ?? f.value ?? "") || "默认" }}
+            </template>
           </p>
         </template>
       </div>
     </template>
-  </template>
 </template>
 
 <style scoped>

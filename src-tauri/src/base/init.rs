@@ -1,13 +1,36 @@
-use crate::base::cmd::*;
+use crate::commands::*;
 use crate::base::window::pet as pet_win;
 use crate::base::window::schema::WindowType;
-use tauri::{generate_handler, AppHandle, Builder, Manager, RunEvent};
+use tauri::{generate_handler, AppHandle, Builder, Emitter, Manager, RunEvent};
 use tauri_plugin_log::{Target, TargetKind, TimezoneStrategy};
+
+/// 无子进程 HTTP 健康探测（避免 curl/黑窗）。
+fn http_health_ok(port: u16) -> bool {
+    use std::io::{Read, Write};
+    use std::net::TcpStream;
+    use std::time::Duration;
+    let Ok(mut stream) = TcpStream::connect(("127.0.0.1", port)) else {
+        return false;
+    };
+    let _ = stream.set_read_timeout(Some(Duration::from_millis(400)));
+    let _ = stream.set_write_timeout(Some(Duration::from_millis(400)));
+    let req = format!(
+        "GET /api/health HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\n\r\n"
+    );
+    if stream.write_all(req.as_bytes()).is_err() {
+        return false;
+    }
+    let mut buf = [0u8; 512];
+    let n = stream.read(&mut buf).unwrap_or(0);
+    let text = String::from_utf8_lossy(&buf[..n]);
+    text.starts_with("HTTP/1.1 200") || text.starts_with("HTTP/1.0 200")
+}
 
 pub fn generate_handlers() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync + 'static
 {
     generate_handler![
         get_sidecar_status,
+        get_setup_progress,
         restart_sidecar,
         get_sidecar_url,
         list_shortcuts,
@@ -29,6 +52,7 @@ pub fn generate_handlers() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + 
         tts_list_voices,
         tts_list_models,
         tts_synthesize,
+        tts_synthesize_stream,
         is_pet_window_open,
         notify,
         presence_phase,
@@ -136,21 +160,15 @@ pub fn configure(builder: Builder<tauri::Wry>) -> Builder<tauri::Wry> {
             crate::base::explore_policy::spawn_explore_scheduler();
         }
 
-        // 启动 Node sidecar（cos harness + companion bundle，agent 常驻）。
-        let sidecar = crate::base::sidecar::SidecarManager::global();
-        if !sidecar.start(app.handle()) {
-            log::error!("sidecar 启动失败，请检查依赖安装状态");
-        }
-
-        // 启动窗口：按用户配置决定是否自动打开（默认全部打开）。
-        // setup 在事件循环启动前执行：此处调用 build 是安全的例外路径。
+        // 总是先显示主窗口（首启准备遮罩盖在上面），再后台拉起 sidecar。
         let startup = crate::config::window_startup::load_config(app.handle());
         log::info!(
             "[init] startup config: auto_open_main={} auto_open_pet={}",
             startup.auto_open_main,
             startup.auto_open_pet
         );
-        if startup.auto_open_main {
+        // 首启/未就绪时强制出主窗口，避免只看到遮罩或空壳。
+        if startup.auto_open_main || crate::base::setup_progress::last_progress().is_none() {
             crate::base::window::manager::Manager::global()
                 .show_window(WindowType::Main, None);
             log::info!("[init] main window show_window called");
@@ -163,6 +181,63 @@ pub fn configure(builder: Builder<tauri::Wry>) -> Builder<tauri::Wry> {
             } else {
                 log::info!("[init] pet window shown");
             }
+        }
+
+        // 后台：解压依赖 + 解析/下载 Node + 启动 sidecar（不阻塞 setup / 窗口显示）。
+        {
+            let handle = app.handle().clone();
+            std::thread::spawn(move || {
+                let handle2 = handle.clone();
+                let sidecar = crate::base::sidecar::SidecarManager::global();
+                crate::base::setup_progress::emit_progress(
+                    &handle,
+                    "start",
+                    "正在启动助手…",
+                    0.0,
+                    false,
+                );
+                if sidecar.start(&handle2) {
+                    // 就绪以 DIVER_READY / HTTP health 为准；这里只表示进程已拉起
+                    crate::base::setup_progress::emit_progress(
+                        &handle,
+                        "start",
+                        "正在启动助手…",
+                        85.0,
+                        false,
+                    );
+                    // 轮询 health：backend 就绪后主动收起遮罩（不单靠 stdout 里的 DIVER_READY）
+                    let handle2 = handle.clone();
+                    std::thread::spawn(move || {
+                        let port = crate::base::sidecar::SidecarManager::global().port();
+                        for i in 0..40 {
+                            std::thread::sleep(std::time::Duration::from_millis(500));
+                            if http_health_ok(port) {
+                                crate::base::setup_progress::emit_progress(
+                                    &handle2,
+                                    "ready",
+                                    "就绪",
+                                    100.0,
+                                    true,
+                                );
+                                let _ = handle2.emit(
+                                    "backend://ready",
+                                    crate::base::sidecar::SidecarManager::global().status(),
+                                );
+                                return;
+                            }
+                            if i == 39 {
+                                crate::base::setup_progress::emit_error(
+                                    &handle2,
+                                    "助手未就绪（HTTP 健康检查超时），请查看日志",
+                                );
+                            }
+                        }
+                    });
+                } else {
+                    log::error!("sidecar 启动失败，请检查依赖安装状态");
+                    crate::base::setup_progress::emit_error(&handle, "助手启动失败，请查看日志");
+                }
+            });
         }
 
         Ok(())

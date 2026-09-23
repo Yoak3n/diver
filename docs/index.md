@@ -7,6 +7,7 @@ Diver 是基于 **Tauri 2 + Vue 3 + DeepSeek Harness** 的桌面陪伴 agent。
 
 - [README](../README.md) - 项目简介、快速开始、架构总览
 - [开发指南](development.md) - 环境要求、运行、调试、冒烟测试
+- [Agent / 维护者约定](../AGENTS.md) - **Rust 代码组织硬性规范**：文件长度、分层、解耦与单测约束
 
 ## 架构
 
@@ -24,5 +25,5 @@ Diver 是基于 **Tauri 2 + Vue 3 + DeepSeek Harness** 的桌面陪伴 agent。
 
 ## 规划
 
-- [Windows 分发](distribution.md) - NSIS 安装包、随包 Node（非 SEA）运行时布局、插件开放目录
+- [Windows 分发](distribution.md) - NSIS 安装包、不随包 Node（首启解析/下载）运行时布局、插件开放目录
 - [打包与路线图](roadmap.md) - 已知限制、打包分发策略、后续方向（插件深水区见 plugins.md）

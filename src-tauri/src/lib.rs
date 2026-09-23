@@ -1,4 +1,5 @@
 pub mod base;
+pub mod commands;
 pub mod config;
 pub mod plugins;
 pub mod services;

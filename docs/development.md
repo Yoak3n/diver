@@ -2,6 +2,8 @@
 
 环境、运行、调试与冒烟测试。
 
+改 Rust 代码前请先读 [AGENTS.md](../AGENTS.md)：文件长度、分层依赖、command 薄适配、可单测等硬性规范。
+
 ## 环境要求
 
 - **Node.js ≥ 22**（companion bundle 用原生 type-stripping 直接运行 TS，零构建）

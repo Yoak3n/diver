@@ -40,6 +40,7 @@ diver/
 │  ├─ src/config/          # 持久化配置（window_startup / tts / mcp / shortcuts…）
 │  ├─ src/services/        # 本地服务：axum /rpc + memory RPC handler
 │  └─ config/tts.json     # 在线 TTS 配置
+├─ crates/diver-geom/     # 桌宠几何纯函数（config/shell/core 共用）
 ├─ crates/diver-memory/    # Rust 记忆后端 crate（SQLite 存储 + 确定性逻辑）
 │  └─ src/db/              # store / topics / events / entities / mappers…
 ├─ harness/                # Node sidecar workspace（pnpm，自研 cos）

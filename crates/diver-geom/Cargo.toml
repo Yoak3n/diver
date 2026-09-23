@@ -1,0 +1,8 @@
+[package]
+name = "diver-geom"
+version = "0.1.0"
+edition = "2021"
+license.workspace = true
+description = "Diver 桌宠窗口几何纯函数（无 IO / 无 Tauri）"
+
+[dependencies]

@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
+    "crates/diver-geom",
     "crates/diver-memory",
     "crates/diver-presence",
     "crates/diver-search",

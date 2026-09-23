@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
 
 use super::{load, save};
-use crate::core::pet_geom::{clamp_size_percent, PET_SIZE_DEFAULT_PERCENT};
+use diver_geom::{clamp_size_percent, PET_SIZE_DEFAULT_PERCENT};
 
 pub const FILE_NAME: &str = "pet-window.json";
 

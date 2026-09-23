@@ -63,10 +63,11 @@ src-tauri/src/
 ├── app/                 # 组装与生命周期（setup / events / tray / 快捷键绑定）
 ├── shell/               # 窗口与桌面集成（window / pet 几何动画 / lightweight）
 ├── core/                # 可单测业务（sidecar / node_runtime / tts / plugins / …）
-├── config/              # 持久化配置（保持现有边界）
+├── config/              # 持久化配置（不得依赖 app/shell/core/commands）
 └── services/            # 本地 axum RPC（供 sidecar 调用）
 
 crates/
+├── diver-geom/          # 桌宠几何纯函数（config/shell/core 同向下依赖）
 ├── diver-memory/        # SQLite 记忆（禁网络/进程）
 ├── diver-presence/      # 陪伴状态机
 └── diver-search/        # 搜索引擎

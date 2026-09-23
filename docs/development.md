@@ -32,12 +32,15 @@ diver/
 │  ├─ composables/         # useChat（主窗口）/ useSettings
 │  └─ pet/                 # 桌宠：PetApp.vue / live2d.ts / usePetChat / pet.html
 ├─ src-tauri/              # Rust 壳
-│  ├─ src/base/            # sidecar / tts / tray / window(Manager) / lightweight /
-│  │                       # timer / state / init / cmd / handle
-│  ├─ src/config/          # window_startup 配置
+│  ├─ src/commands/        # Tauri IPC 薄适配（system/plugins/shortcuts/tts/presence/pet/config）
+│  ├─ src/base/            # 暂存业务实现：sidecar/ tts/ window/ tray / lightweight /
+│  │                       # timer / state / init / handle / node_runtime（Phase2 迁 app/shell/core）
+│  ├─ src/plugins/         # 插件 catalog/profile/preflight/install
+│  ├─ src/config/          # 持久化配置（window_startup / tts / mcp / shortcuts…）
 │  ├─ src/services/        # 本地服务：axum /rpc + memory RPC handler
 │  └─ config/tts.json     # 在线 TTS 配置
 ├─ crates/diver-memory/    # Rust 记忆后端 crate（SQLite 存储 + 确定性逻辑）
+│  └─ src/db/              # store / topics / events / entities / mappers…
 ├─ harness/                # Node sidecar workspace（pnpm，自研 cos）
 │  ├─ packages/            # 所有 @cos/* 工作区插件包
 │  │  └─ profile/          # DSH 对齐的 profile 模型（home/双锚点/平面回退/reconcile）

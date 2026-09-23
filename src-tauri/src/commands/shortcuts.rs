@@ -2,7 +2,7 @@
 
 use tauri::AppHandle;
 
-use crate::base::shortcut::ShortcutManager;
+use crate::app::shortcut::ShortcutManager;
 use crate::config::shortcuts::ShortcutBinding;
 
 /// 列出全局快捷键绑定（含启用状态）。

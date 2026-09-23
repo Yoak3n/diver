@@ -33,8 +33,9 @@ diver/
 │  └─ pet/                 # 桌宠：PetApp.vue / live2d.ts / usePetChat / pet.html
 ├─ src-tauri/              # Rust 壳
 │  ├─ src/commands/        # Tauri IPC 薄适配（system/plugins/shortcuts/tts/presence/pet/config）
-│  ├─ src/base/            # 暂存业务实现：sidecar/ tts/ window/ tray / lightweight /
-│  │                       # timer / state / init / handle / node_runtime（Phase2 迁 app/shell/core）
+│  ├─ src/app/             # 组装与生命周期（setup / events / handle / state / tray / shortcut）
+│  ├─ src/shell/           # 窗口与桌面集成（window / lightweight / pet_mouse / notify）
+│  ├─ src/core/            # 可单测业务（sidecar / tts / node_runtime / presence / timer / pet_geom…）
 │  ├─ src/plugins/         # 插件 catalog/profile/preflight/install
 │  ├─ src/config/          # 持久化配置（window_startup / tts / mcp / shortcuts…）
 │  ├─ src/services/        # 本地服务：axum /rpc + memory RPC handler
@@ -117,7 +118,7 @@ node scripts/opencode-test.mjs # opencode-go provider 直测
 ## 日志
 
 - Rust 侧日志：`tauri-plugin-log` 输出到控制台 + Webview + 文件
-  （`%APPDATA%/diver/logs/app.log`，见 `base/init.rs`）
+  （`%APPDATA%/diver/logs/app.log`，见 `app/setup.rs`）
 - sidecar 日志：stdout/stderr 实时转发到 Rust 控制台（前缀 `[sidecar]` / `[sidecar:err]`），
   同时缓存在 `SidecarStatus.logs`（环形 300 条）供 UI 查看
 - 会话 JSONL：`harness/.cos-home/sessions/`（通用事件流格式：`id`/`parentId` 链 + `message` 块 `user`/`assistant`/`toolResult`，明文，方便第三方工具读取）

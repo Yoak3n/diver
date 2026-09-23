@@ -95,7 +95,7 @@ pub fn switch_profile_and_restart(app: &AppHandle, profile: &str) -> Result<Pref
             report.problems
         );
     }
-    let restarted = crate::base::sidecar::SidecarManager::global().restart(app);
+    let restarted = crate::core::sidecar::SidecarManager::global().restart(app);
     if !restarted {
         log::warn!("plugins: sidecar 重启未执行；profile={name} 将在下次启动生效");
     }

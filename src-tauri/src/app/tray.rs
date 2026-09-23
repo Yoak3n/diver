@@ -7,10 +7,10 @@ use tauri::{
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 use tauri_plugin_autostart::ManagerExt;
 
-use crate::base::window::schema::WindowType;
+use crate::shell::window::schema::WindowType;
 
 use super::handle::Handle;
-use super::window::manager::Manager as WM;
+use crate::shell::window::manager::Manager as WM;
 pub fn create_tray_icon<R: Runtime>(app: &tauri::App<R>, visible: bool) -> Result<()> {
     let quit_i = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
     let show_i = MenuItem::with_id(

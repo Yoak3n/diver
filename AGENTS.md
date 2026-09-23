@@ -72,7 +72,7 @@ crates/
 └── diver-search/        # 搜索引擎
 ```
 
-历史模块 `base/` 是待拆迁杂物间：只出不进，逐步迁入上表对应层。
+历史模块 `base/` 已拆迁完毕（Phase2）：禁止再引入 `base`，新代码只进 `app/` `shell/` `core/` `commands/` 等上表分层。
 
 ## 拆分与命名
 

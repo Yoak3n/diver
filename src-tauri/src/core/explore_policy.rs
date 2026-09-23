@@ -9,10 +9,10 @@ use std::time::Duration;
 use diver_presence::{Event, RequestResult, WebExploreReason};
 use serde_json::{json, Value};
 
-use crate::base::presence::PresenceHandle;
+use crate::core::presence::PresenceHandle;
 
 fn api_base() -> String {
-    crate::base::sidecar::SidecarManager::global().api_base_url()
+    crate::core::sidecar::SidecarManager::global().api_base_url()
 }
 
 async fn http_json(method: &str, url: &str, body: Option<Value>) -> Result<Value, String> {

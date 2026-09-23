@@ -38,7 +38,7 @@ impl PresenceHandle {
         let now = diver_presence::types::now_ms();
         // T13：USER_CHAT 打断 explore —— 先取消 L3 job，再迁相位
         if matches!(ev, Event::UserChat) {
-            crate::base::explore_policy::cancel_active_job();
+            crate::core::explore_policy::cancel_active_job();
         }
         self.with(|p| p.handle(ev, now));
     }

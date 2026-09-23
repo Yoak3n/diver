@@ -23,10 +23,10 @@ pub fn dispatch(method: &str, params: &Value) -> Result<Value, String> {
                 .get("body")
                 .and_then(|v| v.as_str())
                 .unwrap_or("");
-            let app = crate::base::handle::Handle::global()
+            let app = crate::app::handle::Handle::global()
                 .app_handle()
                 .ok_or_else(|| "app handle 未初始化".to_string())?;
-            crate::base::notify::show(&app, title, body);
+            crate::shell::notify::show(&app, title, body);
             Ok(Value::Null)
         }
         _ => Err(format!("未知 notify 方法: {method}")),

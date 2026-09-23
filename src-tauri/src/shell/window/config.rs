@@ -1,4 +1,4 @@
-use super::pet_geom::{pet_window_logical_size, PET_SIZE_DEFAULT_PERCENT};
+use crate::core::pet_geom::{pet_window_logical_size, PET_SIZE_DEFAULT_PERCENT};
 use super::schema::WindowType;
 use std::collections::HashMap;
 
@@ -45,7 +45,7 @@ impl WindowConfig {
             WindowType::Pet => Self {
                 window_type,
                 inner_size: pet_window_logical_size(PET_SIZE_DEFAULT_PERCENT),
-                min_inner_size: pet_window_logical_size(super::pet_geom::PET_SIZE_MIN_PERCENT),
+                min_inner_size: pet_window_logical_size(crate::core::pet_geom::PET_SIZE_MIN_PERCENT),
                 decorations: false,
                 transparent: true,
                 skip_taskbar: true,

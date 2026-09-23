@@ -28,14 +28,14 @@ impl SidecarManager {
             let sidecar_dir = res_dir.join(RELEASE_SIDECAR_DIR);
 
             // 1) 进程内解压依赖（无黑窗；进度 setup://progress）
-            crate::base::setup_progress::ensure_deps_extracted(app, &sidecar_dir)?;
+            crate::core::setup_progress::ensure_deps_extracted(app, &sidecar_dir)?;
             self.push_log("[diver] 运行依赖就绪".into());
 
             // 2) Node 不随包：本机 / 缓存 / 按需下载
             let mut boot_logs: Vec<String> = Vec::new();
             let runtime = {
                 let logs = &mut boot_logs;
-                crate::base::setup_progress::ensure_node_ready(app, &mut |line: String| {
+                crate::core::setup_progress::ensure_node_ready(app, &mut |line: String| {
                     log::info!("{line}");
                     logs.push(line);
                 })?

@@ -14,7 +14,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, WebviewWindow};
 
 use super::manager::Manager as WM;
-use super::pet_geom::*;
+use crate::core::pet_geom::*;
 use super::schema::{WindowOperationResult, WindowState, WindowType};
 use crate::config::pet_window::{self, PetWindowConfig};
 

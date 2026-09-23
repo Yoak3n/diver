@@ -7,13 +7,11 @@ use anyhow::{Context, Result};
 use delay_timer::timer::task::TaskBuilder;
 use tauri::{Listener, Manager};
 
-use super::{
-    handle,state::AppState,
-    timer::Timer,
-    window::{
-        manager::Manager as WM, 
-        schema::WindowType
-    }
+use crate::app::{handle, state::AppState};
+use crate::core::timer::Timer;
+use crate::shell::window::{
+    manager::Manager as WM,
+    schema::WindowType
 };
 const LIGHT_WEIGHT_TASK_ID: u64 = 0;
 
@@ -158,7 +156,7 @@ pub fn entry_lightweight_mode() {
     let _ = cancel_light_weight_timer();
 
     // 更新托盘显示
-    crate::base::tray::update_menu_visible(false);
+    crate::app::tray::update_menu_visible(false);
 }
 
 fn cancel_light_weight_timer() -> Result<()> {

@@ -296,7 +296,7 @@ pub fn install_profile_plugin(
     log::info!("plugins: installed {package_name} (id={id}, bundle={bundle}) into {profile_dir:?}");
 
     if restart {
-        let _ = crate::base::sidecar::SidecarManager::global().restart(app);
+        let _ = crate::core::sidecar::SidecarManager::global().restart(app);
     }
     Ok(super::list_profile_aware(app))
 }
@@ -378,7 +378,7 @@ pub fn uninstall_profile_plugin(
     );
 
     if restart {
-        let _ = crate::base::sidecar::SidecarManager::global().restart(app);
+        let _ = crate::core::sidecar::SidecarManager::global().restart(app);
     }
     Ok(super::list_profile_aware(app))
 }

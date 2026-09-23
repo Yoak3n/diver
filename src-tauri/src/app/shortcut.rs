@@ -17,9 +17,9 @@ use once_cell::sync::OnceCell;
 use tauri::AppHandle;
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutEvent, ShortcutState};
 
-use crate::base::window::manager::Manager as WM;
-use crate::base::window::pet as pet_win;
-use crate::base::window::schema::WindowType;
+use crate::shell::window::manager::Manager as WM;
+use crate::shell::window::pet as pet_win;
+use crate::shell::window::schema::WindowType;
 use crate::config::shortcuts::{
     ShortcutAction, ShortcutBinding, ShortcutsConfig, load_config, save_config,
 };

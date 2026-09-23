@@ -1,8 +1,8 @@
 use std::sync::Arc;
 use parking_lot::Mutex;
 
-use crate::base::lightweight::LightWeightState;
-use crate::base::pet_mouse::PetMouseStreamState;
+use crate::shell::lightweight::LightWeightState;
+use crate::shell::pet_mouse::PetMouseStreamState;
 
 #[derive(Clone)]
 pub struct AppState {

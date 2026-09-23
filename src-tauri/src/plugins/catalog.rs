@@ -191,7 +191,7 @@ pub fn toggle_plugin(
     enabled: bool,
 ) -> Result<Vec<PluginInfo>, String> {
     let plugins = set_plugin_enabled_impl(app, id, enabled)?;
-    let restarted = crate::base::sidecar::SidecarManager::global().restart(app);
+    let restarted = crate::core::sidecar::SidecarManager::global().restart(app);
     if !restarted {
         log::warn!("plugins: sidecar 重启未执行（可能未在运行）；配置已写入，下次启动生效");
     }

@@ -2,7 +2,7 @@
 
 use tauri::AppHandle;
 
-use crate::base::tts;
+use crate::core::tts;
 use crate::config::tts::{
     load_config, save_config, TtsAudio, TtsConfigPatch, TtsConfigView, TtsProvider, TtsVoice,
 };

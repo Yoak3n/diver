@@ -1,7 +1,7 @@
 use crate::commands::*;
-use crate::base::window::pet as pet_win;
-use crate::base::window::schema::WindowType;
-use tauri::{generate_handler, AppHandle, Builder, Emitter, Manager, RunEvent};
+use crate::shell::window::pet as pet_win;
+use crate::shell::window::schema::WindowType;
+use tauri::{generate_handler, Builder, Emitter, Manager};
 use tauri_plugin_log::{Target, TargetKind, TimezoneStrategy};
 
 /// 无子进程 HTTP 健康探测（避免 curl/黑窗）。
@@ -88,16 +88,16 @@ pub fn generate_handlers() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + 
 pub fn configure(builder: Builder<tauri::Wry>) -> Builder<tauri::Wry> {
     let builder = builder.plugin(tauri_plugin_opener::init());
 
-    // 全局快捷键：统一 handler 分发（热插拔注册/注销见 base/shortcut.rs）。
+    // 全局快捷键：统一 handler 分发（热插拔注册/注销见 app/shortcut.rs）。
     let builder = builder.plugin(
         tauri_plugin_global_shortcut::Builder::new()
             .with_handler(|app, shortcut, event| {
-                crate::base::shortcut::ShortcutManager::global().handle(app, shortcut, event);
+                crate::app::shortcut::ShortcutManager::global().handle(app, shortcut, event);
             })
             .build(),
     );
 
-    // 原生通知：agent 主动消息 / 日程提醒到达时托盘通知（见 base/notify.rs）。
+    // 原生通知：agent 主动消息 / 日程提醒到达时托盘通知（见 shell/notify.rs）。
     let builder = builder.plugin(tauri_plugin_notification::init());
 
     let builder = builder.plugin(
@@ -132,9 +132,9 @@ pub fn configure(builder: Builder<tauri::Wry>) -> Builder<tauri::Wry> {
     };
 
     builder.setup(|app| {
-        app.manage(crate::base::state::AppState::default());
-        crate::base::handle::Handle::global().init(app.handle().clone());
-        let _ = crate::base::tray::create_tray_icon(app, false);
+        app.manage(crate::app::state::AppState::default());
+        crate::app::handle::Handle::global().init(app.handle().clone());
+        let _ = crate::app::tray::create_tray_icon(app, false);
 
         // 启动本地服务（SQLite 记忆后端等），端口注入 sidecar。
         match crate::services::start(app.handle()) {
@@ -149,15 +149,15 @@ pub fn configure(builder: Builder<tauri::Wry>) -> Builder<tauri::Wry> {
         // companion profile：壳端启停插件写在 profiles/companion/cordis.patch.yml。
         crate::plugins::ensure_profile(app.handle());
 
-        // 全局快捷键：按配置注册启用绑定（运行时热插拔由 base/shortcut.rs 负责）。
-        crate::base::shortcut::ShortcutManager::global().init(app.handle());
+        // 全局快捷键：按配置注册启用绑定（运行时热插拔由 app/shortcut.rs 负责）。
+        crate::app::shortcut::ShortcutManager::global().init(app.handle());
 
         // 陪伴存在感：加载互动配置 + 启动 presence 日程调度（控制面在壳）。
         {
-            let pet_cfg = crate::base::pet_interaction::load_config();
-            crate::base::pet_interaction::apply_config(&pet_cfg);
-            crate::base::presence_schedule::spawn_scheduler();
-            crate::base::explore_policy::spawn_explore_scheduler();
+            let pet_cfg = crate::core::pet_interaction::load_config();
+            crate::core::pet_interaction::apply_config(&pet_cfg);
+            crate::core::presence_schedule::spawn_scheduler();
+            crate::core::explore_policy::spawn_explore_scheduler();
         }
 
         // 总是先显示主窗口（首启准备遮罩盖在上面），再后台拉起 sidecar。
@@ -168,8 +168,8 @@ pub fn configure(builder: Builder<tauri::Wry>) -> Builder<tauri::Wry> {
             startup.auto_open_pet
         );
         // 首启/未就绪时强制出主窗口，避免只看到遮罩或空壳。
-        if startup.auto_open_main || crate::base::setup_progress::last_progress().is_none() {
-            crate::base::window::manager::Manager::global()
+        if startup.auto_open_main || crate::core::setup_progress::last_progress().is_none() {
+            crate::shell::window::manager::Manager::global()
                 .show_window(WindowType::Main, None);
             log::info!("[init] main window show_window called");
         }
@@ -188,8 +188,8 @@ pub fn configure(builder: Builder<tauri::Wry>) -> Builder<tauri::Wry> {
             let handle = app.handle().clone();
             std::thread::spawn(move || {
                 let handle2 = handle.clone();
-                let sidecar = crate::base::sidecar::SidecarManager::global();
-                crate::base::setup_progress::emit_progress(
+                let sidecar = crate::core::sidecar::SidecarManager::global();
+                crate::core::setup_progress::emit_progress(
                     &handle,
                     "start",
                     "正在启动助手…",
@@ -198,7 +198,7 @@ pub fn configure(builder: Builder<tauri::Wry>) -> Builder<tauri::Wry> {
                 );
                 if sidecar.start(&handle2) {
                     // 就绪以 DIVER_READY / HTTP health 为准；这里只表示进程已拉起
-                    crate::base::setup_progress::emit_progress(
+                    crate::core::setup_progress::emit_progress(
                         &handle,
                         "start",
                         "正在启动助手…",
@@ -208,11 +208,11 @@ pub fn configure(builder: Builder<tauri::Wry>) -> Builder<tauri::Wry> {
                     // 轮询 health：backend 就绪后主动收起遮罩（不单靠 stdout 里的 DIVER_READY）
                     let handle2 = handle.clone();
                     std::thread::spawn(move || {
-                        let port = crate::base::sidecar::SidecarManager::global().port();
+                        let port = crate::core::sidecar::SidecarManager::global().port();
                         for i in 0..40 {
                             std::thread::sleep(std::time::Duration::from_millis(500));
                             if http_health_ok(port) {
-                                crate::base::setup_progress::emit_progress(
+                                crate::core::setup_progress::emit_progress(
                                     &handle2,
                                     "ready",
                                     "就绪",
@@ -221,12 +221,12 @@ pub fn configure(builder: Builder<tauri::Wry>) -> Builder<tauri::Wry> {
                                 );
                                 let _ = handle2.emit(
                                     "backend://ready",
-                                    crate::base::sidecar::SidecarManager::global().status(),
+                                    crate::core::sidecar::SidecarManager::global().status(),
                                 );
                                 return;
                             }
                             if i == 39 {
-                                crate::base::setup_progress::emit_error(
+                                crate::core::setup_progress::emit_error(
                                     &handle2,
                                     "助手未就绪（HTTP 健康检查超时），请查看日志",
                                 );
@@ -235,67 +235,11 @@ pub fn configure(builder: Builder<tauri::Wry>) -> Builder<tauri::Wry> {
                     });
                 } else {
                     log::error!("sidecar 启动失败，请检查依赖安装状态");
-                    crate::base::setup_progress::emit_error(&handle, "助手启动失败，请查看日志");
+                    crate::core::setup_progress::emit_error(&handle, "助手启动失败，请查看日志");
                 }
             });
         }
 
         Ok(())
     })
-}
-
-pub fn app_event_handle(app_handle: &AppHandle, event: RunEvent) {
-    match event {
-        tauri::RunEvent::Ready | tauri::RunEvent::Resumed => {}
-        tauri::RunEvent::Exit => {
-            // 应用退出时停止 sidecar（agent 随之结束，记忆保留在磁盘）。
-            crate::base::sidecar::SidecarManager::global().stop();
-        }
-        tauri::RunEvent::ExitRequested { api, code, .. } => {
-            if code.is_none() {
-                api.prevent_exit();
-            }
-        }
-        tauri::RunEvent::WindowEvent { label, event, .. } => {
-            match event {
-                tauri::WindowEvent::CloseRequested { api, .. } => {
-                    api.prevent_close();
-                    let window = app_handle.get_webview_window(&label).unwrap();
-                    let _ = window.hide();
-                    // 状态缓存同步：X 关闭 = 隐藏。否则缓存停留 VisibleFocused，
-                    // 托盘/桌宠的"打开主窗口"会误判为已可见而无操作（打不开）。
-                    if let Some(wt) = WindowType::from_label(&label) {
-                        crate::base::window::manager::Manager::global().update_window_state(
-                            wt,
-                            crate::base::window::schema::WindowState::Hidden,
-                        );
-                    }
-                }
-                // 桌宠跨窗口/跨屏拖动（对齐 DSH）：
-                // Moved **只落盘 + 记时间戳**，绝不在拖动过程中 set_position。
-                // 时间戳供 move_by_delta/animation 判定「系统拖动是否仍活跃」，
-                // 避免归位动画与 startDragging 双写坐标 → 跨屏重影闪烁。
-                tauri::WindowEvent::Moved(_) => {
-                    if WindowType::from_label(&label) == Some(WindowType::Pet) {
-                        pet_win::note_window_moved();
-                        if let Some(window) = app_handle.get_webview_window(&label) {
-                            pet_win::save_window_position(&window);
-                        }
-                    }
-                }
-                tauri::WindowEvent::Focused(true) => {}
-                tauri::WindowEvent::Focused(false) => {}
-                tauri::WindowEvent::Destroyed => {
-                    if WindowType::from_label(&label) == Some(WindowType::Pet) {
-                        crate::base::window::manager::Manager::global().update_window_state(
-                            WindowType::Pet,
-                            crate::base::window::schema::WindowState::NotExist,
-                        );
-                    }
-                }
-                _ => {}
-            }
-        }
-        _ => {}
-    }
 }

@@ -5,5 +5,5 @@
 use serde_json::Value;
 
 pub fn dispatch(method: &str, params: &Value) -> Result<Value, String> {
-    crate::base::presence::dispatch_rpc(method, params)
+    crate::core::presence::dispatch_rpc(method, params)
 }

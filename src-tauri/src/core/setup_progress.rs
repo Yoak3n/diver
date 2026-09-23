@@ -179,10 +179,10 @@ fn extract_tar(
 pub fn ensure_node_ready(
     app: &AppHandle,
     push: &mut dyn FnMut(String),
-) -> Result<crate::base::node_runtime::NodeRuntime, String> {
+) -> Result<crate::core::node_runtime::NodeRuntime, String> {
     emit_progress(app, "node", "正在准备 Node 运行时…", 0.0, false);
     let mut last = String::new();
-    let result = crate::base::node_runtime::resolve_node(app, &mut |line: String| {
+    let result = crate::core::node_runtime::resolve_node(app, &mut |line: String| {
         emit_progress(app, "node", line.clone(), 30.0, false);
         if line != last {
             last = line.clone();

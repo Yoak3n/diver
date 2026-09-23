@@ -6,7 +6,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 
-use crate::base::presence::{request_and_inject, PresenceHandle};
+use crate::core::presence::{request_and_inject, PresenceHandle};
 use diver_presence::{Event, ProactiveConfig};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -138,7 +138,7 @@ fn diver_settings_path() -> std::path::PathBuf {
 }
 
 fn cos_home() -> std::path::PathBuf {
-    if let Some(app) = crate::base::handle::Handle::global().app_handle() {
+    if let Some(app) = crate::app::handle::Handle::global().app_handle() {
         return crate::config::cos_home(&app);
     }
     // 退化：与 sidecar 约定的 COS_HOME / debug 默认一致
@@ -298,7 +298,7 @@ pub async fn handle_pet_gesture(ev: PetGestureEvent) -> Value {
     PresenceHandle::global().handle_event(Event::PetGesture);
 
     let text = build_interaction_prompt(&ev, cfg.mode);
-    let base = crate::base::sidecar::SidecarManager::global().api_base_url();
+    let base = crate::core::sidecar::SidecarManager::global().api_base_url();
     match request_and_inject(&base, "pet-interaction", &text).await {
         Ok(body) => {
             let ok = body.get("ok").and_then(|v| v.as_bool()).unwrap_or(false);

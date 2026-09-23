@@ -2,7 +2,7 @@
 
 use tauri::AppHandle;
 
-use crate::base::window::pet as pet_win;
+use crate::shell::window::pet as pet_win;
 use crate::config::pet_window::PetWindowConfig;
 
 /// 桌宠窗口是否在线（朗读路由分流：在线时只允许桌宠播放，防双窗口叠音）。
@@ -110,7 +110,7 @@ pub fn move_pet_to_monitor(app: AppHandle, index: usize) -> bool {
 #[tauri::command]
 pub fn start_pet_mouse_stream(
     window: tauri::WebviewWindow,
-    state: tauri::State<'_, crate::base::state::AppState>,
+    state: tauri::State<'_, crate::app::state::AppState>,
 ) {
     state.pet_mouse.start(window);
 }

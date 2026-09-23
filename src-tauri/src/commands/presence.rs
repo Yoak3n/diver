@@ -2,7 +2,7 @@
 
 use diver_presence::{Event, Regime};
 
-use crate::base::sidecar::SidecarManager;
+use crate::core::sidecar::SidecarManager;
 
 /// 解析前端事件名 → `diver_presence::Event`。纯函数，便于单测。
 fn parse_presence_event(
@@ -45,7 +45,7 @@ fn parse_presence_event(
 /// 存在感相位（叶子名）。调用点会按 now 补发时间事件。
 #[tauri::command]
 pub fn presence_phase() -> String {
-    crate::base::presence::PresenceHandle::global()
+    crate::core::presence::PresenceHandle::global()
         .phase()
         .as_str()
         .to_string()
@@ -54,7 +54,7 @@ pub fn presence_phase() -> String {
 /// 存在感调试快照（相位 + ProactiveSpeak 私有记账）。
 #[tauri::command]
 pub fn presence_snapshot() -> serde_json::Value {
-    serde_json::to_value(crate::base::presence::PresenceHandle::global().snapshot())
+    serde_json::to_value(crate::core::presence::PresenceHandle::global().snapshot())
         .unwrap_or(serde_json::Value::Null)
 }
 
@@ -63,8 +63,8 @@ pub fn presence_snapshot() -> serde_json::Value {
 pub fn presence_event(event: String, regime: Option<String>, enabled: Option<bool>) -> String {
     match parse_presence_event(&event, regime.as_deref(), enabled) {
         Ok(ev) => {
-            crate::base::presence::PresenceHandle::global().handle_event(ev);
-            crate::base::presence::PresenceHandle::global()
+            crate::core::presence::PresenceHandle::global().handle_event(ev);
+            crate::core::presence::PresenceHandle::global()
                 .phase()
                 .as_str()
                 .to_string()
@@ -80,13 +80,13 @@ pub async fn presence_request_inject(
     text: String,
 ) -> Result<serde_json::Value, String> {
     let base = SidecarManager::global().api_base_url();
-    crate::base::presence::request_and_inject(&base, &source, &text).await
+    crate::core::presence::request_and_inject(&base, &source, &text).await
 }
 
 /// Explore 调试快照（L2 私有记账）。
 #[tauri::command]
 pub fn presence_explore_snapshot() -> serde_json::Value {
-    crate::base::explore_policy::snapshot_json()
+    crate::core::explore_policy::snapshot_json()
 }
 
 /// 手动触发一次探索（仍走 L1+L2 裁决）。
@@ -95,38 +95,38 @@ pub async fn presence_explore_trigger(
     term: String,
     reason: Option<String>,
 ) -> Result<serde_json::Value, String> {
-    crate::base::explore_policy::trigger_manual(&term, reason.as_deref().unwrap_or("manual")).await
+    crate::core::explore_policy::trigger_manual(&term, reason.as_deref().unwrap_or("manual")).await
 }
 
 /// 取消当前探索 job。
 #[tauri::command]
 pub fn presence_explore_cancel() -> serde_json::Value {
-    crate::base::explore_policy::cancel_active_job();
+    crate::core::explore_policy::cancel_active_job();
     serde_json::json!({ "ok": true })
 }
 
 /// 读取桌宠互动感知设置（壳为真源；与 diver-settings.petInteraction 同步）。
 #[tauri::command]
-pub fn get_pet_interaction_config() -> crate::base::pet_interaction::PetInteractionConfig {
-    crate::base::pet_interaction::load_config()
+pub fn get_pet_interaction_config() -> crate::core::pet_interaction::PetInteractionConfig {
+    crate::core::pet_interaction::load_config()
 }
 
 /// 保存桌宠互动设置并同步 ProactiveSpeak 节流参数。
 #[tauri::command]
 pub fn set_pet_interaction_config(
-    config: crate::base::pet_interaction::PetInteractionConfig,
-) -> Result<crate::base::pet_interaction::PetInteractionConfig, String> {
-    crate::base::pet_interaction::save_config(&config).map_err(|e| e.to_string())?;
-    crate::base::pet_interaction::apply_config(&config);
+    config: crate::core::pet_interaction::PetInteractionConfig,
+) -> Result<crate::core::pet_interaction::PetInteractionConfig, String> {
+    crate::core::pet_interaction::save_config(&config).map_err(|e| e.to_string())?;
+    crate::core::pet_interaction::apply_config(&config);
     Ok(config)
 }
 
 /// 桌宠手势语义事件：壳组文案 + Presence 裁决 + inject（唯一主动开口入口）。
 #[tauri::command]
 pub async fn pet_gesture_event(
-    event: crate::base::pet_interaction::PetGestureEvent,
+    event: crate::core::pet_interaction::PetGestureEvent,
 ) -> Result<serde_json::Value, String> {
-    Ok(crate::base::pet_interaction::handle_pet_gesture(event).await)
+    Ok(crate::core::pet_interaction::handle_pet_gesture(event).await)
 }
 
 #[cfg(test)]

@@ -11,7 +11,7 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::base::presence::request_and_inject;
+use crate::core::presence::request_and_inject;
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct PresenceEntry {
@@ -34,7 +34,7 @@ pub struct PresenceConfig {
 }
 
 fn schedule_path() -> PathBuf {
-    let home = if let Some(app) = crate::base::handle::Handle::global().app_handle() {
+    let home = if let Some(app) = crate::app::handle::Handle::global().app_handle() {
         crate::config::cos_home(&app)
     } else if let Ok(home) = std::env::var("COS_HOME") {
         PathBuf::from(home)
@@ -73,13 +73,13 @@ async fn fire_entry(entry: &PresenceEntry) -> bool {
     log::info!("[presence] 触发日程 {} @ {}: {}", entry.id, entry.time, entry.prompt);
 
     // 原生通知（失败可丢）
-    if let Some(app) = crate::base::handle::Handle::global().app_handle() {
-        crate::base::notify::show(&app, "Diver", &entry.prompt);
+    if let Some(app) = crate::app::handle::Handle::global().app_handle() {
+        crate::shell::notify::show(&app, "Diver", &entry.prompt);
     }
 
     // 主动问候：已裁决路径 request → /api/inject
     let text = format!("[presence] {}", entry.prompt);
-    let base = crate::base::sidecar::SidecarManager::global().api_base_url();
+    let base = crate::core::sidecar::SidecarManager::global().api_base_url();
     match request_and_inject(&base, "presence", &text).await {
         Ok(body) => {
             let ok = body.get("ok").and_then(|v| v.as_bool()).unwrap_or(false);

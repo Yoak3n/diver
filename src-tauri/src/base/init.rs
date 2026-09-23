@@ -31,6 +31,16 @@ pub fn generate_handlers() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + 
         tts_synthesize,
         is_pet_window_open,
         notify,
+        presence_phase,
+        presence_snapshot,
+        presence_event,
+        presence_request_inject,
+        presence_explore_snapshot,
+        presence_explore_trigger,
+        presence_explore_cancel,
+        set_pet_interaction_config,
+        get_pet_interaction_config,
+        pet_gesture_event,
         get_window_startup_config,
         set_window_startup_config,
         get_mcp_config,
@@ -117,6 +127,14 @@ pub fn configure(builder: Builder<tauri::Wry>) -> Builder<tauri::Wry> {
 
         // 全局快捷键：按配置注册启用绑定（运行时热插拔由 base/shortcut.rs 负责）。
         crate::base::shortcut::ShortcutManager::global().init(app.handle());
+
+        // 陪伴存在感：加载互动配置 + 启动 presence 日程调度（控制面在壳）。
+        {
+            let pet_cfg = crate::base::pet_interaction::load_config();
+            crate::base::pet_interaction::apply_config(&pet_cfg);
+            crate::base::presence_schedule::spawn_scheduler();
+            crate::base::explore_policy::spawn_explore_scheduler();
+        }
 
         // 启动 Node sidecar（cos harness + companion bundle，agent 常驻）。
         let sidecar = crate::base::sidecar::SidecarManager::global();

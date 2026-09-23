@@ -110,8 +110,36 @@ if (!created) {
   console.error('[memory-test] FAIL: 创建的话题未出现在 snapshot 中')
   process.exit(1)
 }
+
+// 实体图谱读写冒烟：upsert → 一跳图 → 候选召回。
+const g = await rpc('upsert_entity_graph', {
+  name: '__ent_test__',
+  entityType: 'test',
+  attrs: { note: 'memory-test' },
+  relations: [{ to: '__ent_peer__', relation: 'related', toType: 'test' }],
+  sourceTopicId: topicId,
+})
+if (g?.entity?.name !== '__ent_test__' || g.attrs?.length !== 1 || g.neighbors?.length !== 1) {
+  console.error('[memory-test] FAIL: upsert_entity_graph 结果不完整', JSON.stringify(g).slice(0, 200))
+  process.exit(1)
+}
+const g2 = await rpc('entity_graph', { name: '__ent_test__', hops: 1 })
+if (!g2 || g2.entity?.name !== '__ent_test__') {
+  console.error('[memory-test] FAIL: entity_graph 读取失败')
+  process.exit(1)
+}
+const cands = await rpc('entity_candidates', { text: '问问 __ent_test__ 的情况', limit: 5 })
+const hit = cands.some((c) => c.entity?.name === '__ent_test__')
+console.log(`[rpc] entity_graph ok attrs=${g.attrs.length} neighbors=${g.neighbors.length} candidates=${cands.length}`)
+if (!hit) {
+  console.error('[memory-test] FAIL: entity_candidates 未命中 __ent_test__')
+  process.exit(1)
+}
+
 await rpc('delete_topic', { id: topicId })
 const after = await rpc('snapshot')
 console.log(`[rpc] delete_topic 后 snapshot.topics=${after.topics.length}`)
-console.log('[memory-test] OK: /rpc 读写正常，SQLite 落库验证通过')
+const stats = await rpc('stats')
+console.log(`[rpc] stats.entities=${stats.entities}`)
+console.log('[memory-test] OK: /rpc 读写正常（含实体图谱），SQLite 落库验证通过')
 process.exit(0)

@@ -9,6 +9,7 @@
     "@diver/llm-commandcode": "file:../llm-commandcode",
     "@diver/llm-volcark": "file:../llm-volcark",
     "@diver/memory": "file:../memory",
-    "@diver/voice": "file:..\\voice"
+    "@diver/voice": "file:..\\voice",
+    "@diver/web-tools": "file:../web-tools"
   }
 }

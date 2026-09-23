@@ -68,7 +68,7 @@ export interface ChatMessage {
   id: string;
   kind: "user" | "assistant" | "system" | "activity-summary";
   content: string;
-  origin: "user" | "assistant" | "presence" | "interaction";
+  origin: "user" | "assistant" | "presence" | "interaction" | "proactive";
   time: number;
   streaming?: boolean;
   /** 用户消息附带图片（mime + base64，不含 data: 前缀）。 */
@@ -136,7 +136,7 @@ export interface UserQuestionAnswerItem {
 
 export type StreamEvent =
   | { type: "hello"; persona: string; provider: string; model: string; modelConfigured: boolean; sessionId: string | null; busy: boolean }
-  | { type: "message"; kind: "user" | "assistant" | "system"; sessionId: string; messageId: string; turnMessageId?: string; content: string; origin: "user" | "assistant" | "presence" | "interaction"; time: number; images?: ChatImage[] }
+  | { type: "message"; kind: "user" | "assistant" | "system"; sessionId: string; messageId: string; turnMessageId?: string; content: string; origin: "user" | "assistant" | "presence" | "interaction" | "proactive"; time: number; images?: ChatImage[] }
   | { type: "chunk"; messageId: string; delta: string }
   | { type: "thinking"; messageId: string; delta: string }
   | { type: "tool"; name: string; status: "call" | "result"; summary?: string; messageId?: string; callId?: string; isError?: boolean }

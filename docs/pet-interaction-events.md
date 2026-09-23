@@ -83,15 +83,15 @@
 
 | 约定 | 说明 |
 |---|---|
-| 控制面 | 壳内 `CompanionPresence`；手势经 `invoke` 报 `PET_GESTURE` |
+| 控制面 | 壳内 `CompanionPresence`；手势经 `invoke` `pet_gesture_event` |
 | 唯一入口 | `request({ kind:'proactive_inject', source:'pet-interaction', … })` 通过后才 inject |
-| 未过裁决 | **丢弃**（L0/L1/L2 任一 veto）。壳内可合并同类手势等下次 |
+| 未过裁决 | **丢弃**（L0/L1/L2 任一 veto） |
 | 过裁决 | 壳组文案 → `POST /api/inject`（sidecar 无门控 `followup`） |
 | 与用户消息 | 互动不占用 `/api/chat` 的 `steer` |
 | 产品档位 | 互动 `mode` 只影响文案丰富度 |
 | 与 presence | 同一 L0/L2；`maxTriggers` 在 ProactiveSpeak 内管**总**搭话频率 |
 
-> 过渡：backend `idle-gate.ts` + `/api/event` 门控为脚手架，目标见 FSM §11 切片 0。
+> **迁移完成**：backend `idle-gate.ts` / `POST /api/event` 已删除；presence 日程调度在壳 `presence_schedule.rs`。
 
 ### 4.1 目标与边界
 

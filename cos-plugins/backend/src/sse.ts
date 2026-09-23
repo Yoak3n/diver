@@ -2,10 +2,18 @@
 
 import type { ServerResponse } from 'node:http'
 import type { Context } from 'cordis'
-import { isInteractionUserMessage } from './interaction.ts'
+import { nativeRpc } from '@diver/native-bridge/rpc'
+import { injectOrigin, injectUiLabel } from './interaction.ts'
 import { textOf, imagesOf } from './session-helpers.ts'
 import { SESSION_ID } from './agent.ts'
 import type { WebState } from './state.ts'
+
+/** 向壳 CompanionPresence 回压（失败只打日志，不影响 SSE）。 */
+function reportPresence(method: string, params: Record<string, unknown>) {
+  void nativeRpc(method, params, { label: method }).catch((err) => {
+    console.warn(`[presence] 回压 ${method} 失败:`, (err as Error)?.message ?? err)
+  })
+}
 
 export function sseWrite(res: ServerResponse, event: unknown) {
   if (res.writableEnded || res.destroyed) return
@@ -29,24 +37,29 @@ export function attachEventListeners(
     const time = Number(ev.time) || Date.now()
     switch (ev.type) {
       case 'user/message': {
-        // 对话活动：推进闲时门控（互动 / presence 共用）
-        const interaction = isInteractionUserMessage(ev.data.source)
+        // 对话活动：回压壳 L0/L2（门控真源在壳）
         const isHuman = ev.data.source?.kind === 'human'
         if (isHuman && !textOf(ev.data.content).startsWith('[presence]')) {
-          state.idleGate?.noteUserChat(time)
+          reportPresence('presence::event', { type: 'USER_CHAT' })
         } else {
-          state.idleGate?.noteChat(time)
+          reportPresence('presence::event', { type: 'CHAT_ACTIVITY' })
         }
         // 过滤框架的运行时上下文快照（source.kind === 'plugin'），
-        // 但放行桌宠互动痕迹（detail === 'pet-interaction'）
-        if (!isHuman && !interaction) break
+        // 但放行桌宠互动 / 壳端已裁决注入（detail 映射 UI 折叠）
+        const injectLabel = injectUiLabel(ev.data.source)
+        const injectFrom = injectOrigin(ev.data.source)
+        if (!isHuman && injectLabel === null) break
         const text = textOf(ev.data.content)
-        if (interaction) {
-          // UI 折叠为一行「（互动）」；完整文案只进模型/历史详情
+        if (injectLabel !== null) {
+          // presence 展示问候正文；互动/主动折叠为一行
+          const isPresence = injectFrom === 'presence'
+          const content = isPresence
+            ? text.replace(/^\[presence\]\s*/, '').trim() || injectLabel
+            : injectLabel
           broadcast({
             type: 'message', kind: 'system', sessionId: String(session.id),
-            messageId: ev.data.id, content: '（互动）',
-            origin: 'interaction', time,
+            messageId: ev.data.id, content,
+            origin: injectFrom ?? 'proactive', time,
           })
         } else if (text.startsWith('[presence]')) {
           state.presencePending = true
@@ -77,7 +90,7 @@ export function attachEventListeners(
         break
       }
       case 'assistant/message': {
-        state.idleGate?.noteChat(time)
+        reportPresence('presence::event', { type: 'CHAT_ACTIVITY' })
         const text = textOf(ev.data.message.content)
         // 纯工具调用步骤无文本 → 跳过空气泡（工具另有 tool 事件）。
         if (text === '') break
@@ -132,7 +145,7 @@ export function attachEventListeners(
         break
       }
       case 'turn/end': {
-        state.idleGate?.noteChat(time)
+        reportPresence('presence::event', { type: 'CHAT_ACTIVITY' })
         broadcast({ type: 'turn', state: 'end', reason: ev.data.reason?.kind })
         break
       }
@@ -152,5 +165,7 @@ export function attachEventListeners(
     if (!agent || String(agent.id) !== SESSION_ID) return
     state.busy = status === 'running'
     broadcast({ type: 'busy', value: state.busy })
+    // busy 回压壳 L0（companion-presence-fsm.md §9）
+    reportPresence('presence::busy', { busy: state.busy })
   })
 }

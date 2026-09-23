@@ -13,7 +13,8 @@
 //   worker（digest/compaction 在 plugin 内部串行），避免多个 worker 竞争
 //   写同一记忆库、并保持 LLM 并发=主会话+1
 // - 读路径：关系卡 + Mode B 近期摘要经 systemPrompt.section 常驻注入；
-//   4 个工具（remember/recall/inventory/demote）供 agent 自主管理记忆
+//   工具（remember/recall/inventory/demote/entity）供 agent 自主管理记忆；
+//   实体图谱由 entity 显式声明写入（不做规则抽取），recall 一跳展开补多跳召回
 //
 // 存储：经 ./store-rpc.ts 直连 Rust SQLite 后端（DIVER_MEMORY_PORT HTTP RPC）。
 //
@@ -219,6 +220,93 @@ export function apply(ctx: Context, config: { digestIntervalMs?: number }) {
     },
   })
 
+  ctx.tools.register('entity', async (args) => {
+    const a = (args ?? {}) as {
+      name?: unknown
+      type?: unknown
+      attrs?: unknown
+      relations?: unknown
+      reason?: unknown
+    }
+    const name = typeof a.name === 'string' ? a.name.trim() : ''
+    if (!name) return { content: '缺少实体 name，未写入', isError: true }
+
+    const entityType = typeof a.type === 'string' && a.type.trim() ? a.type.trim() : undefined
+    const attrs: Record<string, string> = {}
+    if (a.attrs && typeof a.attrs === 'object' && !Array.isArray(a.attrs)) {
+      for (const [k, v] of Object.entries(a.attrs as Record<string, unknown>)) {
+        const key = k.trim()
+        const val = typeof v === 'string' ? v.trim() : ''
+        if (key && val) attrs[key] = val
+      }
+    }
+    const relations: Array<{ to: string; relation: string; toType?: string }> = []
+    if (Array.isArray(a.relations)) {
+      for (const item of a.relations) {
+        const o = item as { to?: unknown; relation?: unknown; toType?: unknown }
+        const to = typeof o.to === 'string' ? o.to.trim() : ''
+        const relation = typeof o.relation === 'string' ? o.relation.trim() : ''
+        if (!to || !relation || to === name) continue
+        const toType = typeof o.toType === 'string' && o.toType.trim() ? o.toType.trim() : undefined
+        relations.push(toType ? { to, relation, toType } : { to, relation })
+      }
+    }
+    if (Object.keys(attrs).length === 0 && relations.length === 0 && !entityType) {
+      return { content: '未提供 type / attrs / relations，未写入', isError: true }
+    }
+
+    const graph = await store.upsertEntityGraph({
+      name,
+      ...(entityType ? { entityType } : {}),
+      ...(Object.keys(attrs).length ? { attrs } : {}),
+      ...(relations.length ? { relations } : {}),
+    })
+    store.markDirty()
+    const reason = typeof a.reason === 'string' && a.reason.trim() ? `（依据：${a.reason.trim()}）` : ''
+    return {
+      content: JSON.stringify({
+        entity: graph.entity.name,
+        type: graph.entity.entityType ?? null,
+        attrs: Object.fromEntries(graph.attrs.map((x) => [x.attrKey, x.attrValue])),
+        related: graph.neighbors.map((n) => ({
+          to: n.entity.name,
+          relation: n.direction === 'out' ? n.relation : `←${n.relation}`,
+        })),
+        note: `已写入实体图谱${reason}`,
+      }),
+    }
+  }, {
+    description:
+      '把人/物/地点/项目等实体，以及它们的属性和关系写入知识图谱。只写你有把握、值得长期记住的结构化事实（如「小明-同事-李雷」「用户-不吃-香菜」）。一次调用可同时声明属性与关系；重复写入会合并加强，不要用来记一次性寒暄。',
+    parameters: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: '实体名（主语），如"用户"、"小明"、"吉他"' },
+        type: { type: 'string', description: '实体类型（可选），如 person / place / project / habit / food' },
+        attrs: {
+          type: 'object',
+          description: '属性键值（可选），如 {"职业":"Rust 工程师","忌口":"香菜"}',
+          additionalProperties: { type: 'string' },
+        },
+        relations: {
+          type: 'array',
+          description: '从本实体指出的关系（可选），如 [{"to":"小明","relation":"同事"}]',
+          items: {
+            type: 'object',
+            properties: {
+              to: { type: 'string', description: '目标实体名（不存在会自动创建）' },
+              relation: { type: 'string', description: '关系名，如 同事 / 喜欢 / 不吃 / 在学' },
+              toType: { type: 'string', description: '目标实体类型（可选）' },
+            },
+            required: ['to', 'relation'],
+          },
+        },
+        reason: { type: 'string', description: '写入依据（可选）' },
+      },
+      required: ['name'],
+    },
+  })
+
   ctx.tools.register('recall', async (args) => {
     const a = args as { query?: string; limit?: number }
     const query = String(a.query ?? '')
@@ -242,8 +330,31 @@ export function apply(ctx: Context, config: { digestIntervalMs?: number }) {
       topic: r.topic, state: r.state, when: r.when, nTimes: r.nTimes,
       confidence: r.score > 0.7 ? 'high' : r.score > 0.4 ? 'medium' : 'low',
     }))
+
+    // 实体图谱一跳展开：名字命中 → 属性 + 关系（多跳召回原料）
+    let entities: Array<{
+      name: string
+      type: string | null
+      attrs: Record<string, string>
+      related: Array<{ to: string; relation: string }>
+    }> = []
+    try {
+      const graphs = await store.entityCandidates(query, Math.max(3, limit))
+      entities = graphs.map((g) => ({
+        name: g.entity.name,
+        type: g.entity.entityType ?? null,
+        attrs: Object.fromEntries(g.attrs.map((x) => [x.attrKey, x.attrValue])),
+        related: g.neighbors.map((n) => ({
+          to: n.entity.name,
+          relation: n.direction === 'out' ? n.relation : `←${n.relation}`,
+        })),
+      }))
+    } catch (err) {
+      console.warn(`[memory] 实体召回失败: ${(err as Error)?.message ?? err}`)
+    }
+
     // 无词法命中 → Mode B 兜底：最近经历
-    if (results.length === 0) {
+    if (results.length === 0 && entities.length === 0) {
       for (const row of store.recentEpisodes(14, limit)) {
         results.push({
           topic: row.canonicalName, state: row.stateSummary,
@@ -251,13 +362,13 @@ export function apply(ctx: Context, config: { digestIntervalMs?: number }) {
         })
       }
     }
-    return { content: JSON.stringify({ results }) }
+    return { content: JSON.stringify({ results, entities }) }
   }, {
-    description: '检索长期记忆（关于用户的事实/偏好/共同经历）。返回结构化结果；无相关记忆时如实说不知道，不要编造。',
+    description: '检索长期记忆（话题事实 + 实体图谱：人/物/属性/关系）。返回结构化结果；无相关记忆时如实说不知道，不要编造。',
     parameters: {
       type: 'object',
       properties: {
-        query: { type: 'string', description: '检索内容，如"吉他"、"他工作上的事"' },
+        query: { type: 'string', description: '检索内容，如"吉他"、"小明是谁"、"他工作上的事"' },
         limit: { type: 'number', description: '返回条数，默认 5' },
       },
       required: ['query'],
@@ -275,6 +386,20 @@ export function apply(ctx: Context, config: { digestIntervalMs?: number }) {
       rows = rows.filter((r) => ids.has(r.id))
     }
     rows.sort((a, b) => b.lastDiscussedAt - a.lastDiscussedAt)
+    let entities: Array<{ name: string; type: string | null; attrs: Record<string, string> }> = []
+    try {
+      const graphs = query
+        ? await store.entityCandidates(query, limit)
+        : (await store.listEntities(limit)).map((e) => ({ entity: e, attrs: [], neighbors: [] }))
+      entities = (graphs as Array<{ entity: { name: string; entityType?: string | null }; attrs: Array<{ attrKey: string; attrValue: string }> }>)
+        .map((g) => ({
+          name: g.entity.name,
+          type: g.entity.entityType ?? null,
+          attrs: Object.fromEntries(g.attrs.map((x) => [x.attrKey, x.attrValue])),
+        }))
+    } catch (err) {
+      console.warn(`[memory] 实体盘点失败: ${(err as Error)?.message ?? err}`)
+    }
     return {
       content: JSON.stringify({
         total: rows.length,
@@ -282,11 +407,12 @@ export function apply(ctx: Context, config: { digestIntervalMs?: number }) {
           topic: r.canonicalName, state: r.stateSummary,
           when: humanWhen(r.lastDiscussedAt), nTimes: r.nTimes,
         })),
+        entities,
         profile: (store.getCard().profile ?? '').slice(0, 500),
       }),
     }
   }, {
-    description: '盘点长期记忆：我关于某个话题（或整体）知道什么、哪块是空白。用于决定要不要主动追问。',
+    description: '盘点长期记忆：我关于某个话题（或整体）知道什么、哪块是空白。用于决定要不要主动追问。含话题与实体图谱。',
     parameters: {
       type: 'object',
       properties: {

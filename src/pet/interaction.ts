@@ -1,9 +1,8 @@
-// 桌宠互动事件识别（前端发起）：把拖动等手势收成离散语义事件并上行 backend。
+// 桌宠互动事件识别（前端发起）：把拖动等手势收成离散语义事件并 invoke 进壳。
 //
-// 只在「用户有意」时上报：须已进入拖动会话、阈值达标、同一手势只报主事件。
+// 控制面在壳 CompanionPresence：白名单/组文案/闲时裁决/ inject 均在 Rust。
 // 坐标流 / 普通点按 / 同屏短拖 一律不上报。
 
-import { sendPetEvent } from "../api";
 import { listMonitors, type MonitorInfo } from "../tauri";
 
 export type PetInteractionEventType =
@@ -16,6 +15,34 @@ export interface PetInteractionLocalConfig {
 }
 
 export const DEFAULT_LONG_HOLD_MS = 3000;
+
+export interface PetGestureEventPayload {
+  type: string;
+  ts?: number;
+  source?: string;
+  payload?: Record<string, unknown>;
+  context?: {
+    display?: { id?: number | string; width?: number; height?: number; primary?: boolean };
+    apps?: string[];
+  };
+}
+
+/** 手势上行：invoke 壳 `pet_gesture_event`（唯一主动开口入口）。 */
+export async function sendPetGesture(event: PetGestureEventPayload): Promise<{
+  accepted: boolean;
+  reason?: string;
+  messageId?: string;
+  triggered?: boolean;
+}> {
+  const { tauriAvailable } = await import("../tauri");
+  if (!tauriAvailable()) {
+    return { accepted: false, reason: "no_tauri" };
+  }
+  const { invoke } = await import("@tauri-apps/api/core");
+  return invoke("pet_gesture_event", {
+    event: { source: "pet", ts: Date.now(), ...event },
+  });
+}
 
 /** 点 (x,y) 落在哪块显示器（物理坐标）；找不到返回 -1。 */
 export function monitorIndexAt(
@@ -90,7 +117,7 @@ export function createPetInteractionTracker(
     screenChangedFired = true;
     const context = await displayContext(to);
     try {
-      await sendPetEvent({
+      await sendPetGesture({
         type: "pet.drag.screen_changed",
         payload: { fromScreen: from, toScreen: to, dragging: true },
         context,
@@ -105,7 +132,7 @@ export function createPetInteractionTracker(
     longHoldFired = true;
     const context = lastScreen >= 0 ? await displayContext(lastScreen) : undefined;
     try {
-      await sendPetEvent({
+      await sendPetGesture({
         type: "pet.drag.long_hold",
         payload: { holdMs, dragging: true },
         context,

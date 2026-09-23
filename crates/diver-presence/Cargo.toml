@@ -1,0 +1,8 @@
+[package]
+name = "diver-presence"
+version = "0.1.0"
+edition = "2021"
+description = "Companion Presence FSM：L0 HSM + L1 能力矩阵 + L2 ProactiveSpeak"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }

@@ -54,6 +54,24 @@ async function persistInteraction(patch: Partial<PetInteractionSettings>) {
   } catch (err) {
     console.error("[settings] save petInteraction failed", err);
   }
+  // 壳端 ProactiveSpeak 同步（控制面真源）
+  try {
+    const { tauriAvailable } = await import("../../tauri");
+    if (tauriAvailable()) {
+      const { invoke } = await import("@tauri-apps/api/core");
+      await invoke("set_pet_interaction_config", {
+        config: {
+          mode: next.mode,
+          quietMs: next.quietMs,
+          cooldownMs: next.cooldownMs,
+          maxTriggers: next.maxTriggers,
+          longHoldMs: next.longHoldMs,
+        },
+      });
+    }
+  } catch (err) {
+    console.error("[settings] sync presence config failed", err);
+  }
 }
 
 function onInteractionModeChange(mode: PetInteractionSettings["mode"]) {

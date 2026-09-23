@@ -3,13 +3,13 @@
 import { readFile, stat } from 'node:fs/promises'
 import { extname, join, normalize, resolve } from 'node:path'
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { SessionId } from '@cos/plugin-api'
+import { SessionId, createUserMessage } from '@cos/plugin-api'
 
 import { readDiverSettings, writeDiverSettings, textOf, imagesOf } from './session-helpers.ts'
 import { SESSION_ID, userMessage } from './agent.ts'
 import {
-  handlePetInteractionEvent,
-  isInteractionUserMessage,
+  injectOrigin,
+  injectUiLabel,
   readPetInteractionSettings,
 } from './interaction.ts'
 import { loadSchedule, saveSchedule } from './presence.ts'
@@ -26,6 +26,8 @@ import {
   gracefulExitForRestart,
 } from './plugins.ts'
 import { COMPANION_PROFILE, readActiveProfile, requestRestart } from './paths.ts'
+import { exploreJobs, pickTerms } from '@diver/memory/explore'
+import { MemoryStore } from '@diver/memory/store-rpc'
 
 const MIME: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
@@ -179,20 +181,93 @@ export async function handleRequest(
       return
     }
 
-    // /api/event —— 桌宠互动事件（闲时才注入 agent；见 interaction.ts / docs/pet-interaction-events.md）
-    if (pathname === '/api/event' && req.method === 'POST') {
+    // ── memory explore（§7.4 执行面；时机/选词由壳 ExplorePolicy 裁决）──
+    // GET /api/memory/pick-terms —— 只读挑候选词
+    if (pathname === '/api/memory/pick-terms' && req.method === 'GET') {
+      const store = new MemoryStore('')
+      const limit = Number(new URL(req.url ?? '', 'http://x').searchParams.get('limit') ?? 5) || 5
+      const terms = await pickTerms(store, limit)
+      sendJson(res, 200, { terms })
+      return
+    }
+
+    // POST /api/memory/explore —— 启动探索 job（202）
+    if (pathname === '/api/memory/explore' && req.method === 'POST') {
       const body = await readBody(req)
-      if (!deps.state.idleGate) {
-        sendJson(res, 200, { accepted: false, reason: 'disabled' })
+      const term = String(body.term ?? '').trim()
+      if (!term) {
+        sendJson(res, 400, { error: 'term 必填' })
         return
       }
-      const result = await handlePetInteractionEvent(body, {
-        state: deps.state,
-        gate: deps.state.idleGate,
-        ensureAgent: deps.ensureAgent,
-        isModelConfigured: deps.isModelConfigured,
+      const store = new MemoryStore('')
+      try {
+        const job = exploreJobs.start(store, {
+          term,
+          ...(body.reason ? { reason: String(body.reason) } : {}),
+          ...(body.fromMemoryId ? { fromMemoryId: String(body.fromMemoryId) } : {}),
+          ...(body.hint ? { hint: String(body.hint) } : {}),
+          ...(body.policy ? { policy: body.policy as never } : {}),
+        })
+        sendJson(res, 202, { jobId: job.jobId, term: job.term, state: job.state })
+      } catch (err) {
+        const msg = (err as Error)?.message ?? String(err)
+        const code = msg.startsWith('EXPLORE_BUSY') ? 409 : 500
+        sendJson(res, code, { error: msg })
+      }
+      return
+    }
+
+    // GET /api/memory/explore —— 列表（调试）
+    if (pathname === '/api/memory/explore' && req.method === 'GET') {
+      sendJson(res, 200, { jobs: exploreJobs.list() })
+      return
+    }
+
+    // GET /api/memory/explore/:id
+    {
+      const m = /^\/api\/memory\/explore\/([A-Za-z0-9-]+)$/.exec(pathname)
+      if (m && req.method === 'GET') {
+        const job = exploreJobs.status(m[1])
+        if (!job) {
+          sendJson(res, 404, { error: 'job not found' })
+          return
+        }
+        sendJson(res, 200, job)
+        return
+      }
+    }
+
+    // POST /api/memory/explore/:id/cancel —— USER_CHAT / 用户打断
+    {
+      const m = /^\/api\/memory\/explore\/([A-Za-z0-9-]+)\/cancel$/.exec(pathname)
+      if (m && req.method === 'POST') {
+        const ok = exploreJobs.cancel(m[1])
+        sendJson(res, 200, { ok, jobId: m[1] })
+        return
+      }
+    }
+
+    // /api/inject —— 壳端已裁决注入（无门控 followup；控制面在壳 CompanionPresence）。
+    // body: { text, source?: { kind?, detail? }, origin? }
+    if (pathname === '/api/inject' && req.method === 'POST') {
+      const body = await readBody(req)
+      const text = String(body.text ?? '').trim()
+      if (!text) {
+        sendJson(res, 400, { error: 'text 必填' })
+        return
+      }
+      const src = (body.source ?? {}) as { kind?: string; detail?: string }
+      const kind = src.kind === 'human' || src.kind === 'goal' ? src.kind : 'plugin'
+      const detail = String(src.detail ?? body.origin ?? 'proactive')
+      const msg = createUserMessage(text, detail ? { kind, detail } : { kind })
+      const agent = await deps.ensureAgent()
+      agent.followup(msg)
+      sendJson(res, 200, {
+        sessionId: String(agent.id),
+        messageId: String(msg.id),
+        queued: false,
+        detail,
       })
-      sendJson(res, 200, result)
       return
     }
 
@@ -269,15 +344,20 @@ export async function handleRequest(
           if (ev.type !== 'user/message' && ev.type !== 'assistant/message') continue
           const time = Number(ev.time) || Date.now()
           if (ev.type === 'user/message') {
-            // 过滤运行时上下文快照；放行真人消息与桌宠互动痕迹
-            const interaction = isInteractionUserMessage(ev.data.source)
-            if (ev.data.source?.kind !== 'human' && !interaction) continue
+            // 过滤运行时上下文快照；放行真人消息与已裁决注入
+            const injectLabel = injectUiLabel(ev.data.source)
+            const injectFrom = injectOrigin(ev.data.source)
+            if (ev.data.source?.kind !== 'human' && injectLabel === null) continue
             const text = textOf(ev.data.content)
-            if (interaction) {
+            if (injectLabel !== null) {
+              const isPresence = injectFrom === 'presence'
+              const content = isPresence
+                ? text.replace(/^\[presence\]\s*/, '').trim() || injectLabel
+                : injectLabel
               messages.push({
                 id: ev.data.id, kind: 'system',
-                content: '（互动）',
-                origin: 'interaction', time,
+                content,
+                origin: injectFrom ?? 'proactive', time,
               })
             } else if (text.startsWith('[presence]')) {
               presencePending = true

@@ -75,6 +75,44 @@ export interface MemoryStats {
   top: Array<{ name: string; nTimes: number }>
   events: number
   openPromises: number
+  entities: number
+}
+
+export interface EntityRow {
+  id: string
+  name: string
+  entityType?: string | null
+  mentionCount: number
+  createdAt: number
+  updatedAt: number
+}
+
+export interface EntityAttrRow {
+  id: string
+  entityId: string
+  attrKey: string
+  attrValue: string
+  validFrom: number
+  validUntil?: number | null
+  sourceTopicId?: string | null
+}
+
+export interface EntityNeighbor {
+  relation: string
+  direction: 'out' | 'in'
+  entity: EntityRow
+}
+
+export interface EntityGraph {
+  entity: EntityRow
+  attrs: EntityAttrRow[]
+  neighbors: EntityNeighbor[]
+}
+
+export interface EntityRelationSpec {
+  to: string
+  relation: string
+  toType?: string
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000
@@ -145,7 +183,7 @@ export class MemoryStore {
     for (const r of rows) byTier[r.tier] = (byTier[r.tier] ?? 0) + 1
     const top = [...rows].sort((a, b) => b.nTimes - a.nTimes).slice(0, 5)
       .map((r) => ({ name: r.canonicalName, nTimes: r.nTimes }))
-    return { total: rows.length, byTier, top, events: this.view.events.length, openPromises: this.listPromises('open').length }
+    return { total: rows.length, byTier, top, events: this.view.events.length, openPromises: this.listPromises('open').length, entities: 0 }
   }
 
   // ───────────────────────── topics（RPC） ─────────────────────────
@@ -225,5 +263,35 @@ export class MemoryStore {
 
   async recentSelfActions(kind?: string, limit = 5): Promise<SelfAction[]> {
     return rpc<SelfAction[]>('recent_self_actions', { kind, limit })
+  }
+
+  // ───────────────────────── 实体图谱（RPC） ─────────────────────────
+  // 写入来自 agent / digest 显式声明，不做规则抽取。
+
+  async upsertEntityGraph(input: {
+    name: string
+    entityType?: string
+    attrs?: Record<string, string>
+    relations?: EntityRelationSpec[]
+    sourceTopicId?: string
+  }): Promise<EntityGraph> {
+    return rpc<EntityGraph>('upsert_entity_graph', input)
+  }
+
+  async entityGraph(name: string, hops = 1): Promise<EntityGraph | undefined> {
+    const row = await rpc<EntityGraph | null>('entity_graph', { name, hops })
+    return row ?? undefined
+  }
+
+  async entityCandidates(text: string, limit = 5): Promise<EntityGraph[]> {
+    return rpc<EntityGraph[]>('entity_candidates', { text, limit })
+  }
+
+  async listEntities(limit = 20): Promise<EntityRow[]> {
+    return rpc<EntityRow[]>('list_entities', { limit })
+  }
+
+  async searchEntities(text: string, limit = 10): Promise<EntityRow[]> {
+    return rpc<EntityRow[]>('search_entities', { text, limit })
   }
 }

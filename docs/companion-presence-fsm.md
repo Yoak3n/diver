@@ -479,7 +479,7 @@ sidecar **重启不重置** L0（除 `activity` 由回压纠正）与 L2 节流�
 | **4** | **Dream / Explore / PendingInquiry + memory `dream()`/`pickTerms()`/`explore()` + `/api/memory/dream|explore`** | 0–2 |
 | 5 | 新策略/新能力（亲密度、listen、banner…） | 3–4 |
 
-**兼容**：现有 backend `idle-gate.ts` 视作切片 0 的脚手架；语义并入 ProactiveSpeak 后删除二次门控。
+**兼容**：backend `idle-gate.ts` + `/api/event` **已删除**（全面迁壳）；主动开口唯一入口为壳 `request(proactive_inject)` → `POST /api/inject`。
 
 ---
 

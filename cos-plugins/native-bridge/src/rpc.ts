@@ -50,6 +50,42 @@ export const NATIVE_RPC_METHODS = [
     description: '通知通道连通性探测（不弹通知）',
     probeSafe: true as boolean,
   },
+  {
+    method: 'presence::ping',
+    service: 'presence',
+    description: 'Companion Presence 连通性探测',
+    probeSafe: true as boolean,
+  },
+  {
+    method: 'presence::phase',
+    service: 'presence',
+    description: '当前存在感相位（叶子名）',
+    probeSafe: true as boolean,
+  },
+  {
+    method: 'presence::snapshot',
+    service: 'presence',
+    description: '存在感调试快照（相位 + ProactiveSpeak 记账）',
+    probeSafe: true as boolean,
+  },
+  {
+    method: 'presence::busy',
+    service: 'presence',
+    description: 'agent busy 回压（L0 activity）',
+    probeSafe: true as boolean,
+  },
+  {
+    method: 'presence::event',
+    service: 'presence',
+    description: '驱动 L0 事件（USER_CHAT / CHAT_ACTIVITY / …）',
+    probeSafe: true as boolean,
+  },
+  {
+    method: 'presence::request_inject',
+    service: 'presence',
+    description: '裁决主动注入（L1+L2；通过返回 inject 载荷）',
+    probeSafe: false as boolean,
+  },
 ] as const
 
 /** `http://127.0.0.1:{DIVER_MEMORY_PORT}/rpc`，未配置时返回 null。 */

@@ -12,7 +12,6 @@
     "./health": "./src/health.ts",
     "./providers": "./src/providers.ts",
     "./sse": "./src/sse.ts",
-    "./idle-gate": "./src/idle-gate.ts",
     "./interaction": "./src/interaction.ts",
     "./types": "./src/types.ts",
     "./state": "./src/state.ts",
@@ -24,7 +23,9 @@
   },
   "dependencies": {
     "@cos/plugin-api": "file:../../harness/packages/plugin-api",
+    "@diver/memory": "file:../memory",
     "@diver/native-bridge": "file:../native-bridge",
+    "@diver/web-tools": "file:../web-tools",
     "cordis": "4.0.0-rc.7",
     "yaml": "2.4.0"
   },

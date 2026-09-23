@@ -19,7 +19,7 @@ import { readDiverSettings } from './session.ts'
 import type { MemoryStore, RelationCard } from './store-rpc.ts'
 
 /** worker 可见的记忆工具全量（含 run 期注入的 memory_update_card）。 */
-export const WORKER_TOOLS = ['remember', 'recall', 'inventory', 'demote', 'memory_update_card'] as const
+export const WORKER_TOOLS = ['remember', 'recall', 'inventory', 'demote', 'entity', 'memory_update_card'] as const
 
 /** 解析 worker 的 provider/model：跟随用户设置在 diver-settings.json 里的选择，
  * 未设置则取当前注册的第一个适配器（与 @diver/backend 的 ensureCompanionAgent 一致）。 */
@@ -72,10 +72,13 @@ const DIGEST_SYSTEM = `你是陪伴助手的记忆消化员。你的职责：读
 必须通过工具操作记忆（不要输出 JSON，也不要复述摘要）：
 1. 先盘点：用 inventory / recall 看看记忆里已有什么，避免重复写入。
 2. 有价值的新事实用 remember 沉淀为话题记忆，一句话一条。
-3. 关于用户 / 自己 / 相处模式的长期结论，用 memory_update_card 增量更新身份卡片
+3. 人/物/地点/项目等实体，以及属性与关系，用 entity 写入知识图谱
+   （如 name=用户 attrs={"忌口":"香菜"}，或 relations=[{"to":"小明","relation":"同事"}]）。
+   有明确主语和关系的结构化事实优先走 entity，叙述性经历走 remember。
+4. 关于用户 / 自己 / 相处模式的长期结论，用 memory_update_card 增量更新身份卡片
    （agent_model 是"我是什么样的人"——性格、说话方式、价值观；助手在相处中逐渐形成的
    自我认知都沉淀在这里，让性格跨会话保持稳定、持续完善）。
-4. 高门槛保守：证据不足不下结论，寒暄与一次性信息不写；不确定就不写。
+5. 高门槛保守：证据不足不下结论，寒暄与一次性信息不写；不确定就不写。
 
 结束时只用一句话简短中文总结你做了什么；没有值得记的就直说。`
 
@@ -121,8 +124,9 @@ const COMPACTION_SYSTEM = `你是持续记忆消化员。输入是一段"压缩�
 必须通过工具操作记忆（不要输出 JSON）：
 1. 用 recall / inventory 看看"会话历史回顾"等话题里已有什么。
 2. 把摘要里值得长期保留的事实 / 承诺 / 偏好用 remember 沉淀，话题传"会话历史回顾"或更贴切的话题。
-3. 若有跨会话稳定的自我认知或相处模式，可用 memory_update_card 更新身份卡片（agent_model=我是什么样的人）。
-4. 只保留有信息量的内容，压缩摘要里的过程性细节不必全记。
+3. 有明确主语与关系的结构化事实（人/物/属性/关系）用 entity 写入知识图谱。
+4. 若有跨会话稳定的自我认知或相处模式，可用 memory_update_card 更新身份卡片（agent_model=我是什么样的人）。
+5. 只保留有信息量的内容，压缩摘要里的过程性细节不必全记。
 
 结束时只用一句话简短中文总结你做了什么。`
 

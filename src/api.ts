@@ -73,23 +73,6 @@ export function sendChat(
   });
 }
 
-/** 桌宠互动事件上行（闲时门控在 backend；见 docs/pet-interaction-events.md）。 */
-export function sendPetEvent(body: {
-  type: string;
-  ts?: number;
-  source?: string;
-  payload?: Record<string, unknown>;
-  context?: {
-    display?: { id?: number | string; width?: number; height?: number; primary?: boolean };
-    apps?: string[];
-  };
-}): Promise<{ accepted: boolean; reason?: string; messageId?: string; triggered?: boolean }> {
-  return json("/event", {
-    method: "POST",
-    body: JSON.stringify({ source: "pet", ts: Date.now(), ...body }),
-  });
-}
-
 /** 当前会话历史（重启后恢复界面）。 */
 export function getHistory(): Promise<{ messages: ChatMessage[] }> {
   return json<{ messages: ChatMessage[] }>("/history");

@@ -1,0 +1,29 @@
+{
+  "name": "@diver/web-tools",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Diver companion web exploration tools: web_search / web_read / web_explore with controllable budgets (bladebro-inspired content extraction).",
+  "main": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./extract": "./src/extract.ts",
+    "./search": "./src/search.ts",
+    "./fetch": "./src/fetch.ts",
+    "./explore": "./src/explore.ts",
+    "./policy": "./src/policy.ts",
+    "./browser": "./src/browser.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@cos/plugin-api": "file:../../harness/packages/plugin-api",
+    "cordis": "4.0.0-rc.7",
+    "node-html-parser": "^6.1.13"
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "typescript": "~5.6.2"
+  }
+}

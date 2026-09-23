@@ -6,6 +6,7 @@
 mod grep;
 mod memory;
 mod notify;
+mod presence;
 mod rpc;
 
 use std::sync::{Arc, Mutex};

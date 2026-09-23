@@ -79,6 +79,7 @@ function toolPreview(t: ToolActivity): string {
         <div v-if="showBubble" class="bubble" :class="{ streaming: msg.streaming }">
           <span v-if="msg.origin === 'presence'" class="origin-tag">主动</span>
           <span v-else-if="msg.origin === 'interaction'" class="origin-tag">互动</span>
+          <span v-else-if="msg.origin === 'proactive'" class="origin-tag">主动</span>
           <div class="md-body" v-html="contentHtml"></div>
           <span v-if="msg.streaming" class="cursor">▍</span>
         </div>

@@ -456,7 +456,7 @@ let petDragSession = false;
 /** 拖动结束软限位定时器（Moved 防抖） */
 let dragIdleTimer: number | null = null;
 let unlistenPetMoved: (() => void) | null = null;
-/** 互动事件识别（切屏 / 长拖）→ POST /api/event（backend 闲时门控）。 */
+/** 互动事件识别（切屏 / 长拖）→ invoke 壳 pet_gesture_event（Presence 裁决 + inject）。 */
 const interactionTracker: PetInteractionTracker = createPetInteractionTracker();
 
 function clearPressTimer() {

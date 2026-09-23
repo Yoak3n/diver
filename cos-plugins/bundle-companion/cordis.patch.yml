@@ -16,6 +16,16 @@
     - id: basic-tools
       name: '@diver/basic-tools'
 
+    # 联网探索工具：web_search / web_read / web_explore（可控预算；Explore 执行面）
+    - id: web-tools
+      name: '@diver/web-tools'
+      config:
+        engine: ddg
+        maxResults: 8
+        maxPages: 3
+        maxCharsPerPage: 6000
+        maxTotalChars: 16000
+
     # MCP 客户端（registry 模式）：从外层程序维护的 MCP 配置文件
     # （DIVER_MCP_CONFIG_FILE 或 $COS_HOME/mcp-servers.json）读取 server 列表，
     # 逐个连接并把其工具以 mcp__<serverName>__<rawName> 注册进 ctx.tools。

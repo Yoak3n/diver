@@ -2,8 +2,48 @@
 
 use std::sync::{Arc, Mutex};
 
-use diver_memory::db::MemoryDb;
+use diver_memory::db::{MemoryDb, RelationSpec};
 use serde_json::{json, Value};
+
+fn parse_attrs(v: Option<&Value>) -> Vec<(String, String)> {
+    let Some(Value::Object(map)) = v else {
+        return vec![];
+    };
+    map.iter()
+        .filter_map(|(k, val)| {
+            val.as_str()
+                .map(|s| (k.clone(), s.to_string()))
+                .filter(|(_, s)| !s.trim().is_empty())
+        })
+        .collect()
+}
+
+fn parse_relations(v: Option<&Value>) -> Vec<RelationSpec> {
+    let Some(Value::Array(items)) = v else {
+        return vec![];
+    };
+    items
+        .iter()
+        .filter_map(|item| {
+            let to_name = item.get("to").and_then(|x| x.as_str())?.trim().to_string();
+            let relation = item.get("relation").and_then(|x| x.as_str())?.trim().to_string();
+            if to_name.is_empty() || relation.is_empty() {
+                return None;
+            }
+            let to_type = item
+                .get("toType")
+                .and_then(|x| x.as_str())
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(str::to_string);
+            Some(RelationSpec {
+                to_name,
+                relation,
+                to_type,
+            })
+        })
+        .collect()
+}
 
 pub fn dispatch(db: &Arc<Mutex<MemoryDb>>, method: &str, params: &Value) -> Result<Value, String> {
     let db = db.lock().map_err(|_| "db lock poisoned".to_string())?;
@@ -106,6 +146,62 @@ pub fn dispatch(db: &Arc<Mutex<MemoryDb>>, method: &str, params: &Value) -> Resu
         }
         "recent_self_actions" => to_value(
             db.recent_self_actions(str_opt("kind").as_deref(), usize_opt("limit")).map_err(err)?,
+        ),
+        "upsert_entity" => {
+            let row = db
+                .upsert_entity(&req_str(params, "name")?, str_opt("entityType").as_deref())
+                .map_err(err)?;
+            to_value(row)
+        }
+        "set_entity_attr" => {
+            let ok = db
+                .set_entity_attr(
+                    &req_str(params, "entityId")?,
+                    &req_str(params, "key")?,
+                    &req_str(params, "value")?,
+                    str_opt("sourceTopicId").as_deref(),
+                )
+                .map_err(err)?;
+            json!(ok)
+        }
+        "add_entity_relation" => {
+            let ok = db
+                .add_entity_relation(
+                    &req_str(params, "fromEntityId")?,
+                    &req_str(params, "toEntityId")?,
+                    &req_str(params, "relation")?,
+                    str_opt("sourceTopicId").as_deref(),
+                )
+                .map_err(err)?;
+            json!(ok)
+        }
+        "upsert_entity_graph" => {
+            let attrs = parse_attrs(params.get("attrs"));
+            let relations = parse_relations(params.get("relations"));
+            let graph = db
+                .upsert_entity_graph(
+                    &req_str(params, "name")?,
+                    str_opt("entityType").as_deref(),
+                    &attrs,
+                    &relations,
+                    str_opt("sourceTopicId").as_deref(),
+                )
+                .map_err(err)?;
+            to_value(graph)
+        }
+        "find_entity" => to_value(db.find_entity(&req_str(params, "name")?).map_err(err)?),
+        "entity_graph" => to_value(
+            db.entity_graph(&req_str(params, "name")?, usize_opt("hops"))
+                .map_err(err)?,
+        ),
+        "entity_candidates" => to_value(
+            db.entity_candidates(&req_str(params, "text")?, usize_opt("limit"))
+                .map_err(err)?,
+        ),
+        "list_entities" => to_value(db.list_entities(usize_opt("limit")).map_err(err)?),
+        "search_entities" => to_value(
+            db.search_entities(&req_str(params, "text")?, usize_opt("limit"))
+                .map_err(err)?,
         ),
         "stats" => to_value(db.stats().map_err(err)?),
         "snapshot" => to_value(db.snapshot(usize_opt("limit")).map_err(err)?),

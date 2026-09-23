@@ -75,7 +75,7 @@ configure(builder)
 
 ## 窗口管理
 
-`src-tauri/src/base/window/` 统一管理窗口生命周期：
+`src-tauri/src/shell/window/` 统一管理窗口生命周期：
 
 - **WindowType**：`Main`（主聊天窗口）/ `Pet`（Live2D 桌宠，透明/置顶/无边框/跳过任务栏）
 - **Manager**：`show_window` / `close_window` / `destroy_window` / `toggle_window`，

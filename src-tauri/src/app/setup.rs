@@ -134,12 +134,27 @@ pub fn configure(builder: Builder<tauri::Wry>) -> Builder<tauri::Wry> {
     builder.setup(|app| {
         app.manage(crate::app::state::AppState::default());
         crate::app::handle::Handle::global().init(app.handle().clone());
+        // shell 窗口管理：注入 AppHandle + 托盘回调（shell 不依赖 app 模块）。
+        {
+            let wm = crate::shell::window::manager::Manager::global();
+            wm.init(app.handle().clone());
+            wm.set_main_visible_listener(|visible| {
+                crate::app::tray::update_menu_visible(visible);
+            });
+        }
         let _ = crate::app::tray::create_tray_icon(app, false);
 
         // 启动本地服务（SQLite 记忆后端等），端口注入 sidecar。
-        match crate::services::start(app.handle()) {
-            Some(port) => std::env::set_var("DIVER_MEMORY_PORT", port.to_string()),
-            None => log::error!("本地服务启动失败，记忆功能不可用"),
+        // 通知能力在 app 层包好闭包再注入，services 不依赖 shell。
+        {
+            let notify_app = app.handle().clone();
+            let notify: crate::services::NotifyFn = std::sync::Arc::new(move |title, body| {
+                crate::shell::notify::show(&notify_app, &title, &body);
+            });
+            match crate::services::start(app.handle(), notify) {
+                Some(port) => std::env::set_var("DIVER_MEMORY_PORT", port.to_string()),
+                None => log::error!("本地服务启动失败，记忆功能不可用"),
+            }
         }
 
         // 初始化 MCP 服务配置：迁移旧位置（如有）并写入默认配置，
@@ -153,10 +168,15 @@ pub fn configure(builder: Builder<tauri::Wry>) -> Builder<tauri::Wry> {
         crate::app::shortcut::ShortcutManager::global().init(app.handle());
 
         // 陪伴存在感：加载互动配置 + 启动 presence 日程调度（控制面在壳）。
+        // 路径与通知闭包在 app 层注入，core 不摸 app/shell。
         {
-            let pet_cfg = crate::core::pet_interaction::load_config();
+            let cos_home = crate::config::cos_home(app.handle());
+            let pet_cfg = crate::core::pet_interaction::load_config(&cos_home);
             crate::core::pet_interaction::apply_config(&pet_cfg);
-            crate::core::presence_schedule::spawn_scheduler();
+            let notify_app = app.handle().clone();
+            crate::core::presence_schedule::spawn_scheduler(cos_home, move |title, body| {
+                crate::shell::notify::show(&notify_app, title, body);
+            });
             crate::core::explore_policy::spawn_explore_scheduler();
         }
 

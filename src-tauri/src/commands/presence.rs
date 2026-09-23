@@ -1,46 +1,13 @@
 //! 陪伴存在感 / 桌宠互动语义 command。
+//!
+//! 只做适配：从 `AppHandle` 取 `cos_home`，再调 core 逻辑。
 
-use diver_presence::{Event, Regime};
+use tauri::AppHandle;
 
+use crate::config::cos_home;
+use crate::core::presence::parse_event::parse_presence_event;
+use crate::core::pet_interaction::{PetGestureEvent, PetInteractionConfig};
 use crate::core::sidecar::SidecarManager;
-
-/// 解析前端事件名 → `diver_presence::Event`。纯函数，便于单测。
-fn parse_presence_event(
-    event: &str,
-    regime: Option<&str>,
-    enabled: Option<bool>,
-) -> Result<Event, String> {
-    let ev = match event {
-        "USER_CHAT" => Event::UserChat,
-        "CHAT_ACTIVITY" => Event::ChatActivity,
-        "USER_INPUT_START" => Event::UserInputStart,
-        "USER_INPUT_END" => Event::UserInputEnd,
-        "PET_GESTURE" => Event::PetGesture,
-        "DELIVERING_START" => Event::DeliveringStart,
-        "DELIVERING_END" => Event::DeliveringEnd,
-        "DREAM_START" => Event::DreamStart,
-        "DREAM_END" => Event::DreamEnd,
-        "EXPLORE_START" => Event::ExploreStart,
-        "EXPLORE_END" => Event::ExploreEnd,
-        "BOOT" => Event::Boot,
-        "SHUTDOWN" => Event::Shutdown,
-        "BUSY_TRUE" => Event::Busy(true),
-        "BUSY_FALSE" => Event::Busy(false),
-        "REGIME" => {
-            let r = match regime {
-                Some("dnd") => Regime::Dnd,
-                Some("quiet_hours") => Regime::QuietHours,
-                Some("focus") => Regime::Focus,
-                Some("sleep") => Regime::Sleep,
-                _ => Regime::Normal,
-            };
-            Event::Regime(r)
-        }
-        "ENABLED" => Event::Enabled(enabled.unwrap_or(true)),
-        other => return Err(format!("unknown:{other}")),
-    };
-    Ok(ev)
-}
 
 /// 存在感相位（叶子名）。调用点会按 now 补发时间事件。
 #[tauri::command]
@@ -107,16 +74,17 @@ pub fn presence_explore_cancel() -> serde_json::Value {
 
 /// 读取桌宠互动感知设置（壳为真源；与 diver-settings.petInteraction 同步）。
 #[tauri::command]
-pub fn get_pet_interaction_config() -> crate::core::pet_interaction::PetInteractionConfig {
-    crate::core::pet_interaction::load_config()
+pub fn get_pet_interaction_config(app: AppHandle) -> PetInteractionConfig {
+    crate::core::pet_interaction::load_config(&cos_home(&app))
 }
 
 /// 保存桌宠互动设置并同步 ProactiveSpeak 节流参数。
 #[tauri::command]
 pub fn set_pet_interaction_config(
-    config: crate::core::pet_interaction::PetInteractionConfig,
-) -> Result<crate::core::pet_interaction::PetInteractionConfig, String> {
-    crate::core::pet_interaction::save_config(&config).map_err(|e| e.to_string())?;
+    app: AppHandle,
+    config: PetInteractionConfig,
+) -> Result<PetInteractionConfig, String> {
+    crate::core::pet_interaction::save_config(&cos_home(&app), &config).map_err(|e| e.to_string())?;
     crate::core::pet_interaction::apply_config(&config);
     Ok(config)
 }
@@ -124,48 +92,8 @@ pub fn set_pet_interaction_config(
 /// 桌宠手势语义事件：壳组文案 + Presence 裁决 + inject（唯一主动开口入口）。
 #[tauri::command]
 pub async fn pet_gesture_event(
-    event: crate::core::pet_interaction::PetGestureEvent,
+    app: AppHandle,
+    event: PetGestureEvent,
 ) -> Result<serde_json::Value, String> {
-    Ok(crate::core::pet_interaction::handle_pet_gesture(event).await)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn parses_known_events() {
-        assert!(matches!(
-            parse_presence_event("USER_CHAT", None, None),
-            Ok(Event::UserChat)
-        ));
-        assert!(matches!(
-            parse_presence_event("BUSY_TRUE", None, None),
-            Ok(Event::Busy(true))
-        ));
-        assert!(matches!(
-            parse_presence_event("ENABLED", None, Some(false)),
-            Ok(Event::Enabled(false))
-        ));
-    }
-
-    #[test]
-    fn parses_regime_with_default() {
-        assert!(matches!(
-            parse_presence_event("REGIME", Some("dnd"), None),
-            Ok(Event::Regime(Regime::Dnd))
-        ));
-        assert!(matches!(
-            parse_presence_event("REGIME", None, None),
-            Ok(Event::Regime(Regime::Normal))
-        ));
-    }
-
-    #[test]
-    fn rejects_unknown_event() {
-        assert_eq!(
-            parse_presence_event("NOPE", None, None),
-            Err("unknown:NOPE".to_string())
-        );
-    }
+    Ok(crate::core::pet_interaction::handle_pet_gesture(&cos_home(&app), event).await)
 }

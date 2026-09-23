@@ -47,8 +47,8 @@ async fn route(state: &ServiceState, method: &str, params: &Value) -> Result<Val
             .map_err(|join_err| grep::RpcFailure::new(format!("grep task failed: {join_err}")))?
     }
     if method.starts_with("notify::") {
-        // 通知是壳能力：Node 主动消息/日程提醒到达时弹系统通知。
-        return notify::dispatch(method, params).map_err(grep::RpcFailure::new);
+        // 通知是壳能力：Node 主动消息/日程提醒到达时弹系统通知（闭包由 start 注入）。
+        return notify::dispatch(state, method, params).map_err(grep::RpcFailure::new);
     }
     if method.starts_with("presence::") {
         // 存在感回压 / 裁决：控制面在壳（companion-presence-fsm.md）。

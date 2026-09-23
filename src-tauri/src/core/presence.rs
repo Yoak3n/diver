@@ -5,6 +5,8 @@
 //! - busy / 聊天回压入口（Node 经 `/rpc presence::*`）
 //! - 已裁决注入的 HTTP 下发（sidecar 无门控执行）
 
+pub mod parse_event;
+
 use diver_presence::{
     CompanionPresence, Event, InjectRequest, Intent, Phase, PresenceSnapshot, ProactiveConfig,
     Regime, RequestResult,

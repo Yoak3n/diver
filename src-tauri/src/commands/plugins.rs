@@ -75,5 +75,5 @@ pub fn uninstall_profile_plugin(
     id: String,
     restart: Option<bool>,
 ) -> Result<Vec<PluginInfo>, String> {
-    crate::plugins::install::uninstall_profile_plugin(&app, &id, restart.unwrap_or(true))
+    crate::plugins::uninstall_profile_plugin(&app, &id, restart.unwrap_or(true))
 }

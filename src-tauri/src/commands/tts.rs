@@ -68,19 +68,7 @@ pub async fn tts_synthesize_stream(
     on_chunk: tauri::ipc::Channel<TtsPcmChunk>,
 ) -> Result<(), String> {
     let cfg = load_config(&app);
-    if cfg.provider != TtsProvider::Mimo {
-        // 非 MiMo：退化为整段合成后一次推完（前端仍按 PCM 无法播 mp3 → 由前端回退）
-        return Err("STREAM_UNSUPPORTED".into());
-    }
-    let voice = voice
-        .as_deref()
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .unwrap_or(cfg.voice.trim())
-        .to_string();
-    if voice.is_empty() {
-        return Err("未选择声线".into());
-    }
+    let voice = tts::resolve_stream_voice(&cfg, voice.as_deref())?;
     tts::synthesize_mimo_stream(&cfg, &text, &voice, |base64, done| {
         on_chunk
             .send(TtsPcmChunk { base64, done })

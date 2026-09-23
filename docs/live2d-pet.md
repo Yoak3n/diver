@@ -28,10 +28,23 @@
 
 | 交互 | 行为 |
 |---|---|
-| 点按桌宠 | 随机播放 TapBody 动作（force 优先级，可打断情绪动作） |
+| 鼠标移动 | **视线追踪**（`model.focus` → EyeBall/Angle/BodyAngle；穿透态走全局鼠标流） |
+| 点按头部（命中框上 35%） | 害羞/惊讶倾向 + 表情（短按；蓄力环延迟 150ms 才出现） |
+| 点按身体 | TapBody / 开心动作 + 表情 |
+| 长按 >350ms | 拖动蓄力 → 系统拖窗（轻微移动只取消拖动，**不吞点按**） |
 | 底部气泡面板 | 直接对话（轻量 SSE 聊天，最近 8 条） |
-| 助手回复 | 自动 TTS 朗读 + **口型同步**（见下） |
+| 助手回复 | 情绪动作+表情同播；TTS 口型同步 |
+| 空闲 | 每 14–26s 随机 Idle 小动作 |
 | 顶部手柄 | 拖拽移动（`data-tauri-drag-region`） |
+
+## 生命感驱动（对齐 N.E.K.O）
+
+统一挂在 `beforeModelUpdate`（烘焙前）合成多层参数：
+
+1. **视线**：`setLookAt` → `model.focus`
+2. **表情层**：exp3/手动参数 **淡入 220ms / 淡出差分 320ms**，不打断 idle/focus/breath
+3. **口型**：TTS 响度或正弦
+4. **动作**：情绪/点击/Idle 池随机
 
 ## 口型同步（TTS → Live2D）
 
@@ -75,9 +88,9 @@
 - **入口**：Vite 单页 SPA + hash 路由 `/#/pet`（`src/router.ts`），窗口 URL 为
   `WindowType::Pet.url()`；`public/pet/` 下 Live2D 静态资源仍打包到 `dist/pet/`
 - **窗口特性**：Rust `WindowType::Pet` — 透明 / `decorations: false` / 置顶 /
-  `skip_taskbar` / 不抢焦点（`base/window/` 统一管理）
+  `skip_taskbar` / 不抢焦点（`shell/window/` 统一管理）
 - **尺寸**：基准 600×560，支持 50%–200% 缩放（设置 → 系统 → 桌宠大小）。
-  常量双端同源：`base/window/pet_geom.rs` ↔ `src/pet/constants.ts`
+  常量双端同源：`crates/diver-geom` ↔ `src/pet/constants.ts`
 - **位置**：拖动后持久化到 `pet-window.json`；重启时校验是否落在可见显示器内，
   无效则回退主屏工作区右下角
 - **跨窗口/跨屏拖动**（对齐 DSH）：系统 `startDragging` 负责移动；`Moved` 事件
@@ -111,8 +124,8 @@
 
 - `src/pet/`：`PetApp.vue`（气泡面板 + 情绪动作 + 穿透）、`constants.ts`（几何常量）、
   `live2d.ts`、`emotion.ts`、`usePetChat.ts`
-- `src-tauri/src/base/window/pet.rs`：桌宠生命周期 / 位置恢复 / 缩放 / 多屏
-- `src-tauri/src/base/window/pet_geom.rs`：尺寸公式（与前端 constants 同源）
+- `src-tauri/src/shell/window/pet.rs`：桌宠生命周期 / 位置恢复 / 缩放 / 多屏
+- `crates/diver-geom`：尺寸公式（与前端 constants 同源）
 - `src-tauri/src/base/pet_mouse.rs`：全局鼠标流
 - `src-tauri/src/config/pet_window.rs`：`pet-window.json` 持久化
 - `src-tauri/capabilities/pet.json`：桌宠窗口权限

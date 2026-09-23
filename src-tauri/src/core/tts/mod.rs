@@ -7,5 +7,7 @@ mod audio_util;
 mod synth;
 mod voices;
 
-pub use synth::{synthesize, synthesize_from_config, synthesize_mimo_stream};
+pub use synth::{
+    resolve_stream_voice, synthesize, synthesize_from_config, synthesize_mimo_stream,
+};
 pub use voices::{list_models, list_voices};

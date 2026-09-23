@@ -18,8 +18,11 @@
 mod command;
 #[cfg(target_os = "windows")]
 mod job_object;
+mod lifecycle;
 mod paths;
 mod process;
+mod reclaim;
+mod shutdown;
 mod status;
 
 /// 非 Windows 平台的占位类型（SidecarManager 字段统一携带）。

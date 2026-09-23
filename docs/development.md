@@ -34,11 +34,11 @@ diver/
 ├─ src-tauri/              # Rust 壳
 │  ├─ src/commands/        # Tauri IPC 薄适配（system/plugins/shortcuts/tts/presence/pet/config）
 │  ├─ src/app/             # 组装与生命周期（setup / events / handle / state / tray / shortcut）
-│  ├─ src/shell/           # 窗口与桌面集成（window / lightweight / pet_mouse / notify）
-│  ├─ src/core/            # 可单测业务（sidecar / tts / node_runtime / presence / timer / pet_geom…）
-│  ├─ src/plugins/         # 插件 catalog/profile/preflight/install
+│  ├─ src/shell/           # 窗口与桌面集成（window/{manager,pet} / lightweight / pet_mouse / notify）
+│  ├─ src/core/            # 可单测业务（sidecar/{process,lifecycle,shutdown,reclaim} / tts/synth / node_runtime / pet_interaction / presence…）
+│  ├─ src/plugins/         # 插件 catalog/profile/preflight/{registry,package,install,uninstall}
 │  ├─ src/config/          # 持久化配置（window_startup / tts / mcp / shortcuts…）
-│  ├─ src/services/        # 本地服务：axum /rpc + memory RPC handler
+│  ├─ src/services/        # 本地服务：axum /rpc + memory RPC handler（notify 经注入闭包）
 │  └─ config/tts.json     # 在线 TTS 配置
 ├─ crates/diver-geom/     # 桌宠几何纯函数（config/shell/core 共用）
 ├─ crates/diver-memory/    # Rust 记忆后端 crate（SQLite 存储 + 确定性逻辑）

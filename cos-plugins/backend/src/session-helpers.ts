@@ -33,8 +33,9 @@ export function writeDiverSettings(patch: Record<string, unknown>): Record<strin
   return next
 }
 
-/** 把消息文本从内容块中取出。 */
+/** 把消息文本从内容块中取出。兼容纯字符串 content（否则会被抽成空，前端丢用户消息）。 */
 export function textOf(blocks: unknown): string {
+  if (typeof blocks === 'string') return blocks
   if (!Array.isArray(blocks)) return ''
   return blocks
     .filter((b) => b?.type === 'text' && typeof b.text === 'string')

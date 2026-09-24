@@ -69,7 +69,7 @@ watch(
 );
 
 async function speak(msg: ChatMessage) {
-  await speakMessageText(msg.content, props.ttsVoice, msg.id);
+  await speakMessageText(msg.content, props.ttsVoice, msg.id, { userGesture: true });
 }
 </script>
 
@@ -111,7 +111,12 @@ async function speak(msg: ChatMessage) {
             @toggle="emit('toggleActivity', msg.activityGroupId ?? msg.id)"
           />
           <MessageBubble
-            v-else-if="!msg.activityGroupId || isActivityExpanded(msg.activityGroupId)"
+            v-else-if="
+              msg.kind === 'user' ||
+              msg.kind === 'system' ||
+              !msg.activityGroupId ||
+              isActivityExpanded(msg.activityGroupId)
+            "
             :msg="msg"
             :tts-voice="ttsVoice"
             :tauri="tauriAvailable()"
@@ -125,12 +130,6 @@ async function speak(msg: ChatMessage) {
           :questions="pendingQuestion.questions"
           @answer="emit('answerQuestion', $event)"
         />
-
-        <div v-if="tools.length" class="tools-strip">
-          <span v-for="(t, i) in tools" :key="i" class="tool-chip" :class="t.status">
-            {{ t.status === "call" ? "正在" : "完成" }} {{ t.name }}
-          </span>
-        </div>
 
         <div v-if="busy && !messages.some((m) => m.streaming)" class="thinking">
           <span class="dot busy"></span> 正在思考…
@@ -194,23 +193,6 @@ async function speak(msg: ChatMessage) {
   flex: 1;
   color: var(--err);
   font-size: 13px;
-}
-.tools-strip {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  padding-left: 36px;
-}
-.tool-chip {
-  font-size: 11px;
-  color: var(--ink-muted);
-  background: var(--paper-sunken);
-  border: 1px solid var(--rule);
-  border-radius: var(--radius-pill);
-  padding: 2px 10px;
-}
-.tool-chip.call {
-  color: var(--warn);
 }
 .thinking {
   display: flex;

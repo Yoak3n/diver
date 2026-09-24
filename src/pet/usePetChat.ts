@@ -11,6 +11,7 @@ import type {
   UserQuestionAnswerItem,
 } from "../types";
 import { onTauriEvent, tauriAvailable, waitForSidecarReady } from "../tauri";
+import { hasVisibleMessageBody } from "../markdown";
 
 const MAX_MESSAGES = 8;
 const HEALTH_POLL_MS = 8000;
@@ -83,7 +84,11 @@ export function usePetChat() {
       // 仅当本地还没有消息时填充，避免覆盖正在进行的会话
       if (messages.value.length === 0) {
         // 历史消息标记 fromHistory：气泡/朗读等"新消息到达提示"不得重放上次会话末尾。
-        messages.value = data.messages.slice(-MAX_MESSAGES).map((m) => ({ ...m, streaming: false, fromHistory: true }));
+        // 先滤掉无正文/无图的工具·思考步骤，避免空气泡挤掉可见消息名额。
+        messages.value = data.messages
+          .filter(hasVisibleMessageBody)
+          .slice(-MAX_MESSAGES)
+          .map((m) => ({ ...m, streaming: false, fromHistory: true }));
       }
       historyLoaded = true;
     } catch {
@@ -92,6 +97,8 @@ export function usePetChat() {
   }
 
   function push(msg: ChatMessage) {
+    // 无正文无图的步骤（纯工具/思考）不进桌宠消息流，避免空白气泡
+    if (!hasVisibleMessageBody(msg)) return;
     messages.value.push(msg);
     if (messages.value.length > MAX_MESSAGES) {
       messages.value = messages.value.slice(-MAX_MESSAGES);
@@ -150,14 +157,17 @@ export function usePetChat() {
         } else if (e.turnMessageId) {
           const idx = messages.value.findIndex((m) => m.id === e.turnMessageId);
           if (idx >= 0) {
-            messages.value[idx] = {
+            const next = {
               id: e.messageId,
-              kind: "assistant",
+              kind: "assistant" as const,
               content: e.content,
               origin: e.origin,
               time: e.time,
               streaming: false,
             };
+            // 定稿后无正文无图：撤掉流式占位，避免留下空气泡
+            if (!hasVisibleMessageBody(next)) messages.value.splice(idx, 1);
+            else messages.value[idx] = next;
           } else if (e.content !== "") {
             push({ id: e.messageId, kind: "assistant", content: e.content, origin: e.origin, time: e.time });
           }

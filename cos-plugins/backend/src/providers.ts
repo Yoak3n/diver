@@ -138,6 +138,8 @@ export async function applyProviderConfigs(
         // secret 空串 = 留空不修改（与设置面板 placeholder 一致）
         if (value === '') continue
         writeSecret(field.credentialRef ?? `${provider}.${field.key}`, value, secretsFileOf(ctx))
+        // credentials 服务有内存缓存：写盘后必须失效，否则 configured 仍读旧值
+        ctx.credentials.invalidate?.(field.credentialRef ?? `${provider}.${field.key}`)
       } else {
         // settings 字段带 provider 前缀落盘（如 opencode-go.baseUrl 形态，泛化为 <provider>.<key>）
         // 空串显式写入，settingsValue 视为空并回退默认端点。

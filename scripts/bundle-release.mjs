@@ -1,9 +1,9 @@
-// Diver release 打包脚本：编排「前端构建 → 随包 Node 运行时组装 → 插件/引擎源码 → NSIS 安装包」。
+// Diver release 打包脚本：编排「前端构建 → sidecar 资源组装 → 插件/引擎源码 → NSIS 安装包」。
 //
-// 方案：随包 node.exe + npm + harness 引擎源码 + cos-plugins 插件源码。
-//  - 用户机器无需预装 Node（node.exe 随包）
+// 方案：不随包 Node（安装包更小）。引擎/插件源码随包，Node 运行时由壳在
+// 首次启动时解析：本机 Node ≥ 22 → 直接用；否则下载官方 zip 到应用缓存。
 //  - 引擎（@cos/*）与插件（@diver/*）全是磁盘源码 —— 完全开放，可改/删/加
-//  - 随包 npm 支持一键安装插件依赖（install-deps）
+//  - 插件依赖安装用系统/缓存 Node 自带的 npm（install-deps）
 //  - 无 SEA 烘焙、无 postject、无签名损坏
 //
 // 用法：
@@ -34,7 +34,18 @@ const SRC_TAURI = join(ROOT, 'src-tauri')
 const SIDECAR_RES = join(SRC_TAURI, 'resources', 'sidecar')
 
 // 随包分发的开放插件（源码目录名 = cos-plugins 下的包目录名）。
-const OPEN_PLUGINS = ['memory', 'voice', 'backend', 'basic-tools', 'mcp', 'llm-commandcode']
+// native-bridge / web-tools 是其它插件的运行时库（import @diver/*），必须随包。
+const OPEN_PLUGINS = [
+  'memory',
+  'voice',
+  'backend',
+  'basic-tools',
+  'mcp',
+  'llm-commandcode',
+  'llm-volcark',
+  'native-bridge',
+  'web-tools',
+]
 
 // 随包 Node 运行时来源（开发机 nvm 安装目录）。
 const NODE_BIN = process.env.DIVER_NODE_BIN ?? (() => {
@@ -77,7 +88,7 @@ if (!NODE_BIN || !existsSync(NODE_BIN)) {
   console.error('[bundle] 未找到 node.exe，请设置 DIVER_NODE_BIN 或安装 Node ≥ 22')
   process.exit(1)
 }
-console.log(`[bundle] 随包 Node: ${NODE_BIN} (${(execFileSync(NODE_BIN, ['--version'], { encoding: 'utf8' }) ?? '').trim()})`)
+console.log(`[bundle] 构建机 Node（不随包，仅构建用）: ${NODE_BIN} (${(execFileSync(NODE_BIN, ['--version'], { encoding: 'utf8' }) ?? '').trim()})`)
 
 // ── 1. 前端构建（Vite → dist/）──────────────────────────────────────────
 if (!assembleOnly && !skipFrontend) {
@@ -91,27 +102,45 @@ rmSync(SIDECAR_RES, { recursive: true, force: true })
 mkdirSync(join(SIDECAR_RES, 'bundles', 'bundle-companion'), { recursive: true })
 mkdirSync(join(SIDECAR_RES, 'plugins'), { recursive: true })
 
-// 2.1 随包 Node 运行时：node.exe + npm
-step('随包 Node 运行时')
-copyFileSync(NODE_BIN, join(SIDECAR_RES, 'node.exe'))
-const npmSrc = join(dirname(NODE_BIN), 'node_modules', 'npm')
-if (existsSync(npmSrc)) {
-  mkdirSync(join(SIDECAR_RES, 'node_modules'), { recursive: true })
-  copyReal(npmSrc, join(SIDECAR_RES, 'node_modules', 'npm'))
-  console.log('  ✓ node.exe + npm')
-} else {
-  console.warn(`  (跳过: npm 未找到 ${npmSrc}，插件依赖安装不可用)`)
-}
+// 2.1 不随包 Node：运行时由壳探测本机 / 按需下载（见 src-tauri/src/base/node_runtime.rs）。
+step('Node 运行时（不随包）')
+console.log('  ✓ 安装包不包含 node.exe；首次启动由壳解析系统 Node 或下载缓存')
 
 // 2.2 harness 引擎源码（packages + cordis.yml + 裁剪 package.json）
 step('harness 引擎源码')
 const harnessDst = join(SIDECAR_RES, 'harness')
 mkdirSync(harnessDst, { recursive: true })
-// 排除所有层级的 node_modules（pnpm workspace 包内也有 node_modules，
-// 复制链接会残留残缺文件；依赖统一由随包 node_modules.tar 提供）。
+// 运行时复制过滤：排除 node_modules（依赖由 tar 提供）以及开发/测试残留
+// （scripts 冒烟与 e2e、lockfile、测试文件等 —— 安装包只需 src + package.json）。
+const RUNTIME_SKIP_DIRS = new Set([
+  'node_modules',
+  'scripts',
+  '__tests__',
+  'test',
+  'tests',
+  'fixtures',
+  '.git',
+  '.idea',
+  '.vscode',
+])
+const RUNTIME_SKIP_FILES = new Set([
+  'package-lock.json',
+  'yarn.lock',
+  'npm-shrinkwrap.json',
+  '.DS_Store',
+  'Thumbs.db',
+  '.gitignore',
+  '.npmrc',
+])
 const notNodeModules = (p) => {
   const norm = p.replace(/[\\/]/g, '/')
-  return !norm.split('/').includes('node_modules')
+  const parts = norm.split('/').filter(Boolean)
+  if (parts.some((seg) => RUNTIME_SKIP_DIRS.has(seg))) return false
+  const base = parts[parts.length - 1] ?? ''
+  if (RUNTIME_SKIP_FILES.has(base)) return false
+  if (base.endsWith('.tsbuildinfo') || base.endsWith('.log')) return false
+  if (/\.test\.tsx?$/.test(base) || /\.spec\.tsx?$/.test(base)) return false
+  return true
 }
 cpSync(join(HARNESS, 'packages'), join(harnessDst, 'packages'), {
   recursive: true,
@@ -264,96 +293,197 @@ for (const name of OPEN_PLUGINS) {
   console.log(`  ✓ ${name}`)
 }
 
-// 插件依赖：@cos/* 链接到 harness packages（磁盘源码，无 type-strip 限制）
-//  + cordis/yaml 等从 harness node_modules 链接
+// 插件依赖闭包：按各插件 package.json 递归收集，保证 NSIS 安装后可解析。
+//  - @cos/*     → harness/packages 源码（含 plugin-api）
+//  - @diver/*   → cos-plugins 同目录源码（native-bridge / web-tools 等库）
+//  - npm 包     → 从 harness / 根 / 插件本地 node_modules 真实复制 + BFS 传递依赖
 step('插件依赖')
 const pluginsNm = join(pluginsDst, 'node_modules')
 mkdirSync(join(pluginsNm, '@cos'), { recursive: true })
+mkdirSync(join(pluginsNm, '@diver'), { recursive: true })
 const harnessNm = join(harnessDst, 'node_modules')
-// @cos/* 核心包（插件 import 的）：真实复制 harness/packages 源码。
-// （不能用 junction/symlink —— NSIS 打包会丢链接；源码 TS 不在 node_modules
-// 语义下，无 type-strip 限制。）
-for (const pkg of ['llm', 'tools', 'types', 'credentials', 'boot']) {
-  const src = join(harnessDst, 'packages', pkg)
-  const dst = join(pluginsNm, '@cos', pkg)
-  if (existsSync(src) && !existsSync(dst)) {
-    cpSync(src, dst, { recursive: true, filter: notNodeModules })
-    console.log(`  ✓ @cos/${pkg} (copied)`)
-  }
-}
-// cordis / yaml（插件依赖）：真实复制（解引用），并补齐其传递依赖
-const extDeps = ['cordis', 'yaml']
-for (const name of extDeps) {
-  const src = join(harnessNm, name)
-  const dst = join(pluginsNm, name)
-  if (existsSync(src) && !existsSync(dst)) {
-    copyReal(src, dst)
-    console.log(`  ✓ ${name}`)
-  }
-}
-// zod：mcp 插件的 SDK 依赖（harness 不直接依赖，从根 node_modules 复制）
-const zodSrc = join(ROOT, 'node_modules', 'zod')
-if (existsSync(zodSrc) && !existsSync(join(pluginsNm, 'zod'))) {
-  copyReal(zodSrc, join(pluginsNm, 'zod'))
-  console.log('  ✓ zod')
-}
-// 插件依赖补全：复制 cordis 后补齐其传递依赖（cosmokit、@standard-schema 等）
-for (const pkg of ['cosmokit', '@standard-schema/spec']) {
-  const srcPkg = pkg.includes('/') ? pkg.split('/') : [null, pkg]
-  const scope = srcPkg[0]
-  const name = srcPkg[1]
-  // 从 harness 顶层（已提升）复制
-  const srcTop = scope ? join(harnessNm, scope, name) : join(harnessNm, name)
-  const dstTop = scope ? join(pluginsNm, scope, name) : join(pluginsNm, name)
-  if (existsSync(srcTop) && !existsSync(dstTop)) {
-    if (scope) mkdirSync(join(pluginsNm, scope), { recursive: true })
-    copyReal(srcTop, dstTop)
-    console.log(`  ✓ ${pkg} (cordis 依赖)`)
-  }
-}
-// @modelcontextprotocol/sdk + 其依赖（mcp 插件用）
-// SDK 直接声明了 express / hono / ajv / cors / eventsource / zod-to-json-schema
-// 等一整套 server transport 依赖，且这些包各自还有深层传递依赖（express → 
-// accepts/body-parser/qs/router…；ajv → fast-uri/json-schema-traverse/…）。
-// 只复制一层会导致插件加载时 `Cannot find module` 崩溃（如 ajv 缺
-// json-schema-traverse）。这里做递归 BFS：复制一个包后把它声明的依赖也入队，
-// 直到闭包完整，全部从根 node_modules 真实复制。
-const sdkSrc = join(COS_PLUGINS, 'mcp', 'node_modules', '@modelcontextprotocol', 'sdk')
-if (existsSync(sdkSrc) && !existsSync(join(pluginsNm, '@modelcontextprotocol', 'sdk'))) {
-  mkdirSync(join(pluginsNm, '@modelcontextprotocol'), { recursive: true })
-  copyReal(sdkSrc, join(pluginsNm, '@modelcontextprotocol', 'sdk'))
-  console.log('  ✓ @modelcontextprotocol/sdk')
 
-  // BFS 队列：初始为 SDK 自身（其依赖会展开）；复制到 plugins/node_modules 的
-  // 每个包都入队继续展开，直到没有新依赖。
-  const queue = [join(pluginsNm, '@modelcontextprotocol', 'sdk')]
-  const seen = new Set([join(pluginsNm, '@modelcontextprotocol', 'sdk')])
-  let copied = 0
-  while (queue.length > 0) {
-    const pkgDir = queue.shift()
-    const pkgPath = join(pkgDir, 'package.json')
-    if (!existsSync(pkgPath)) continue
-    let declared = []
+/** 从多个候选根解析 npm 包目录。 */
+function findPkgRoot(pkgName, extraRoots = []) {
+  const roots = [join(ROOT, 'node_modules'), harnessNm, ...extraRoots]
+  for (const r of roots) {
+    const p = join(r, ...pkgName.split('/'))
+    if (existsSync(join(p, 'package.json'))) return p
+  }
+  return null
+}
+
+/** 把 @cos/<name> 源码复制进 plugins/node_modules（无 type-strip 限制）。 */
+function copyCosPackage(name) {
+  const src = join(harnessDst, 'packages', name)
+  const dst = join(pluginsNm, '@cos', name)
+  if (!existsSync(join(src, 'package.json')) || existsSync(dst)) return false
+  cpSync(src, dst, { recursive: true, filter: notNodeModules })
+  console.log(`  ✓ @cos/${name} (copied)`)
+  return true
+}
+
+/** 把 @diver/<name> 源码复制进 plugins/node_modules（保持开放可改）。 */
+function copyDiverPackage(name, extraRoots = []) {
+  const src = join(COS_PLUGINS, name)
+  const dst = join(pluginsNm, '@diver', name)
+  if (!existsSync(join(src, 'package.json')) || existsSync(dst)) return false
+  cpSync(src, dst, { recursive: true, filter: notNodeModules })
+  console.log(`  ✓ @diver/${name} (copied)`)
+  // 源码包自身依赖也入队展开
+  expandDeclaredDeps(src, extraRoots)
+  return true
+}
+
+/** 读取 package.json 的 dependencies + optionalDependencies 名。 */
+function declaredDepNames(pkgDir) {
+  const pkgPath = join(pkgDir, 'package.json')
+  if (!existsSync(pkgPath)) return []
+  try {
+    const j = JSON.parse(readFileSync(pkgPath, 'utf8'))
+    return [
+      ...Object.keys(j.dependencies ?? {}),
+      ...Object.keys(j.optionalDependencies ?? {}),
+    ]
+  } catch {
+    return []
+  }
+}
+
+/** 扫源码裸 import（package.json 可能漏声明，如 plugin-api → schemastery）。 */
+function sourceImportNames(pkgDir) {
+  const out = new Set()
+  const walk = (dir, depth) => {
+    if (depth > 6) return
+    let entries
     try {
-      const j = JSON.parse(readFileSync(pkgPath, 'utf8'))
-      declared.push(
-        ...Object.keys(j.dependencies ?? {}),
-        ...Object.keys(j.optionalDependencies ?? {}),
-      )
-    } catch { /* ignore */ }
-    for (const d of declared) {
-      const [scope, name] = d.startsWith('@') ? d.split('/') : [null, d]
-      const src = scope ? join(ROOT, 'node_modules', scope, name) : join(ROOT, 'node_modules', d)
-      const dst = scope ? join(pluginsNm, scope, name) : join(pluginsNm, d)
-      if (!existsSync(src) || existsSync(dst)) continue
-      if (scope) mkdirSync(join(pluginsNm, scope), { recursive: true })
-      copyReal(src, dst)
-      copied++
-      queue.push(dst)
-      seen.add(dst)
+      entries = readdirSync(dir, { withFileTypes: true })
+    } catch {
+      return
+    }
+    for (const e of entries) {
+      if (e.name === 'node_modules' || e.name.startsWith('.')) continue
+      const full = join(dir, e.name)
+      if (e.isDirectory()) {
+        walk(full, depth + 1)
+        continue
+      }
+      if (!/\.(ts|tsx|mts|js|mjs|cjs)$/.test(e.name)) continue
+      let text
+      try {
+        text = readFileSync(full, 'utf8')
+      } catch {
+        continue
+      }
+      for (const m of text.matchAll(/from\s+['"]([^'"]+)['"]/g)) {
+        const spec = m[1]
+        if (!spec || spec.startsWith('.') || spec.startsWith('node:') || spec.startsWith('file:')) continue
+        const name = spec.startsWith('@') ? spec.split('/').slice(0, 2).join('/') : spec.split('/')[0]
+        out.add(name)
+      }
     }
   }
-  console.log(`  ✓ SDK 依赖闭包 (${copied} 个传递依赖)`)
+  walk(join(pkgDir, 'src'), 0)
+  walk(pkgDir, 0)
+  return [...out]
+}
+
+/** 按声明 + 源码 import 把一个包的依赖落入 plugins/node_modules（npm 包 BFS）。 */
+function expandDeclaredDeps(pkgDir, extraRoots = []) {
+  const names = [...new Set([...declaredDepNames(pkgDir), ...sourceImportNames(pkgDir)])]
+  for (const d of names) {
+    if (!d || d.startsWith('node:')) continue
+    if (d.startsWith('@cos/')) {
+      copyCosPackage(d.slice('@cos/'.length))
+      continue
+    }
+    if (d.startsWith('@diver/')) {
+      copyDiverPackage(d.slice('@diver/'.length), extraRoots)
+      continue
+    }
+    // file: 相对路径 → 映射到 @cos / @diver 源码
+    // （package.json 里是 "file:../../harness/packages/plugin-api" 等）
+    const [scope, name] = d.startsWith('@') ? d.split('/') : [null, d]
+    const destRel = scope ? join(scope, name) : name
+    const dst = join(pluginsNm, ...destRel.split('/'))
+    if (existsSync(dst)) continue
+    const src = findPkgRoot(d, extraRoots)
+    if (!src) {
+      console.warn(`  (跳过: 未找到依赖 ${d})`)
+      continue
+    }
+    if (scope) mkdirSync(join(pluginsNm, scope), { recursive: true })
+    copyReal(src, dst)
+    console.log(`  ✓ ${d}`)
+    expandDeclaredDeps(dst, extraRoots)
+  }
+}
+
+// plugin-api `export { z } from '@deepseek-ai/schemastery'`（源码 import，依赖未声明）
+for (const pkg of ['@deepseek-ai/schemastery']) {
+  const src = findPkgRoot(pkg)
+  const dst = join(pluginsNm, ...pkg.split('/'))
+  if (src && !existsSync(dst)) {
+    mkdirSync(join(pluginsNm, '@deepseek-ai'), { recursive: true })
+    copyReal(src, dst)
+    console.log(`  ✓ ${pkg}`)
+    expandDeclaredDeps(dst)
+  }
+}
+
+// 核心 @cos/* 全量拷贝（除 sidecar 入口）：plugin-api 会链式引用
+// subagents / dsh-tools / agent-loop 等，手列必漏。
+{
+  const allCos = readdirSync(join(harnessDst, 'packages'), { withFileTypes: true })
+    .filter((e) => e.isDirectory() && e.name !== 'sidecar')
+    .map((e) => e.name)
+  for (const pkg of allCos) {
+    copyCosPackage(pkg)
+  }
+  for (const pkg of allCos) {
+    expandDeclaredDeps(join(harnessDst, 'packages', pkg))
+  }
+}
+
+// 每个已分发插件：按 package.json + 源码 import 展开依赖
+for (const name of OPEN_PLUGINS) {
+  const pluginDir = join(pluginsDst, name)
+  const extra = [join(COS_PLUGINS, name, 'node_modules')]
+  expandDeclaredDeps(pluginDir, extra)
+}
+// plugin-api / 其它已拷贝的 @cos 包自身的 workspace 依赖也要闭合
+for (const pkg of ['plugin-api', 'subagents', 'agent-loop', 'llm', 'tools', 'credentials']) {
+  expandDeclaredDeps(join(pluginsNm, '@cos', pkg))
+}
+
+// 显式兜底：plugin-api 的 `export { z } from '@deepseek-ai/schemastery'`
+// （源码 import，此前 package.json 未声明导致闭包漏拷）
+for (const extra of ['@deepseek-ai/schemastery']) {
+  const [scope, name] = extra.split('/')
+  const dst = join(pluginsNm, scope, name)
+  if (existsSync(dst)) continue
+  const src = findPkgRoot(extra)
+  if (!src) {
+    console.warn(`  (跳过: 未找到 ${extra})`)
+    continue
+  }
+  mkdirSync(join(pluginsNm, scope), { recursive: true })
+  copyReal(src, dst)
+  console.log(`  ✓ ${extra} (source-import fallback)`)
+  expandDeclaredDeps(dst)
+}
+
+// cordis 传递依赖兜底（cosmokit / @standard-schema）
+for (const pkg of ['cosmokit', '@standard-schema/spec', 'cordis', 'yaml', 'zod']) {
+  const [scope, name] = pkg.includes('/') ? pkg.split('/') : [null, pkg]
+  const dst = scope ? join(pluginsNm, scope, name) : join(pluginsNm, name)
+  if (existsSync(dst)) continue
+  const src = findPkgRoot(pkg)
+  if (!src) continue
+  if (scope) mkdirSync(join(pluginsNm, scope), { recursive: true })
+  copyReal(src, dst)
+  console.log(`  ✓ ${pkg}`)
+  expandDeclaredDeps(dst)
 }
 
 // 2.6 companion bundle 层（patch 配置）
@@ -377,9 +507,17 @@ copyFileSync(join(ROOT, 'scripts', 'extract-deps.mjs'), join(SIDECAR_RES, 'extra
 // 2.8b 归档 node_modules：把海量小文件打成 tar（NSIS 只复制几个大文件，
 // 安装极快）；首次启动 sidecar 前由 extract-deps.mjs 解压一次。
 // 插件/引擎源码保持开放（不归档），只归档只读依赖。
+// 注意：闭包自检必须在 tar 之前（tar 会删掉 node_modules）。
+step('依赖闭包自检')
+{
+  const check = join(ROOT, 'scripts', 'check-plugin-closure.mjs')
+  if (existsSync(check)) {
+    run(`node "${check}"`, ROOT, 'closure-check')
+  }
+}
+
 step('归档 node_modules（加速安装）')
 const tarArchives = [
-  { src: join(SIDECAR_RES, 'node_modules'), out: join(SIDECAR_RES, 'node_modules.tar'), label: 'npm' },
   { src: join(SIDECAR_RES, 'harness', 'node_modules'), out: join(SIDECAR_RES, 'harness', 'node_modules.tar'), label: 'harness' },
   { src: join(SIDECAR_RES, 'plugins', 'node_modules'), out: join(SIDECAR_RES, 'plugins', 'node_modules.tar'), label: 'plugins' },
 ]
@@ -421,7 +559,7 @@ writeFileSync(
   join(SIDECAR_RES, 'README.txt'),
   [
     'Diver sidecar 运行时目录（自动生成）。',
-    'node.exe + node_modules/npm 为随包 Node 运行时（用户机器无需安装 Node）。',
+    'Node 运行时不随包：应用首次启动会使用本机 Node ≥ 22，或自动下载到应用缓存。',
     'harness/ 为引擎源码（@cos/*），plugins/ 为第三方插件源码（@diver/*）—— 全部开放。',
     '',
     '【插件开放】plugins/ 下的插件以 TS 源码分发：',

@@ -10,10 +10,35 @@ const md = new MarkdownIt({
   breaks: true,
 });
 
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+/** 消息是否在面板上有可见内容（正文或图片）。空白工具/思考步骤应跳过。 */
+export function hasVisibleMessageBody(msg: {
+  content?: string;
+  images?: unknown[];
+}): boolean {
+  if ((msg.images?.length ?? 0) > 0) return true;
+  return (msg.content ?? "").trim() !== "";
+}
+
 /** Markdown → 消息面板用的安全 HTML（禁原始标签 + DOMPurify 兜底）。 */
 export function renderMarkdownHtml(src: string): string {
   if (!src) return "";
-  return DOMPurify.sanitize(md.render(src));
+  const html = DOMPurify.sanitize(md.render(src));
+  // 源文非空但渲染结果无可见文本时（如空链接），退回转义纯文本，避免空气泡
+  const visible = html.replace(/<[^>]+>/g, "").replace(/&[a-z]+;/gi, "x");
+  if (!visible.trim()) {
+    const plain = markdownToPlainText(src);
+    if (!plain.trim()) return "";
+    return escapeHtml(plain).replace(/\n/g, "<br>");
+  }
+  return html;
 }
 
 function pushBreak(parts: string[]): void {

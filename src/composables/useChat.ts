@@ -64,7 +64,7 @@ export function useChat() {
 
   async function speakMessage(msg: ChatMessage) {
     const tts = ttsSource?.();
-    await speakMessageText(msg.content, tts?.voice ?? "", msg.id, { force: true });
+    await speakMessageText(msg.content, tts?.voice ?? "", msg.id, { force: true, userGesture: true });
   }
 
   // ---------- 消息操作 ----------

@@ -111,7 +111,7 @@ export function createChatState() {
   async function speakMessage(msg: ChatMessage) {
     const tts = ttsSource?.();
     // 手动朗读：force 跳过去重
-    await speakMessageText(msg.content, tts?.voice ?? "", msg.id, { force: true });
+    await speakMessageText(msg.content, tts?.voice ?? "", msg.id, { force: true, userGesture: true });
   }
 
   // ---------- 消息操作 ----------
@@ -224,14 +224,23 @@ export function createChatState() {
         break;
       case "message":
         if (e.kind === "user") {
-          const dup = messages.value.some(
+          // 仅把「3s 内的本窗乐观预览」换成服务端 id；桌宠等其它来源的新消息必须 upsert，
+          // 否则同文 local- 残留会被误判为重复，导致这条用户消息从主窗口消失。
+          const localIdx = messages.value.findIndex(
             (m) =>
               m.kind === "user" &&
               m.content === e.content &&
               m.id.startsWith("local-") &&
-              (m.images?.length ?? 0) === (e.images?.length ?? 0),
+              (m.images?.length ?? 0) === (e.images?.length ?? 0) &&
+              Date.now() - m.time < 3000,
           );
-          if (!dup) {
+          if (localIdx >= 0) {
+            messages.value[localIdx] = {
+              ...messages.value[localIdx],
+              id: e.messageId,
+              ...(e.images !== undefined && e.images.length > 0 ? { images: e.images } : {}),
+            };
+          } else {
             upsertMessage({
               id: e.messageId,
               kind: "user",
@@ -240,22 +249,6 @@ export function createChatState() {
               time: e.time,
               ...(e.images !== undefined && e.images.length > 0 ? { images: e.images } : {}),
             });
-          } else {
-            // 本地预览消息换成服务端 id（保留图片）
-            const idx = messages.value.findIndex(
-              (m) =>
-                m.kind === "user" &&
-                m.content === e.content &&
-                m.id.startsWith("local-") &&
-                (m.images?.length ?? 0) === (e.images?.length ?? 0),
-            );
-            if (idx >= 0) {
-              messages.value[idx] = {
-                ...messages.value[idx],
-                id: e.messageId,
-                ...(e.images !== undefined && e.images.length > 0 ? { images: e.images } : {}),
-              };
-            }
           }
         } else if (e.kind === "system") {
           // presence / 桌宠互动：折叠行，不进 TTS
@@ -416,11 +409,13 @@ export function createChatState() {
         continue;
       }
 
-      // 过程成员：最终答复之前；跳过汇总条与已折叠成员
+      // 过程成员：最终答复之前；用户/系统行永不折叠，否则桌宠发的用户消息会被藏进汇总
       const members: ChatMessage[] = [];
       for (let i = start; i < finalIdx; i++) {
         const m = list[i];
-        if (m.kind === "activity-summary" || m.activityGroupId) continue;
+        if (m.kind === "activity-summary" || m.kind === "user" || m.kind === "system" || m.activityGroupId) {
+          continue;
+        }
         members.push(m);
       }
 

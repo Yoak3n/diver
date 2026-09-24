@@ -91,11 +91,24 @@ export interface PetModelHandle {
   playEmotion: (group: string, opts?: { priority?: "normal" | "force" }) => void;
   /** 切换表情（exp3 名）；传 null/空 清除当前表情层。 */
   setExpression: (name?: string | null) => void;
+  /** 鼠标视线追踪：坐标为容器 CSS 像素（与 PIXI screen 一致）。 */
+  setLookAt: (x: number, y: number) => void;
+  /** 开关视线追踪（默认开）。 */
+  setLookEnabled: (on: boolean) => void;
+  /**
+   * 情绪反应：动作 + 表情同播（表情淡入，结束后差分淡出）。
+   * zone: 'head' | 'body' | 'auto' 用于点击分区回退。
+   */
+  react: (
+    emotion: string,
+    opts?: { force?: boolean; zone?: "head" | "body" | "auto"; expressions?: string[] },
+  ) => void;
   /** 当前模型已声明的动作组名（调试/自适应用）。 */
   listGroups: () => string[];
   /** 当前是否正在播放非 Idle 的动作（用于节流判断）。 */
   isBusyMotion: () => boolean;
   /** 模型水平中心在窗口宽度上的比例（0=左缘，1=右缘）。用于左右分区布局。 */
+    /** 模型水平中心在窗口宽度上的比例（0=左缘，1=右缘）。用于左右分区布局。 */
   setAnchorX: (ratio: number) => void;
   /** 面板打开让位：模型缩小 + 偏移到面板对侧（retreat=true 让位，false 恢复）。
    *  panelSide: 面板所在侧（'left' 面板在左 → 模型偏右；'right' 反之）。 */
@@ -128,7 +141,12 @@ export async function createPetModel(
   const heightRatio = options.heightRatio ?? 0.7;
   let anchorXRatio = options.anchorXRatio ?? 0.5;
   const modelUrl = options.modelUrl ?? DEFAULT_MODEL_URL;
+  const modelBase = modelUrl.replace(/[^/]*$/, "");
   const groupAliases = options.groupAliases ?? {};
+
+  if (!container) {
+    throw new Error("createPetModel: container 为空（挂载时机过早或已卸载）");
+  }
   /** 面板所在侧（setRetreat 传入），决定让位方向 */
   let panelSideRef: "left" | "right" = "right";
 
@@ -431,6 +449,17 @@ export async function createPetModel(
   // 注：点按互动/长按拖动由 PetApp 统一管理（避免与长按拖动冲突），
   // 这里不再监听 pointertap。
 
+  /** motionManager.definitions 是 `{ [group]: Definition[] }`（对象），不是数组。 */
+  function getMotionDefs(group: string): any[] {
+    const defs = (model.internalModel.motionManager as any)?.definitions;
+    if (!defs) return [];
+    if (Array.isArray(defs)) {
+      return defs.filter((d: any) => d?.group === group);
+    }
+    const list = defs[group];
+    return Array.isArray(list) ? list : [];
+  }
+
   /** 逻辑组 → 第一个在模型中真实存在的组名。 */
   function resolveGroup(logical: string): string | null {
     const candidates = groupAliases[logical]?.length
@@ -439,24 +468,28 @@ export async function createPetModel(
     for (const g of candidates) {
       if (groupExists(g)) return g;
     }
+    // 再兜底：把逻辑名转小写/常见别名试一遍
+    const lower = logical.toLowerCase();
+    if (lower !== logical && groupExists(lower)) return lower;
     return null;
   }
 
   function playMotion(group = "TapBody") {
     const resolved = resolveGroup(group) ?? resolveGroup("TapBody") ?? resolveGroup("Idle");
-    if (!resolved) return;
-    const manager = model.internalModel.motionManager as any;
+    if (!resolved) {
+      console.warn("[pet] playMotion: 无可用动作组", group, listGroups());
+      return;
+    }
     try {
-      const defs: any[] = manager?.definitions ?? [];
-      const groupDefs = defs.filter((d) => d.group === resolved);
+      const groupDefs = getMotionDefs(resolved);
       if (groupDefs.length > 0) {
-        const pick = groupDefs[Math.floor(Math.random() * groupDefs.length)];
-        model.motion(resolved, pick.index);
+        const index = Math.floor(Math.random() * groupDefs.length);
+        void model.motion(resolved, index).catch(() => {});
       } else {
-        model.motion(resolved);
+        void model.motion(resolved).catch(() => {});
       }
-    } catch {
-      /* 动作不可用时忽略 */
+    } catch (err) {
+      console.warn("[pet] playMotion 失败", resolved, err);
     }
   }
 
@@ -471,6 +504,10 @@ export async function createPetModel(
   /** 上次情绪动作结束时间（节流：避免连续消息触发动作过密）。 */
   let lastEmotionEnd = 0;
   const EMOTION_COOLDOWN_MS = 2200;
+  /** force（点击）同类动作组冷却：连点同一分区不刷屏，但仍可打断旧动作。 */
+  const FORCE_GROUP_COOLDOWN_MS = 450;
+  /** resolved group → 上次开播时间（同类节流） */
+  const lastGroupPlayAt = new Map<string, number>();
   /** 模型销毁标记（避免异步回调操作已销毁模型）。 */
   let disposed = false;
 
@@ -489,8 +526,7 @@ export async function createPetModel(
   /** 判断动作组是否存在于模型定义中。 */
   function groupExists(group: string): boolean {
     try {
-      const defs: any[] = (model.internalModel.motionManager as any)?.definitions ?? [];
-      return defs.some((d) => d.group === group);
+      return getMotionDefs(group).length > 0;
     } catch {
       return false;
     }
@@ -530,32 +566,42 @@ export async function createPetModel(
     const force = opts?.priority === "force";
     const now = performance.now();
 
-    // 节流：普通情绪请求在冷却期内跳过（避免动作过密），force 无视
+    // 节流：普通情绪请求在冷却期内跳过；force 仍受「同类组」短冷却
     if (!force && now - lastEmotionEnd < EMOTION_COOLDOWN_MS) return;
     // 已有动作在播时，普通请求跳过；force 允许抢占
     if (!force && hasActiveMotion()) return;
     // 逻辑组名经别名表解析（Hiyori 的 Happy、YUI 的 happy 等）
     const resolved = resolveGroup(group);
-    if (!resolved) return;
+    if (!resolved) {
+      console.warn("[pet] playEmotion: 组不存在", group, "→", listGroups());
+      return;
+    }
+    // 同类节流：同一动作组短冷却内不重复开播
+    const lastGroup = lastGroupPlayAt.get(resolved) ?? 0;
+    if (now - lastGroup < FORCE_GROUP_COOLDOWN_MS) {
+      console.log("[pet] playEmotion 同类节流", resolved);
+      return;
+    }
 
-    const manager = model.internalModel.motionManager as any;
     try {
-      const defs: any[] = manager?.definitions ?? [];
-      const groupDefs = defs.filter((d) => d.group === resolved);
+      const groupDefs = getMotionDefs(resolved);
       let index: number | undefined;
       if (groupDefs.length > 0) {
-        index = groupDefs[Math.floor(Math.random() * groupDefs.length)].index;
+        index = Math.floor(Math.random() * groupDefs.length);
       }
       const priority = force ? 3 : 2; // FORCE : NORMAL
       emotionMotionActive = true;
+      lastGroupPlayAt.set(resolved, now);
       armEmotionTimeout();
+      console.log("[pet] playEmotion", group, "→", resolved, "idx", index, "force", force);
       // model.motion() 异步加载并播放；状态复位由 motionFinish 事件负责，
       // promise 结果不可靠（force 抢占时旧动作会 resolve false，但新动作已开始）。
       // 这里只吞掉 rejection，避免 unhandled rejection 噪音。
-      void model.motion(resolved, index, priority).catch(() => {
-        /* 播放失败（加载错误等）：兜底定时器会复位状态 */
+      void model.motion(resolved, index, priority).catch((err) => {
+        console.warn("[pet] motion 播放失败", resolved, err);
       });
-    } catch {
+    } catch (err) {
+      console.warn("[pet] playEmotion 异常", err);
       emotionMotionActive = false;
       if (emotionTimeout !== null) {
         window.clearTimeout(emotionTimeout);
@@ -564,136 +610,354 @@ export async function createPetModel(
     }
   }
 
-  function setExpression(name?: string | null) {
-    if (disposed) return;
+  function setExpression(name?: string | null): boolean {
+    if (disposed) return false;
     try {
-      const manager = (model.internalModel as any)?.expressionManager;
-      if (!manager) return;
+      const manager = (model.internalModel as any)?.motionManager?.expressionManager;
       if (!name) {
-        // 清除：重置为默认表情（表达式管理器 reset / expression(null)）
-        if (typeof model.expression === "function") model.expression();
+        if (typeof model.expression === "function") void model.expression();
         else manager?.resetExpression?.();
-        return;
+        return true;
       }
       if (typeof model.expression === "function") {
         void model.expression(name);
-      } else {
-        manager?.setExpression?.(name);
+        return true;
       }
-    } catch {
-      /* 表情不可用时忽略 */
+      if (manager?.setExpression) {
+        manager.setExpression(name);
+        return true;
+      }
+      return false;
+    } catch (err) {
+      console.warn("[pet] setExpression 失败", name, err);
+      return false;
     }
   }
 
-  function listGroups(): string[] {
+  // ---------- 视线追踪（对齐 N.E.K.O 的 focus / LookAt） ----------
+  // autoInteract 在 pixi7 下会炸，这里手动喂 model.focus()，
+  // 由 Cubism4InternalModel.updateFocus 映射到 EyeBall/Angle/BodyAngle。
+  let lookEnabled = true;
+  /** 最近一次目标焦点（容器 CSS 像素） */
+  let lookTarget: { x: number; y: number } | null = null;
+
+  function setLookAt(x: number, y: number) {
+    lookTarget = { x, y };
+  }
+  function setLookEnabled(on: boolean) {
+    lookEnabled = on;
+  }
+  function applyLook() {
+    if (disposed || !lookEnabled || !lookTarget) return;
     try {
-      const defs: any[] = (model.internalModel.motionManager as any)?.definitions ?? [];
-      return [...new Set(defs.map((d) => d.group).filter(Boolean))] as string[];
+      // Live2DModel.focus(x, y)：传入 stage/全局坐标
+      (model as unknown as { focus?: (x: number, y: number, instant?: boolean) => void }).focus?.(
+        lookTarget.x,
+        lookTarget.y,
+      );
+    } catch {
+      /* 忽略 */
+    }
+  }
+
+  // ---------- 表情层：淡入 + 差分淡出（简化版 N.E.K.O smoothReset） ----------
+  // 在 beforeModelUpdate 里对「表情目标参数」做加性叠加，
+  // 不打断 idle motion / focus / breath / physics。
+  type ExprParam = { id: string; value: number };
+  let exprOverride: ExprParam[] | null = null;
+  let exprWeight = 0; // 0~1 当前叠加权重
+  let exprTargetWeight = 0;
+  let exprFadeSpeed = 0; // 每秒权重变化
+  const EXPR_FADE_IN_MS = 220;
+  const EXPR_FADE_OUT_MS = 320;
+
+  function loadExprParamsFromName(name: string): ExprParam[] {
+    try {
+      const em = (model.internalModel as any)?.motionManager?.expressionManager;
+      // Cubism4ExpressionManager.definitions 是数组，元素含 Name / File（Parameters 在 exp3 里）
+      const defs = em?.definitions ?? [];
+      const list = Array.isArray(defs) ? defs : Object.values(defs ?? {});
+      for (const d of list as any[]) {
+        const n = d?.Name ?? d?.name ?? d?.id;
+        if (n !== name) continue;
+        const inline = d?.Parameters ?? d?.parameters;
+        if (Array.isArray(inline) && inline.length) {
+          return inline
+            .map((p: any) => ({
+              id: String(p?.Id ?? p?.id ?? ""),
+              value: Number(p?.Value ?? p?.value ?? 0),
+            }))
+            .filter((p: ExprParam) => p.id);
+        }
+      }
+    } catch {
+      /* 忽略 */
+    }
+    return [];
+  }
+
+  /** 从 exp3 文件拉表情参数（definitions 只有 Name/File，Parameters 在文件里）。 */
+  async function loadExprParamsFromFile(name: string): Promise<ExprParam[]> {
+    try {
+      const em = (model.internalModel as any)?.motionManager?.expressionManager;
+      const defs = em?.definitions ?? [];
+      const list = Array.isArray(defs) ? defs : Object.values(defs ?? {});
+      let file: string | null = null;
+      for (const d of list as any[]) {
+        const n = d?.Name ?? d?.name ?? d?.id;
+        if (n === name && d?.File) {
+          file = String(d.File);
+          break;
+        }
+      }
+      if (!file) return [];
+      const url = file.startsWith("http") ? file : modelBase + file.replace(/^\.\//, "");
+      const res = await fetch(url);
+      if (!res.ok) return [];
+      const json = (await res.json()) as { Parameters?: any[] };
+      return (json.Parameters ?? [])
+        .map((p: any) => ({
+          id: String(p?.Id ?? ""),
+          value: Number(p?.Value ?? 0),
+        }))
+        .filter((p: ExprParam) => p.id);
     } catch {
       return [];
     }
   }
 
-  // ---------- 无自主 idle 循环 ----------
-  // 呼吸/眨眼由 Cubism 内置的 breath/eyeBlink 自动驱动（updateNaturalMovements），
-  // 不需要定时播放大动作——之前 7 秒一次的随机 Idle 动作会让模型"突然晃动"，
-  // 且与用户交互时机巧合时显得像被操作触发。
+  function setExpressionFade(name?: string | null) {
+    if (disposed) return;
+    if (!name) {
+      exprTargetWeight = 0;
+      exprFadeSpeed = 1 / (EXPR_FADE_OUT_MS / 1000);
+      return;
+    }
+    // 先试原生 expression；再叠加手动参数层（保证淡入淡出可见）
+    const ok = setExpression(name);
+    void loadExprParamsFromFile(name)
+      .then(async (fromFile) => {
+        if (disposed) return;
+        let params = fromFile.length ? fromFile : loadExprParamsFromName(name);
+        if (!params.length) params = await loadExprParamsFromFile(name);
+        if (params.length) {
+          exprOverride = params;
+          exprTargetWeight = 1;
+          exprFadeSpeed = 1 / (EXPR_FADE_IN_MS / 1000);
+        }
+        console.log("[pet] setExpression", name, "native", ok, "params", params.length);
+      })
+      .catch(() => {
+        console.log("[pet] setExpression", name, "native", ok, "params 0");
+      });
+  }
+
+  function applyExprLayer(dtSec: number) {
+    if (disposed) return;
+    if (exprWeight === 0 && exprTargetWeight === 0) {
+      exprOverride = null;
+      return;
+    }
+    // 权重趋近目标
+    if (exprWeight < exprTargetWeight) {
+      exprWeight = Math.min(exprTargetWeight, exprWeight + exprFadeSpeed * dtSec);
+    } else if (exprWeight > exprTargetWeight) {
+      exprWeight = Math.max(exprTargetWeight, exprWeight - exprFadeSpeed * dtSec);
+      if (exprWeight === 0) exprOverride = null;
+    }
+    if (!exprOverride || exprWeight <= 0) return;
+    try {
+      const core = model.internalModel.coreModel as any;
+      for (const p of exprOverride) {
+        if (typeof core.addParameterValueById === "function") {
+          core.addParameterValueById(p.id, p.value * exprWeight);
+        } else if (typeof core.setParameterValueById === "function") {
+          const cur = core.getParameterValueById?.(p.id) ?? 0;
+          core.setParameterValueById(p.id, cur + p.value * exprWeight);
+        }
+      }
+    } catch {
+      /* 忽略 */
+    }
+  }
+
+  // ---------- Idle 随机小动作 ----------
+  let idleTimer: number | null = null;
+  const IDLE_MIN_MS = 14000;
+  const IDLE_JITTER_MS = 12000;
+  function scheduleIdleMotion() {
+    if (idleTimer !== null) window.clearTimeout(idleTimer);
+    const delay = IDLE_MIN_MS + Math.random() * IDLE_JITTER_MS;
+    idleTimer = window.setTimeout(() => {
+      idleTimer = null;
+      if (disposed) return;
+      if (!hasActiveMotion() && !emotionMotionActive && !speakingLock) {
+        playMotion(resolveGroup("Idle") ?? resolveGroup("neutral") ?? "Idle");
+      }
+      scheduleIdleMotion();
+    }, delay);
+  }
+  /** 朗读中不播大动作（由 PetApp 通过 playEmotion 节流；这里仅 idle 用）。 */
+  let speakingLock = false;
 
   /**
-   * 说话口型。
-   *
-   * Cubism4InternalModel.update() 的顺序是：
-   *   motionManager.update → saveParameters → expression/physics →
-   *   emit("beforeModelUpdate") → model.update()（烘焙顶点）→ loadParameters()
-   * `loadParameters` 会把参数恢复成 motion 之后的快照 —— 任何在 update 外/烘焙后
-   * 写入的口型都会被冲掉。因此必须挂在 `beforeModelUpdate`（烘焙前）写入。
-   * 响度优先用 TTS AnalyserNode（getSpeechLevel），失败则退回多频正弦。
+   * 情绪反应入口：动作 + 表情同播。
+   * zone 用于点击分区：head → Shy/Surprised 倾向；body → TapBody/happy。
    */
-  function startMouth(): () => void {
-    const core = model.internalModel.coreModel as any;
-    const internal = model.internalModel as any;
-    let stop = false;
-    let frame = 0;
-    /** 平滑后的开口度（避免抖动） */
-    let openSmooth = 0;
+  function react(
+    emotion: string,
+    opts?: { force?: boolean; zone?: "head" | "body" | "auto"; expressions?: string[] },
+  ) {
+    if (disposed) return;
+    const force = opts?.force === true;
+    const zone = opts?.zone ?? "auto";
 
-    function sampleTarget(): number {
-      frame += 0.42;
-      const level = getSpeechLevel();
-      if (level > 0) {
-        // 真实音量：压缩到更明显的开口范围
-        return Math.min(1, Math.max(0, level * 3.2));
+    /** 取第一个模型里真实存在的动作组（yui-origin 无 shy，需兜底）。 */
+    const firstGroup = (...names: string[]): string => {
+      for (const n of names) {
+        const g = resolveGroup(n);
+        if (g) return g;
       }
-      // 多频正弦模拟音节开合（比单频更像说话）
-      const syllable = Math.abs(Math.sin(frame));
-      const wobble = 0.55 + 0.45 * Math.sin(frame * 0.37 + 1.1);
-      return Math.min(1, syllable * wobble * 1.2);
-    }
-
-    function applyMouth() {
-      if (stop || !core) return;
-      const target = sampleTarget();
-      openSmooth += (target - openSmooth) * 0.5;
-      const open = openSmooth;
-      // 口型变形：开口大时略「啊」，闭合时略抿嘴
-      const form = open * 0.55 - 0.15;
-      try {
-        // CubismModel.setParameterValueById 存在；勿写到 loadParameters 之后
-        if (typeof core.setParameterValueById === "function") {
-          core.setParameterValueById("ParamMouthOpenY", open);
-          core.setParameterValueById("ParamMouthForm", form);
-          // YUI 还有自定义「齿口」（Param71），一并轻微驱动，嘴部更明显
-          core.setParameterValueById("Param71", open * 0.85);
-        } else if (core.parameters?.ids) {
-          const setByArray = (id: string, v: number) => {
-            const idx = core.parameters.ids.indexOf(id);
-            if (idx >= 0) core.parameters.values[idx] = v;
-          };
-          setByArray("ParamMouthOpenY", open);
-          setByArray("ParamMouthForm", form);
-          setByArray("Param71", open * 0.85);
-        }
-      } catch {
-        /* 忽略 */
-      }
-    }
-
-    // 官方钩子：expression/physics 之后、model.update() 烘焙之前
-    let hooked = false;
-    if (typeof internal?.on === "function") {
-      internal.on("beforeModelUpdate", applyMouth);
-      hooked = true;
-    }
-
-    // 兜底：若事件系统不可用，用 Ticker 在下一帧 update 前写入
-    // （仍可能被 loadParameters 冲掉，但比 setInterval 强）
-    const tick = () => {
-      if (!hooked) applyMouth();
+      return resolveGroup("happy") ?? resolveGroup("neutral") ?? resolveGroup("Idle") ?? "Idle";
     };
-    PIXI.Ticker.shared.add(tick);
-    applyMouth();
 
+    // 动作逻辑名：点击分区可覆盖（head→shy/surprised / body→TapBody/happy）
+    let logical = emotion;
+    if (zone === "head" && emotion === "neutral") {
+      logical = firstGroup("shy", "Shy", "surprised", "happy");
+    } else if (zone === "body" && emotion === "neutral") {
+      logical = firstGroup("TapBody", "happy", "neutral");
+    } else if (!resolveGroup(logical)) {
+      logical = firstGroup(logical, "happy", "neutral");
+    }
+
+    // 表情与动作对齐（点脸=害羞/惊讶脸，点身=开心脸）
+    const faceKey =
+      logical === "shy" || logical === "Shy"
+        ? "shy"
+        : logical === "surprised"
+          ? "surprised"
+          : logical === "TapBody" || logical === "happy"
+            ? "happy"
+            : logical;
+    const exprName = opts?.expressions?.length
+      ? pick(opts.expressions)
+      : emotionToExprName(faceKey);
+    if (exprName) setExpressionFade(exprName);
+
+    console.log("[pet] react", { emotion, zone, logical, faceKey, exprName, force });
+    playEmotion(logical, { priority: force ? "force" : "normal" });
+  }
+
+  /** 情绪 → 候选表情名（模型无关的软映射，调用方可覆盖）。 */
+  function emotionToExprName(emotion: string): string | null {
+    const map: Record<string, string[]> = {
+      happy: ["expression3", "expression4", "yyy", "xxy", "by"],
+      excited: ["expression3", "expression4", "yyy", "xxy"],
+      sad: ["by", "expression5", "wy"],
+      angry: ["expression2", "expression9", "bzy"],
+      surprised: ["expression6", "expression7", "k1", "z1"],
+      shy: ["expression11", "expression12", "s1", "syhs"],
+      love: ["expression4", "expression11", "xxy"],
+      grateful: ["expression3", "by", "yyy"],
+      greeting: ["expression3", "yyy"],
+      farewell: ["by"],
+      agree: ["expression3", "001"],
+      neutral: ["by", "expression3", "001"],
+      TapBody: ["expression3", "happy"],
+    };
+    const list = map[emotion] ?? map.neutral;
+    return pick(list);
+  }
+
+  function pick<T>(arr: T[]): T {
+    return arr[Math.floor(Math.random() * arr.length)];
+  }
+
+  function listGroups(): string[] {
+    try {
+      const defs = (model.internalModel.motionManager as any)?.definitions;
+      if (!defs) return [];
+      if (Array.isArray(defs)) {
+        return [...new Set(defs.map((d: any) => d?.group).filter(Boolean))] as string[];
+      }
+      return Object.keys(defs);
+    } catch {
+      return [];
+    }
+  }
+
+  // ---------- 统一帧钩子：视线 / 表情层 / 口型 都在 beforeModelUpdate 写入 ----------
+  // Cubism4InternalModel.update()：motion → saveParameters → expression/physics →
+  //   emit("beforeModelUpdate") → model.update() 烘焙 → loadParameters()
+  // 只有 beforeModelUpdate 里的写入能进本帧网格。
+  let mouthActive = false;
+  let mouthFrame = 0;
+  let mouthOpenSmooth = 0;
+  let framePrevMs = performance.now();
+
+  function sampleMouthTarget(): number {
+    mouthFrame += 0.42;
+    const level = getSpeechLevel();
+    if (level > 0) return Math.min(1, Math.max(0, level * 3.2));
+    const syllable = Math.abs(Math.sin(mouthFrame));
+    const wobble = 0.55 + 0.45 * Math.sin(mouthFrame * 0.37 + 1.1);
+    return Math.min(1, syllable * wobble * 1.2);
+  }
+
+  function writeMouth(open: number) {
+    const core = model.internalModel.coreModel as any;
+    const form = open * 0.55 - 0.15;
+    try {
+      if (typeof core.setParameterValueById === "function") {
+        core.setParameterValueById("ParamMouthOpenY", open);
+        core.setParameterValueById("ParamMouthForm", form);
+        core.setParameterValueById("Param71", open * 0.85);
+      }
+    } catch {
+      /* 忽略 */
+    }
+  }
+
+  function onBeforeModelUpdate() {
+    if (disposed) return;
+    const now = performance.now();
+    const dtSec = Math.min(0.1, Math.max(0.001, (now - framePrevMs) / 1000));
+    framePrevMs = now;
+    applyLook();
+    applyExprLayer(dtSec);
+    if (mouthActive) {
+      const target = sampleMouthTarget();
+      mouthOpenSmooth += (target - mouthOpenSmooth) * 0.5;
+      writeMouth(mouthOpenSmooth);
+    }
+  }
+
+  let frameHooked = false;
+  let frameTick: (() => void) | null = null;
+  {
+    const internal = model.internalModel as any;
+    if (typeof internal?.on === "function") {
+      internal.on("beforeModelUpdate", onBeforeModelUpdate);
+      frameHooked = true;
+    }
+    frameTick = () => {
+      if (!frameHooked) onBeforeModelUpdate();
+    };
+    PIXI.Ticker.shared.add(frameTick);
+  }
+
+  function startMouth(): () => void {
+    mouthActive = true;
+    mouthOpenSmooth = 0;
     return () => {
-      stop = true;
-      PIXI.Ticker.shared.remove(tick);
-      try {
-        if (hooked && typeof internal?.off === "function") {
-          internal.off("beforeModelUpdate", applyMouth);
-        } else if (hooked && typeof internal?.removeListener === "function") {
-          internal.removeListener("beforeModelUpdate", applyMouth);
-        }
-      } catch {
-        /* 忽略 */
-      }
-      try {
-        core?.setParameterValueById?.("ParamMouthOpenY", 0);
-        core?.setParameterValueById?.("ParamMouthForm", 0);
-        core?.setParameterValueById?.("Param71", 0);
-      } catch {
-        /* 忽略 */
-      }
+      mouthActive = false;
+      writeMouth(0);
     };
   }
+
+  // 启动 Idle 随机小动作（③）
+  scheduleIdleMotion();
 
   return {
     model,
@@ -702,7 +966,10 @@ export async function createPetModel(
     playMotion: (group?: string) => playMotion(group),
     playEmotion: (group: string, opts?: { priority?: "normal" | "force" }) =>
       playEmotion(group, opts),
-    setExpression: (name?: string | null) => setExpression(name),
+    setExpression: (name?: string | null) => setExpressionFade(name),
+    setLookAt,
+    setLookEnabled,
+    react,
     listGroups,
     isBusyMotion: () => hasActiveMotion() || emotionMotionActive,
     getHitbox: () => {
@@ -749,15 +1016,53 @@ export async function createPetModel(
         window.clearTimeout(emotionTimeout);
         emotionTimeout = null;
       }
+      if (idleTimer !== null) {
+        window.clearTimeout(idleTimer);
+        idleTimer = null;
+      }
       try {
         (model.internalModel.motionManager as any)?.off?.("motionFinish", onMotionFinish);
       } catch {
         /* 忽略 */
       }
+      try {
+        const internal = model.internalModel as any;
+        if (frameHooked && typeof internal?.off === "function") {
+          internal.off("beforeModelUpdate", onBeforeModelUpdate);
+        }
+      } catch {
+        /* 忽略 */
+      }
+      if (frameTick) PIXI.Ticker.shared.remove(frameTick);
       PIXI.Ticker.shared.remove(syncTick);
       PIXI.Ticker.shared.remove(animTick);
       hitboxEl.remove();
-      app.destroy(true, { children: true, texture: true });
+      try {
+        app.destroy(true, { children: true, texture: true });
+      } catch (err) {
+        console.warn("[pet] app.destroy 异常", err);
+      }
+      // 清 PIXI 纹理缓存：避免切换模型后 “BaseTexture already had an entry”
+      // 与 WebGL deleted object / wrong context 报错
+      try {
+        const anyPixi = PIXI as unknown as {
+          utils?: { TextureCache?: Record<string, unknown>; BaseTextureCache?: Record<string, unknown> };
+          BaseTextureCache?: Record<string, unknown>;
+          TextureCache?: Record<string, unknown>;
+        };
+        const caches = [
+          anyPixi.utils?.TextureCache,
+          anyPixi.utils?.BaseTextureCache,
+          anyPixi.TextureCache,
+          anyPixi.BaseTextureCache,
+        ];
+        for (const cache of caches) {
+          if (!cache) continue;
+          for (const key of Object.keys(cache)) delete cache[key];
+        }
+      } catch {
+        /* 忽略 */
+      }
     },
   };
 }

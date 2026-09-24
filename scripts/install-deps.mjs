@@ -1,13 +1,13 @@
-// Diver 插件依赖一键安装脚本（随包使用，无需用户机器安装 Node/npm）。
+// Diver 插件依赖一键安装脚本（在 sidecar 运行时目录使用）。
 //
 // 用法（在 sidecar 运行时目录下）：
 //   node install-deps.mjs              # 为 plugins/ 下所有插件安装依赖
 //   node install-deps.mjs --plugin <name>   # 只装指定插件
 //   node install-deps.mjs --all        # 等价默认（全部）
 //
-// 原理：用随包 node + 随包 npm，为每个插件的 package.json 声明的依赖执行
-// `npm install`（安装到插件目录自己的 node_modules）。插件依赖集中在
-// plugins/node_modules 的则跳过（预置）。
+// 原理：用当前 Node（process.execPath / DIVER_NODE_BIN）+ 其自带 npm，为每个
+// 插件的 package.json 声明的依赖执行 `npm install`。Node 不随包，由应用缓存
+// 或系统 Node 提供。
 //
 // 依赖解析说明：
 //   - 插件声明了依赖，但 plugins/node_modules 里已有 → 跳过（预置）
@@ -16,25 +16,28 @@
 
 import { execFileSync } from 'node:child_process'
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 
 const HERE = resolve(import.meta.dirname ?? '.')
 const PLUGINS = join(HERE, 'plugins')
 const PLUGINS_NM = join(PLUGINS, 'node_modules')
-const NODE = join(HERE, 'node.exe')
-const NPM_CLI = join(HERE, 'node_modules', 'npm', 'bin', 'npm-cli.js')
+const NODE = process.env.DIVER_NODE_BIN || process.execPath
+const NPM_CLI = (() => {
+  const candidates = [
+    join(dirname(NODE), 'node_modules', 'npm', 'bin', 'npm-cli.js'),
+    join(dirname(process.execPath), 'node_modules', 'npm', 'bin', 'npm-cli.js'),
+  ]
+  for (const c of candidates) if (existsSync(c)) return c
+  return null
+})()
 
 const args = process.argv.slice(2)
 const only = args.includes('--plugin') ? args[args.indexOf('--plugin') + 1] : null
 
 function log(...m) { console.log('[install-deps]', ...m) }
 
-if (!existsSync(NODE)) {
-  console.error('[install-deps] 未找到随包 node.exe（应在 sidecar 运行时目录运行）')
-  process.exit(1)
-}
-if (!existsSync(NPM_CLI)) {
-  console.error('[install-deps] 未找到随包 npm（node_modules/npm/bin/npm-cli.js），无法安装依赖')
+if (!NPM_CLI) {
+  console.error('[install-deps] 未找到 npm-cli.js（Node 旁应带 node_modules/npm）。可安装 Node ≥ 22 或设置 DIVER_NODE_BIN')
   process.exit(1)
 }
 if (!existsSync(PLUGINS)) {

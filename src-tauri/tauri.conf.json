@@ -35,7 +35,8 @@
         "languages": ["SimpChinese", "English"],
         "installerIcon": "icons/icon.ico",
         "uninstallerIcon": "icons/icon.ico",
-        "startMenuFolder": "Diver"
+        "startMenuFolder": "Diver",
+        "installerHooks": "nsis/installer-hooks.nsh"
       }
     }
   }

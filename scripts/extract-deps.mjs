@@ -18,9 +18,8 @@ import { join, resolve } from "node:path";
 const HERE = resolve(import.meta.dirname ?? ".");
 const TAR = process.env.DIVER_TAR_BIN || "tar";
 
-// 归档 → 解压目标目录映射（相对 sidecar 根）
+// 归档 → 解压目标目录映射（相对 sidecar 根；npm 随 Node 下载，不再随包）
 const ARCHIVES = [
-  { archive: "node_modules.tar", dest: "node_modules" },
   { archive: join("harness", "node_modules.tar"), dest: join("harness", "node_modules") },
   { archive: join("plugins", "node_modules.tar"), dest: join("plugins", "node_modules") },
 ];

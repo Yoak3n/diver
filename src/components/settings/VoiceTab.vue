@@ -273,7 +273,7 @@ onMounted(() => void load());
           {{ saving ? "保存中…" : "保存" }}
         </button>
         <button class="btn" type="button" :disabled="saving" @click="preview">试听</button>
-        <button class="btn" type="button" @click="stopSpeaking">停止</button>
+        <button class="btn" type="button" @click="() => stopSpeaking()">停止</button>
       </div>
       <p v-if="msg" class="hint ok">{{ msg }}</p>
       <p v-if="err" class="hint bad">{{ err }}</p>

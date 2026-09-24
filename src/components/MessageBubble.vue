@@ -12,7 +12,7 @@ const props = defineProps<{
 
 defineEmits<{ speak: [msg: ChatMessage] }>();
 
-const hasContent = computed(() => (props.msg.content ?? "") !== "");
+const hasContent = computed(() => (props.msg.content ?? "").trim() !== "");
 const contentHtml = computed(() => renderMarkdownHtml(props.msg.content ?? ""));
 const hasThinking = computed(() => (props.msg.thinking ?? "") !== "");
 const toolList = computed(() => props.msg.tools ?? []);

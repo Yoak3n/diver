@@ -6,6 +6,7 @@
 import { computed } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import TitleBar from "./components/TitleBar.vue";
+import SetupOverlay from "./components/SetupOverlay.vue";
 
 const route = useRoute();
 const router = useRouter();
@@ -42,6 +43,8 @@ function openSettings() {
         </keep-alive>
       </router-view>
     </div>
+    <!-- 首启/启动准备：应用内进度，不弹控制台 -->
+    <SetupOverlay />
   </div>
 </template>
 
@@ -53,6 +56,7 @@ function openSettings() {
   background: var(--paper);
   color: var(--ink);
   overflow: hidden;
+  position: relative;
 }
 .app-body {
   flex: 1;

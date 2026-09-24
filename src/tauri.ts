@@ -45,6 +45,31 @@ export function synthesizeTts(text: string, voice?: string): Promise<TtsAudio> {
   return invoke<TtsAudio>("tts_synthesize", { text, voice: voice || null });
 }
 
+/** MiMo 流式 PCM 分片。 */
+export interface TtsPcmChunk {
+  base64: string;
+  done: boolean;
+}
+
+/**
+ * MiMo 流式合成：onChunk 收 base64(PCM16LE 24kHz)；done=true 结束。
+ * 非 MiMo 会抛 STREAM_UNSUPPORTED，调用方回退 synthesizeTts。
+ */
+export async function synthesizeTtsStream(
+  text: string,
+  voice: string | undefined,
+  onChunk: (chunk: TtsPcmChunk) => void,
+): Promise<void> {
+  const { Channel } = await import("@tauri-apps/api/core");
+  const ch = new Channel<TtsPcmChunk>();
+  ch.onmessage = onChunk;
+  await invoke<void>("tts_synthesize_stream", {
+    text,
+    voice: voice || null,
+    onChunk: ch,
+  });
+}
+
 /** sidecar 状态。 */
 export function getSidecarStatus(): Promise<SidecarStatus> {
   return invoke<SidecarStatus>("get_sidecar_status");

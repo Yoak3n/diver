@@ -18,6 +18,7 @@
     "@cos/system-prompt": "workspace:*",
     "@cos/tools": "workspace:*",
     "@cos/types": "workspace:*",
+    "@deepseek-ai/schemastery": "3.18.2",
     "cordis": "4.0.0-rc.7"
   }
 }

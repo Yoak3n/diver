@@ -9,9 +9,11 @@
 
 import {
   emitTauriEvent,
+  getTtsConfig,
   isPetWindowOpen,
   onTauriEvent,
   synthesizeTts,
+  synthesizeTtsStream,
   tauriAvailable,
 } from "./tauri";
 
@@ -25,8 +27,10 @@ export interface TtsSpeakRequest {
   text: string;
   voice?: string;
   messageId?: string;
-  /** true = 打断当前立即播（仅设置试听用）；默认 false 走「播完当前 + 只留最新」。 */
+  /** true = 打断当前立即播（设置试听）；手动点读也带 true 以保证必播。 */
   force?: boolean;
+  /** 手动点读：跳过自动去重语义（请求端已处理）。 */
+  userGesture?: boolean;
 }
 
 let currentAudio: HTMLAudioElement | null = null;
@@ -138,6 +142,10 @@ export function getSpeechLevel(): number {
 }
 
 function stopCurrent() {
+  resetPcmPlayback();
+  if (pcmCtx) {
+    // 不 close，复用；仅标记重置
+  }
   if (currentAudio) {
     currentAudio.onended = null;
     currentAudio.onerror = null;
@@ -179,31 +187,176 @@ export function claimSpeech(_messageId: string | undefined, text: string): boole
   return true;
 }
 
+// ---- MiMo 流式 PCM 播放（24kHz PCM16LE） ----
+const PCM_RATE = 24000;
+let pcmCtx: AudioContext | null = null;
+let pcmAnalyser: AnalyserNode | null = null;
+let pcmNextTime = 0;
+let pcmActiveSources = 0;
+let pcmWaiter: (() => void) | null = null;
+
+function ensurePcmGraph() {
+  try {
+    const Ctx =
+      window.AudioContext ||
+      (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!Ctx) return false;
+    if (!pcmCtx) {
+      // 尽量 24k；浏览器不支持则仍用默认采样率，由 createBuffer 指定 24k 重采样
+      try {
+        pcmCtx = new Ctx({ sampleRate: PCM_RATE });
+      } catch {
+        pcmCtx = new Ctx();
+      }
+    }
+    if (pcmCtx.state === "suspended") void pcmCtx.resume();
+    if (!pcmAnalyser) {
+      pcmAnalyser = pcmCtx.createAnalyser();
+      pcmAnalyser.fftSize = 256;
+      pcmAnalyser.smoothingTimeConstant = 0.5;
+      levelData = new Uint8Array(pcmAnalyser.frequencyBinCount);
+      pcmAnalyser.connect(pcmCtx.destination);
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function pcmBase64ToFloat32(b64: string): Float32Array {
+  const bin = atob(b64);
+  const n = bin.length >> 1;
+  const out = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    const lo = bin.charCodeAt(i * 2);
+    const hi = bin.charCodeAt(i * 2 + 1);
+    let s = (hi << 8) | lo;
+    if (s >= 0x8000) s -= 0x10000;
+    out[i] = s / 32768;
+  }
+  return out;
+}
+
+function enqueuePcm(b64: string) {
+  if (!pcmCtx || !pcmAnalyser) return;
+  const samples = pcmBase64ToFloat32(b64);
+  if (samples.length === 0) return;
+  const buf = pcmCtx.createBuffer(1, samples.length, PCM_RATE);
+  buf.copyToChannel(samples, 0);
+  const src = pcmCtx.createBufferSource();
+  src.buffer = buf;
+  src.connect(pcmAnalyser);
+  const startAt = Math.max(pcmCtx.currentTime + 0.02, pcmNextTime);
+  src.start(startAt);
+  pcmNextTime = startAt + buf.duration;
+  pcmActiveSources++;
+  src.onended = () => {
+    pcmActiveSources--;
+    if (pcmActiveSources <= 0 && pcmWaiter) {
+      const w = pcmWaiter;
+      pcmWaiter = null;
+      w();
+    }
+  };
+}
+
+function resetPcmPlayback() {
+  pcmNextTime = 0;
+  pcmActiveSources = 0;
+  if (pcmWaiter) {
+    const w = pcmWaiter;
+    pcmWaiter = null;
+    w();
+  }
+}
+
+async function playPcmStream(text: string, voice: string | undefined, gen: number): Promise<void> {
+  if (!ensurePcmGraph()) {
+    throw new Error("AudioContext 不可用");
+  }
+  resetPcmPlayback();
+  // 重绑定 getSpeechLevel 用的 analyser
+  analyser = pcmAnalyser;
+  let failed: string | null = null;
+  await synthesizeTtsStream(text, voice, (chunk) => {
+    if (gen !== generation) return;
+    if (chunk.done) {
+      if (pcmActiveSources <= 0 && pcmWaiter) {
+        const w = pcmWaiter;
+        pcmWaiter = null;
+        w();
+      }
+      return;
+    }
+    try {
+      enqueuePcm(chunk.base64);
+    } catch (e) {
+      failed = e instanceof Error ? e.message : String(e);
+    }
+  });
+  if (gen !== generation) return;
+  if (failed) throw new Error(failed);
+  // 等到排空
+  if (pcmActiveSources > 0 || pcmNextTime > (pcmCtx?.currentTime ?? 0)) {
+    await new Promise<void>((resolve) => {
+      pcmWaiter = resolve;
+      // 兜底超时
+      window.setTimeout(() => {
+        if (pcmWaiter === resolve) {
+          pcmWaiter = null;
+          resolve();
+        }
+      }, 120_000);
+    });
+  }
+}
+
+async function playBlobOnce(text: string, voice: string | undefined, gen: number): Promise<void> {
+  const audio = await synthesizeTts(text, voice);
+  if (gen !== generation) return;
+  const blob = base64ToBlob(audio.base64, audio.mime);
+  const url = URL.createObjectURL(blob);
+  const el = new Audio(url);
+  currentAudio = el;
+  currentUrl = url;
+  ensureAnalyser(el);
+  await new Promise<void>((resolve) => {
+    playWaiter = resolve;
+    const done = () => {
+      el.onended = null;
+      el.onerror = null;
+      playWaiter = null;
+      if (currentAudio === el) stopCurrent();
+      resolve();
+    };
+    el.onended = done;
+    el.onerror = done;
+    el.play().catch(done);
+  });
+}
+
 async function playOne(text: string, voice: string | undefined, gen: number): Promise<void> {
   stopCurrent();
+  resetPcmPlayback();
   setSpeaking(true);
   try {
-    const audio = await synthesizeTts(text, voice);
-    if (gen !== generation) return;
-    const blob = base64ToBlob(audio.base64, audio.mime);
-    const url = URL.createObjectURL(blob);
-    const el = new Audio(url);
-    currentAudio = el;
-    currentUrl = url;
-    ensureAnalyser(el);
-    await new Promise<void>((resolve) => {
-      playWaiter = resolve;
-      const done = () => {
-        el.onended = null;
-        el.onerror = null;
-        playWaiter = null;
-        if (currentAudio === el) stopCurrent();
-        resolve();
-      };
-      el.onended = done;
-      el.onerror = done;
-      el.play().catch(done);
-    });
+    // MiMo 优先真流式；其他服务商 / 流式失败 → 整段 Blob
+    let useStream = false;
+    try {
+      const cfg = await getTtsConfig();
+      useStream = cfg.provider === "mimo";
+    } catch {
+      useStream = false;
+    }
+    if (useStream) {
+      try {
+        await playPcmStream(text, voice, gen);
+        return;
+      } catch {
+        /* 回退整段 */
+      }
+    }
+    await playBlobOnce(text, voice, gen);
   } finally {
     if (!pendingJob) setSpeaking(false);
   }
@@ -299,10 +452,11 @@ export async function speakMessageText(
   text: string,
   voice?: string,
   messageId?: string,
-  opts?: { force?: boolean },
+  opts?: { force?: boolean; userGesture?: boolean },
 ): Promise<void> {
   if (!text.trim() || !tauriAvailable()) return;
-  if (!opts?.force && !claimSpeech(messageId, text)) return;
+  // 自动朗读去重；手动点读 / 试听不去重
+  if (!opts?.force && !opts?.userGesture && !claimSpeech(messageId, text)) return;
 
   const petOpen = await isPetWindowOpen();
   if (!petOpen) {
@@ -315,7 +469,9 @@ export async function speakMessageText(
     text,
     voice,
     messageId,
-    force: opts?.force,
+    // 手动点读：必须播（桌宠不再按 ttsEnabled 拦截）；仅试听用 force 打断
+    force: !!opts?.force || !!opts?.userGesture,
+    userGesture: !!opts?.userGesture,
   };
   const doneP = waitEventOnce<{ requestId: string }>(
     TTS_SPEAK_DONE,
@@ -326,8 +482,12 @@ export async function speakMessageText(
   await doneP;
 }
 
-/** 停止朗读：中断当前 + 清空待播；并通知桌宠窗口。 */
-export function stopSpeaking(): void {
+/**
+ * 停止朗读：中断当前 + 清空待播。
+ * `broadcast` 默认 true（主窗口点停止时通知桌宠）；
+ * 桌宠收到 tts://stop 后必须传 false，否则会无限回环广播。
+ */
+export function stopSpeaking(opts?: { broadcast?: boolean }): void {
   generation++;
   if (pendingJob) {
     pendingJob.resolve();
@@ -335,5 +495,7 @@ export function stopSpeaking(): void {
   }
   stopCurrent();
   setSpeaking(false);
-  void emitTauriEvent(TTS_STOP, {});
+  if (opts?.broadcast !== false) {
+    void emitTauriEvent(TTS_STOP, {});
+  }
 }

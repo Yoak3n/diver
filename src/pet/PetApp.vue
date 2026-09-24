@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { usePetChat } from "./usePetChat";
-import { inferEmotionDetail, loadEmotionMap, motionGroupsFor } from "./emotion";
+import { inferEmotionDetail, loadEmotionMap } from "./emotion";
 import type { PetEmotion } from "./emotion";
 import { tauriAvailable, onTauriEvent, startPetMouseStream, movePetWindow, cancelPetMoveAnimation, setPetDragging } from "../tauri";
 import {
@@ -15,7 +15,7 @@ import {
   type TtsSpeakRequest,
 } from "../tts";
 import { emitTauriEvent } from "../tauri";
-import { markdownToPlainText, renderMarkdownHtml } from "../markdown";
+import { hasVisibleMessageBody, markdownToPlainText, renderMarkdownHtml } from "../markdown";
 import {
   filesToAttachments,
   imageFilesFromClipboard,
@@ -29,7 +29,6 @@ import {
   loadModelCatalog,
   pickModelProfile,
   selectModelId,
-  resolveMotionGroups,
   PET_MODEL_CHANGED_EVENT,
 } from "./models";
 import type { PetModelProfile } from "./models";
@@ -55,7 +54,12 @@ const switchingModel = ref(false);
 
 /** 用当前 profile 创建/重建 Live2D 句柄。 */
 async function mountPetModel(profile: PetModelProfile) {
-  if (!modelHost.value) return;
+  if (!modelHost.value) {
+    await new Promise((r) => requestAnimationFrame(() => r(null)));
+  }
+  if (!modelHost.value) {
+    throw new Error("模型容器未就绪（modelHost 为空）");
+  }
   stopMouth?.();
   stopMouth = null;
   pet?.destroy();
@@ -165,6 +169,9 @@ const {
   pendingQuestion,
   submitQuestionAnswer,
 } = usePetChat();
+
+/** 面板可见消息：滤掉无正文无图的空白步骤（工具/思考占位）。 */
+const visibleMessages = computed(() => messages.value.filter(hasVisibleMessageBody));
 
 const panelDragOver = ref(false);
 
@@ -344,41 +351,11 @@ const bubblePos = ref<{ left: number; top: number } | null>(null);
 let bubbleHovering = false;
 
 /**
- * 把气泡贴到角色头顶旁（经典对白气泡位），而不是甩到窗口另一角。
- * 优先放在角色朝向屏幕中心的一侧；放不下再夹回窗口内。
+ * 默认态气泡：锚在窗口左上角（不跟角色头顶漂）。
+ * 面板打开时气泡不显示，无需再算。
  */
 function layoutSpeechBubble() {
-  const W = window.innerWidth;
-  const H = window.innerHeight;
-  const maxW = 280;
-  const gap = 12;
-  const box = pet?.getHitbox?.();
-  if (!box || box.width <= 0) {
-    // 模型未就绪：退回 bubble 侧上角
-    bubblePos.value =
-      bubbleSide.value === "right"
-        ? { left: Math.max(8, W - maxW - 12), top: 12 }
-        : { left: 12, top: 12 };
-    return;
-  }
-  const charLeft = box.left;
-  const charRight = box.left + box.width;
-  const charTop = box.top;
-  const charCenterX = box.left + box.width / 2;
-
-  // 贴头：竖直方向对齐头顶略下（刘海/发饰区域），不要压到脸中下部
-  const top = Math.min(Math.max(8, charTop + 8), Math.max(8, H - 120));
-  // 优先放在角色朝屏幕中心的一侧（与 bubbleSide 一致），空间不够则翻边
-  const preferLeft = bubbleSide.value === "left";
-  let left = preferLeft ? charLeft - maxW - gap : charRight + gap;
-  const fits = (x: number) => x >= 8 && x + maxW <= W - 8;
-  if (!fits(left)) {
-    const alt = preferLeft ? charRight + gap : charLeft - maxW - gap;
-    left = fits(alt) ? alt : Math.min(Math.max(8, charCenterX - maxW / 2), W - maxW - 8);
-  }
-  // 极窄窗口：夹回可见区
-  left = Math.min(Math.max(8, left), Math.max(8, W - maxW - 8));
-  bubblePos.value = { left, top };
+  bubblePos.value = { left: 12, top: 12 };
 }
 
 /** 悬停：暂停自动消失，避免长文还没读完就淡出 */
@@ -441,15 +418,22 @@ watch(
 // Rust 的 Moved 事件**只落盘、不 set_position**，避免与原生拖动抢位置导致
 // 跨屏闪动。拖动结束后再调用 move_pet_window(0,0) 做软限位（最近显示器）。
 const LONG_PRESS_MS = 350;
+/** 蓄力环延迟显示：短按（点按互动）不应闪出「按住拖动」 */
+const CHARGE_UI_DELAY_MS = 150;
 /** 拖动状态：idle=默认 / arming=长按蓄力中（尚不可拖） / dragging=已可拖动 */
 const dragState = ref<"idle" | "arming" | "dragging">("idle");
 /** 蓄力指示器锚点（视口坐标，跟随按下的位置） */
 const chargePos = ref({ x: 0, y: 0 });
+/** 蓄力环是否已显示（延迟后才 true，避免点按闪 UI） */
+const chargeUiVisible = ref(false);
 /** 蓄力起始点：用于判定「按住未移动」；移动过大则取消蓄力 */
 let chargeOrigin: { x: number; y: number } | null = null;
-/** 按下后允许的最大漂移（px），超过则取消长按蓄力，避免误以为已在拖动 */
+/** 取消「长按拖动」的漂移（px）：略动就不进拖动，但**仍可算点按** */
 const CHARGE_MOVE_TOLERANCE = 12;
+/** 取消「点按互动」的漂移（px）：只有明显拖拽才吞掉点击反应 */
+const CLICK_MOVE_TOLERANCE = 28;
 let pressTimer: number | null = null;
+let chargeUiTimer: number | null = null;
 let longPressDragging = false;
 /** 拖动会话：beginDrag 后置 true；Moved 停歇才做软限位 */
 let petDragSession = false;
@@ -464,6 +448,14 @@ function clearPressTimer() {
     window.clearTimeout(pressTimer);
     pressTimer = null;
   }
+}
+
+function clearChargeUiTimer() {
+  if (chargeUiTimer !== null) {
+    window.clearTimeout(chargeUiTimer);
+    chargeUiTimer = null;
+  }
+  chargeUiVisible.value = false;
 }
 
 function clearDragIdleTimer() {
@@ -576,61 +568,126 @@ async function bindPetMovedListener() {
   }
 }
 
-/** 蓄力过程中因移动取消：松手时不再触发点按互动 */
-let chargeCancelled = false;
+/** 短按是否还算「点击」（未明显拖拽、未进入系统拖动）。 */
+let clickCandidate = false;
+/** 明显拖拽 / 系统拖动后，松手不再触发点按互动 */
+let suppressClickReaction = false;
+
+function resetPointerSession() {
+  clearPressTimer();
+  clearChargeUiTimer();
+  chargeOrigin = null;
+  clickCandidate = false;
+  if (dragState.value === "arming") dragState.value = "idle";
+}
 
 function onPointerDown(e: PointerEvent) {
-  if (e.button !== 0) return; // 仅左键
+  if (e.button !== 0) return; // 仅左键；右键走 contextmenu
   if (inPanelArea(e.target)) return;
   longPressDragging = false;
-  chargeCancelled = false;
+  suppressClickReaction = false;
+  clickCandidate = true;
   chargeOrigin = { x: e.clientX, y: e.clientY };
   chargePos.value = { x: e.clientX, y: e.clientY };
-  // 蓄力中：不改 grab 指针，避免「已可拖动」的误导；进度环表达还需按住
+  // 不立刻亮「按住拖动」——短按是点按互动，不是拖动
   dragState.value = "arming";
+  clearChargeUiTimer();
+  chargeUiTimer = window.setTimeout(() => {
+    chargeUiTimer = null;
+    if (dragState.value === "arming" && chargeOrigin && clickCandidate) {
+      chargeUiVisible.value = true;
+    }
+  }, CHARGE_UI_DELAY_MS);
   clearPressTimer();
   // 长按超过阈值 → 进入窗口拖动
   pressTimer = window.setTimeout(() => {
+    pressTimer = null;
+    if (!clickCandidate) return;
     longPressDragging = true;
+    suppressClickReaction = true;
     chargeOrigin = null;
+    chargeUiVisible.value = false;
     dragState.value = "dragging";
     void beginDrag();
   }, LONG_PRESS_MS);
 }
 
-/** 蓄力过程中手指/鼠标移动过大 → 取消长按（用户并非「按住蓄力」） */
+/**
+ * 移动判定（分级）：
+ * - >12px：取消「长按拖动」（略动就别进系统拖动）
+ * - >28px：才算明显拖拽，松手不触发点按
+ * 小幅抖动不应吞掉 点脸/点身子 反应。
+ */
 function onPointerMove(e: PointerEvent) {
   if (dragState.value !== "arming" || !chargeOrigin) return;
   const dx = e.clientX - chargeOrigin.x;
   const dy = e.clientY - chargeOrigin.y;
-  if (dx * dx + dy * dy > CHARGE_MOVE_TOLERANCE * CHARGE_MOVE_TOLERANCE) {
+  const dist2 = dx * dx + dy * dy;
+  if (dist2 > CLICK_MOVE_TOLERANCE * CLICK_MOVE_TOLERANCE) {
+    // 明显拖拽：取消长按 + 不触发点按
     clearPressTimer();
+    clearChargeUiTimer();
     chargeOrigin = null;
-    chargeCancelled = true;
-    dragState.value = "idle";
-  }
-}
-
-function onPointerUp(e: PointerEvent) {
-  clearPressTimer();
-  chargeOrigin = null;
-  if (longPressDragging) {
-    // 刚结束一次长按拖动：不触发互动
-    longPressDragging = false;
+    clickCandidate = false;
+    suppressClickReaction = true;
     dragState.value = "idle";
     return;
   }
-  dragState.value = "idle";
-  // 未进入系统拖动：蓄力中断（大幅移动）不互动；正常点按/未蓄满松手 → TapBody
-  if (!chargeCancelled && e.button === 0 && !inPanelArea(e.target) && pet) {
-    pet.playEmotion("TapBody", { priority: "force" });
+  if (dist2 > CHARGE_MOVE_TOLERANCE * CHARGE_MOVE_TOLERANCE) {
+    // 轻微移动：取消长按拖动，但保留点按
+    clearPressTimer();
+    clearChargeUiTimer();
+    chargeOrigin = null;
+    clickCandidate = true;
+    dragState.value = "idle";
   }
 }
 
-function onPointerCancel() {
+/** 同一分区点击冷却（ms）：连点脸/连点身不重复播；换区立即响应。 */
+const CLICK_ZONE_COOLDOWN_MS = 550;
+const lastClickReactAt: Record<"head" | "body", number> = { head: 0, body: 0 };
+
+function onPointerUp(e: PointerEvent) {
   clearPressTimer();
+  clearChargeUiTimer();
   chargeOrigin = null;
-  chargeCancelled = true;
+  const wasLongDrag = longPressDragging;
+  longPressDragging = false;
+  dragState.value = "idle";
+  if (wasLongDrag) {
+    clickCandidate = false;
+    return;
+  }
+  // 短按松手 → 点脸 / 点身子 分区反应（同类节流）
+  if (!suppressClickReaction && clickCandidate && e.button === 0 && !inPanelArea(e.target) && pet) {
+    const zone = hitZoneAt(e.clientX, e.clientY);
+    const now = performance.now();
+    const last = lastClickReactAt[zone] || 0;
+    if (now - last < CLICK_ZONE_COOLDOWN_MS) {
+      clickCandidate = false;
+      suppressClickReaction = false;
+      return;
+    }
+    lastClickReactAt[zone] = now;
+    console.log("[pet] click zone =", zone);
+    pet.react("neutral", { force: true, zone });
+  }
+  clickCandidate = false;
+  suppressClickReaction = false;
+}
+
+/** 点击分区：命中框上 35% 视为头部（害羞/惊讶），其余身体（TapBody）。 */
+function hitZoneAt(_clientX: number, clientY: number): "head" | "body" {
+  const box = pet?.getHitbox();
+  if (!box) return "body";
+  const relY = (clientY - box.top) / Math.max(1, box.height);
+  return relY <= 0.35 ? "head" : "body";
+}
+
+function onPointerCancel() {
+  resetPointerSession();
+  clickCandidate = false;
+  suppressClickReaction = true;
   longPressDragging = false;
   dragState.value = "idle";
 }
@@ -738,7 +795,6 @@ function applyExpression(emotion: PetEmotion, soft = false) {
   if (!list.length) return;
   lastExprAt = now;
   pet.setExpression(pickOne(list));
-  window.setTimeout(() => pet?.setExpression(null), 2600);
 }
 
 /**
@@ -767,18 +823,19 @@ function reactToText(text: string) {
     }
     return;
   }
-  if (now - lastEmotionAt < EMOTION_MIN_INTERVAL_MS) return;
+  if (now - lastEmotionAt < EMOTION_MIN_INTERVAL_MS) {
+    applyExpression(emotion, false);
+    return;
+  }
 
   const profile = currentProfile();
-  const logicalGroups = motionGroupsFor(emotion);
-  const groups = logicalGroups.flatMap((g) =>
-    profile ? resolveMotionGroups(profile, g) : [g],
-  );
-  const candidates = groups.filter((g) => g && g !== "Idle");
-  if (!candidates.length) return;
-  const group = pickOne(candidates);
-  pet.playEmotion(group);
   lastEmotionAt = now;
+  lastExprAt = now;
+  // 动作 + 表情同播（表情淡入淡出）
+  pet.react(emotion, {
+    expressions: profile?.expressionMap?.[emotion],
+  });
+  console.log("[pet] emotion", emotion, detail.intensity);
 }
 
 /** 用户消息到达：先推断情绪并触发动作，再显示气泡。 */
@@ -902,10 +959,35 @@ async function startClickthrough() {
       (p) => {
         lastMouseScreen = { x: p.x, y: p.y };
         void applyClickthroughAt(p.x, p.y);
+        void feedLookAt(p.x, p.y);
       },
     );
   } catch (err) {
     console.error("[pet] mouse stream unavailable", err);
+  }
+}
+
+/** 全局光标 → 容器坐标 → 视线追踪（穿透态也能「看着鼠标」）。 */
+async function feedLookAt(screenX: number, screenY: number) {
+  if (!pet || !tauriAvailable()) return;
+  try {
+    const { getCurrentWindow } = await import("@tauri-apps/api/window");
+    const win = getCurrentWindow();
+    const [pos, size] = await Promise.all([win.outerPosition(), win.outerSize()]);
+    const dpr = window.devicePixelRatio || 1;
+    const clientX = (screenX - pos.x) / dpr;
+    const clientY = (screenY - pos.y) / dpr;
+    if (
+      clientX < 0 ||
+      clientY < 0 ||
+      clientX >= size.width / dpr ||
+      clientY >= size.height / dpr
+    ) {
+      return;
+    }
+    pet.setLookAt(clientX, clientY);
+  } catch {
+    /* 忽略 */
   }
 }
 
@@ -922,8 +1004,8 @@ function handleTtsRequest(req: TtsSpeakRequest) {
   void emitTauriEvent(TTS_SPEAK_ACK, { requestId: req.requestId });
   void (async () => {
     try {
-      if (!req.force && !ttsEnabled.value) return;
-      // 口型跟随播放状态（当前播完 + 只留最新）
+      // 主窗口已按设置决定是否发起；这里只负责播（不再用 ttsEnabled 拦截，避免未同步导致静音）
+      void ttsEnabled.value;
       await speakLocal(req.text, ttsVoice.value || undefined, { force: !!req.force });
     } catch {
       /* ignore */
@@ -975,7 +1057,8 @@ onMounted(async () => {
     }
   });
   void onTauriEvent(TTS_STOP, () => {
-    stopSpeaking();
+    // 只停本地，禁止再 emit TTS_STOP（回环）
+    stopSpeaking({ broadcast: false });
   });
   try {
     if (modelHost.value) {
@@ -1036,9 +1119,9 @@ onBeforeUnmount(() => {
     @pointercancel="onPointerCancel"
     @contextmenu="onContextMenu"
   >
-    <!-- 长按蓄力：按住填充圆环，蓄满才进入拖动；未完成前不显示 grab 指针 -->
+    <!-- 长按蓄力：按住超过 150ms 才显示圆环；短按是点按互动，不闪 UI -->
     <div
-      v-if="dragState === 'arming'"
+      v-if="dragState === 'arming' && chargeUiVisible"
       class="drag-charge"
       :style="{ left: `${chargePos.x}px`, top: `${chargePos.y}px` }"
       aria-hidden="true"
@@ -1074,7 +1157,7 @@ onBeforeUnmount(() => {
           <!-- 消息流：透明背景，可滚动回看历史 -->
           <div ref="chatMessagesRef" class="chat-messages">
             <div
-              v-for="(m, i) in messages"
+              v-for="(m, i) in visibleMessages"
               :key="m.id + '-' + i"
               class="chat-msg"
               :class="[m.kind, { streaming: m.streaming }]"
@@ -1100,7 +1183,7 @@ onBeforeUnmount(() => {
                 </span>
               </template>
             </div>
-            <div v-if="!messages.length" class="chat-empty">说点什么吧…</div>
+            <div v-if="!visibleMessages.length" class="chat-empty">说点什么吧…</div>
           </div>
           <!-- 输入区：附件预览 + 文本 + 加图/发送 -->
           <div v-if="attachments.length" class="panel-attach-strip">

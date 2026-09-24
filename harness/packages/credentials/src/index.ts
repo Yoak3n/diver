@@ -91,6 +91,20 @@ export class CredentialsService extends Service {
     return () => { this.entries.delete(ref) }
   }
 
+  /** Drop cached secrets/values so the next get() re-reads the file. */
+  invalidate(ref?: string): void {
+    if (ref === undefined) {
+      this.secrets = undefined
+      this.secretsError = undefined
+      for (const entry of this.entries.values()) entry.cached = undefined
+      return
+    }
+    const entry = this.entries.get(ref)
+    if (entry) entry.cached = undefined
+    this.secrets = undefined
+    this.secretsError = undefined
+  }
+
   /** The configured secrets file path (as configured, before cwd resolution),
    * so writers (e.g. a settings panel) persist into exactly the file this
    * service reads. Undefined when no file source is configured. */

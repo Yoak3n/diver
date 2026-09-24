@@ -94,7 +94,7 @@ pub fn apply_config(cfg: &PetInteractionConfig) {
 }
 
 /// 手势事件入口：白名单 → L0 PET_GESTURE → 组文案 → request(proactive_inject) → L3。
-pub async fn handle_pet_gesture(cos_home: &Path, ev: PetGestureEvent) -> Value {
+pub async fn submit_pet_gesture(cos_home: &Path, ev: PetGestureEvent) -> Value {
     if !PET_EVENT_TYPES.contains(&ev.kind.as_str()) {
         return json!({ "accepted": false, "reason": "bad_type" });
     }
@@ -105,7 +105,7 @@ pub async fn handle_pet_gesture(cos_home: &Path, ev: PetGestureEvent) -> Value {
     }
 
     // T17：内部事件，不迁叶；L2 可据此反应（切片 0 只记账）
-    PresenceHandle::global().handle_event(Event::PetGesture);
+    PresenceHandle::global().apply_event(Event::PetGesture);
 
     let text = build_interaction_prompt(&ev, cfg.mode);
     let base = crate::core::sidecar::SidecarManager::global().api_base_url();

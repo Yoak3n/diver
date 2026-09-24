@@ -36,7 +36,7 @@ impl PresenceHandle {
         f(&mut g)
     }
 
-    pub fn handle_event(&self, ev: Event) {
+    pub fn apply_event(&self, ev: Event) {
         let now = diver_presence::types::now_ms();
         // T13：USER_CHAT 打断 explore —— 先取消 L3 job，再迁相位
         if matches!(ev, Event::UserChat) {
@@ -83,7 +83,7 @@ pub fn dispatch_rpc(method: &str, params: &Value) -> Result<Value, String> {
         "presence::snapshot" => Ok(serde_json::to_value(handle.snapshot()).unwrap_or(Value::Null)),
         "presence::busy" => {
             let busy = params.get("busy").and_then(|v| v.as_bool()).unwrap_or(false);
-            handle.handle_event(Event::Busy(busy));
+            handle.apply_event(Event::Busy(busy));
             Ok(json!({ "busy": busy }))
         }
         "presence::event" => {
@@ -123,7 +123,7 @@ pub fn dispatch_rpc(method: &str, params: &Value) -> Result<Value, String> {
                 "ENABLED" => Event::Enabled(params.get("enabled").and_then(|v| v.as_bool()).unwrap_or(true)),
                 other => return Err(format!("未知 presence 事件: {other}")),
             };
-            handle.handle_event(ev);
+            handle.apply_event(ev);
             handle.with(|p| p.evaluate(now));
             Ok(json!({ "phase": handle.phase().as_str() }))
         }
@@ -219,7 +219,7 @@ pub async fn request_and_inject(
         (true, Some(req)) => match dispatch_inject(base_url, &req).await {
             Ok(val) => {
                 // 注入成功推进静默（与 claim 分离，避免冷却/静默纠缠）
-                PresenceHandle::global().handle_event(Event::ChatActivity);
+                PresenceHandle::global().apply_event(Event::ChatActivity);
                 body["dispatch"] = val;
             }
             Err(e) => {

@@ -112,7 +112,7 @@ async fn try_start_explore() {
         let Some(job) = job else { continue };
 
         // L0：EXPLORE_START → Solitary/Exploring（T20）
-        PresenceHandle::global().handle_event(Event::ExploreStart);
+        PresenceHandle::global().apply_event(Event::ExploreStart);
 
         let body = json!({
             "term": job.term,
@@ -136,7 +136,7 @@ async fn try_start_explore() {
             Err(e) => {
                 log::warn!("[explore] POST /api/memory/explore 失败: {e}");
                 PresenceHandle::global().with(|p| p.explore_policy().release());
-                PresenceHandle::global().handle_event(Event::ExploreEnd);
+                PresenceHandle::global().apply_event(Event::ExploreEnd);
             }
         }
     }
@@ -160,7 +160,7 @@ fn spawn_waiter(job_id: String) {
                     if state == "done" || state == "error" || state == "cancelled" {
                         log::info!("[explore] job {job_id} → {state}");
                         PresenceHandle::global().with(|p| p.explore_policy().release());
-                        PresenceHandle::global().handle_event(Event::ExploreEnd);
+                        PresenceHandle::global().apply_event(Event::ExploreEnd);
                         return;
                     }
                 }
@@ -171,7 +171,7 @@ fn spawn_waiter(job_id: String) {
         }
         // 超时兜底
         cancel_active_job();
-        PresenceHandle::global().handle_event(Event::ExploreEnd);
+        PresenceHandle::global().apply_event(Event::ExploreEnd);
     });
 }
 
@@ -222,7 +222,7 @@ pub async fn trigger_manual(term: &str, reason: &str) -> Result<Value, String> {
     let Some(job) = job else {
         return Ok(body);
     };
-    PresenceHandle::global().handle_event(Event::ExploreStart);
+    PresenceHandle::global().apply_event(Event::ExploreStart);
     let base = api_base();
     let payload = json!({
         "term": job.term,
@@ -238,7 +238,7 @@ pub async fn trigger_manual(term: &str, reason: &str) -> Result<Value, String> {
         }
         Err(e) => {
             PresenceHandle::global().with(|p| p.explore_policy().release());
-            PresenceHandle::global().handle_event(Event::ExploreEnd);
+            PresenceHandle::global().apply_event(Event::ExploreEnd);
             body["dispatchError"] = json!(e);
         }
     }

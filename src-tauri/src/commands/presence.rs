@@ -30,7 +30,7 @@ pub fn presence_snapshot() -> serde_json::Value {
 pub fn presence_event(event: String, regime: Option<String>, enabled: Option<bool>) -> String {
     match parse_presence_event(&event, regime.as_deref(), enabled) {
         Ok(ev) => {
-            crate::core::presence::PresenceHandle::global().handle_event(ev);
+            crate::core::presence::PresenceHandle::global().apply_event(ev);
             crate::core::presence::PresenceHandle::global()
                 .phase()
                 .as_str()
@@ -95,5 +95,5 @@ pub async fn pet_gesture_event(
     app: AppHandle,
     event: PetGestureEvent,
 ) -> Result<serde_json::Value, String> {
-    Ok(crate::core::pet_interaction::handle_pet_gesture(&cos_home(&app), event).await)
+    Ok(crate::core::pet_interaction::submit_pet_gesture(&cos_home(&app), event).await)
 }

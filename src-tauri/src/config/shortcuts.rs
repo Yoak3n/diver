@@ -3,10 +3,12 @@
 //! 热插拔语义：启用/禁用/修改绑定只写这份配置 + 运行时注册/注销，
 //! 不需要重启应用（见 `base/shortcut.rs` 的 `ShortcutManager`）。
 
+use std::path::Path;
+
 use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
 
-use super::{load, save};
+use super::{config_dir, load_at, save_at};
 
 /// 配置文件名称（壳层配置，`config_dir/shortcuts.json`）。
 pub const FILE_NAME: &str = "shortcuts.json";
@@ -103,12 +105,55 @@ fn default_bindings() -> Vec<ShortcutBinding> {
     ]
 }
 
+/// 纯路径读取快捷键配置（文件不存在或损坏时返回默认值）。
+pub fn load_config_at(base: &Path) -> ShortcutsConfig {
+    load_at(base, FILE_NAME)
+}
+
+/// 纯路径保存快捷键配置，返回是否成功。
+pub fn save_config_at(base: &Path, config: &ShortcutsConfig) -> bool {
+    save_at(base, FILE_NAME, config)
+}
+
 /// 读取快捷键配置（文件不存在或损坏时返回默认值）。
 pub fn load_config(app: &AppHandle) -> ShortcutsConfig {
-    load(app, FILE_NAME)
+    load_config_at(&config_dir(app))
 }
 
 /// 保存快捷键配置，返回是否成功。
 pub fn save_config(app: &AppHandle, config: &ShortcutsConfig) -> bool {
-    save(app, FILE_NAME, config)
+    save_config_at(&config_dir(app), config)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn load_save_at_roundtrip() {
+        let dir = std::env::temp_dir().join(format!("diver-sc-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let cfg = ShortcutsConfig {
+            bindings: vec![ShortcutBinding {
+                id: "x".into(),
+                accelerator: "ctrl+alt+x".into(),
+                action: ShortcutAction::TogglePet,
+                enabled: false,
+            }],
+        };
+        assert!(save_config_at(&dir, &cfg));
+        let loaded = load_config_at(&dir);
+        assert_eq!(loaded.bindings.len(), 1);
+        assert_eq!(loaded.bindings[0].id, "x");
+        assert_eq!(loaded.bindings[0].accelerator, "ctrl+alt+x");
+        assert!(!loaded.bindings[0].enabled);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn load_at_missing_returns_default_bindings() {
+        let dir = std::env::temp_dir().join(format!("diver-sc-miss-{}", std::process::id()));
+        let cfg = load_config_at(&dir);
+        assert_eq!(cfg.bindings.len(), 2);
+    }
 }

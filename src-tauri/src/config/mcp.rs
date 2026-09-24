@@ -28,7 +28,7 @@
 //! }
 //! ```
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
@@ -78,36 +78,47 @@ pub struct McpConfig {
     pub servers: Vec<McpServerConfig>,
 }
 
+/// 纯路径：配置文件绝对路径 `<cos_home>/mcp-servers.json`。
+pub fn config_path_at(cos_home: &Path) -> PathBuf {
+    cos_home.join(FILE_NAME)
+}
+
 /// 配置文件绝对路径：`<cos_home>/mcp-servers.json`（与 `diver-settings.json` 同目录）。
 pub fn config_path(app: &AppHandle) -> PathBuf {
-    cos_home(app).join(FILE_NAME)
+    config_path_at(&cos_home(app))
+}
+
+/// 纯路径读取 MCP 配置（文件缺失/解析失败返回空配置）。
+pub fn load_config_at(cos_home: &Path) -> McpConfig {
+    load_at(cos_home, FILE_NAME)
+}
+
+/// 纯路径保存 MCP 配置，返回是否写盘成功。
+pub fn save_config_at(cos_home: &Path, config: &McpConfig) -> bool {
+    save_at(cos_home, FILE_NAME, config)
 }
 
 /// 读取 MCP 配置（文件缺失/解析失败返回空配置，保证应用始终可用）。
 pub fn load_config(app: &AppHandle) -> McpConfig {
-    load_at(&cos_home(app), FILE_NAME)
+    load_config_at(&cos_home(app))
 }
 
 /// 保存 MCP 配置，返回是否写盘成功。
 pub fn save_config(app: &AppHandle, config: &McpConfig) -> bool {
-    save_at(&cos_home(app), FILE_NAME, config)
+    save_config_at(&cos_home(app), config)
 }
 
-/// 首次运行初始化 + 旧位置迁移。
+/// 纯路径：首次运行初始化 + 旧位置迁移。
 ///
-/// 早期版本把 `mcp-servers.json` 写在 `app_config_dir`（`$COS_HOME` 的父目录），
-/// 而 sidecar 插件按 `$COS_HOME/mcp-servers.json` 读取，导致 registry 读到空列表。
-/// 这里把既有文件迁移到新位置（仅当目标缺失时，避免覆盖已有配置）；
-/// 目标存在或迁移失败时，若仍无配置则写入默认示例（work-review），
-/// 使 sidecar 的 registry 插件在启动时就有可读的 server 列表。
-pub fn ensure_initial(app: &AppHandle) {
-    let path = config_path(app);
+/// `cos_home`：目标目录；`shell_config_dir`：旧位置（`app_config_dir`）迁移来源。
+pub fn ensure_initial_at(cos_home: &Path, shell_config_dir: &Path) {
+    let path = config_path_at(cos_home);
     if path.exists() {
         return;
     }
 
     // 旧位置迁移：`<app_config_dir>/mcp-servers.json` → `<cos_home>/mcp-servers.json`。
-    let legacy = config_dir(app).join(FILE_NAME);
+    let legacy = shell_config_dir.join(FILE_NAME);
     if legacy.exists() {
         if let Some(dir) = path.parent() {
             let _ = std::fs::create_dir_all(dir);
@@ -143,7 +154,86 @@ pub fn ensure_initial(app: &AppHandle) {
             tool_call_timeout_ms: 30_000,
         }],
     };
-    if !save_config(app, &config) {
+    if !save_config_at(cos_home, &config) {
         log::error!("初始化 MCP 服务配置失败: {}", path.display());
+    }
+}
+
+/// 首次运行初始化 + 旧位置迁移。
+///
+/// 早期版本把 `mcp-servers.json` 写在 `app_config_dir`（`$COS_HOME` 的父目录），
+/// 而 sidecar 插件按 `$COS_HOME/mcp-servers.json` 读取，导致 registry 读到空列表。
+/// 这里把既有文件迁移到新位置（仅当目标缺失时，避免覆盖已有配置）；
+/// 目标存在或迁移失败时，若仍无配置则写入默认示例（work-review），
+/// 使 sidecar 的 registry 插件在启动时就有可读的 server 列表。
+pub fn ensure_initial(app: &AppHandle) {
+    ensure_initial_at(&cos_home(app), &config_dir(app))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn tmp(tag: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("diver-mcp-{tag}-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn load_save_at_roundtrip() {
+        let home = tmp("rt");
+        let cfg = McpConfig {
+            servers: vec![McpServerConfig {
+                transport: "stdio".into(),
+                server_name: "demo".into(),
+                command: "cmd".into(),
+                args: vec!["-c".into()],
+                env: Default::default(),
+                cwd: String::new(),
+                tool_call_timeout_ms: 1000,
+            }],
+        };
+        assert!(save_config_at(&home, &cfg));
+        let loaded = load_config_at(&home);
+        assert_eq!(loaded.servers.len(), 1);
+        assert_eq!(loaded.servers[0].server_name, "demo");
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn ensure_initial_migrates_legacy() {
+        let home = tmp("mig-home");
+        let shell = tmp("mig-shell");
+        let cfg = McpConfig {
+            servers: vec![McpServerConfig {
+                transport: "stdio".into(),
+                server_name: "legacy".into(),
+                command: "x".into(),
+                args: vec![],
+                env: Default::default(),
+                cwd: String::new(),
+                tool_call_timeout_ms: 1000,
+            }],
+        };
+        assert!(save_config_at(&shell, &cfg));
+        ensure_initial_at(&home, &shell);
+        assert!(config_path_at(&home).is_file());
+        assert!(!config_path_at(&shell).is_file());
+        assert_eq!(load_config_at(&home).servers[0].server_name, "legacy");
+        let _ = std::fs::remove_dir_all(&home);
+        let _ = std::fs::remove_dir_all(&shell);
+    }
+
+    #[test]
+    fn ensure_initial_writes_default_when_missing() {
+        let home = tmp("init");
+        let shell = tmp("init-shell");
+        ensure_initial_at(&home, &shell);
+        let cfg = load_config_at(&home);
+        assert_eq!(cfg.servers.len(), 1);
+        assert_eq!(cfg.servers[0].server_name, "work-review");
+        let _ = std::fs::remove_dir_all(&home);
+        let _ = std::fs::remove_dir_all(&shell);
     }
 }

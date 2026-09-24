@@ -4,7 +4,8 @@ use std::path::Path;
 use std::process::Command;
 
 use super::extract::{extract_archive, locate_node_in};
-use super::{hidden, NODE_DIST_VERSION, MIN_NODE_MAJOR};
+use super::process::hidden;
+use super::types::{NODE_DIST_VERSION, MIN_NODE_MAJOR};
 
 pub(super) fn dist_archive_name() -> String {
     let platform = if cfg!(all(target_os = "windows", target_arch = "x86_64")) {

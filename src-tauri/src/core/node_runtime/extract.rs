@@ -3,7 +3,8 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use super::{hidden, node_file_name};
+use super::process::hidden;
+use super::types::node_file_name;
 
 pub(super) fn locate_node_in(dir: &Path) -> Option<PathBuf> {
     let name = node_file_name();

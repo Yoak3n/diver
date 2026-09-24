@@ -15,7 +15,7 @@ pub mod shortcuts;
 pub mod tts;
 pub mod window_startup;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use serde::de::DeserializeOwned;
 use serde::Serialize;
@@ -41,6 +41,23 @@ pub fn cos_home(app: &AppHandle) -> PathBuf {
     {
         // debug 分支只依赖环境变量，不需要 AppHandle。
         let _ = app;
+        cos_home_at(&std::env::temp_dir())
+    }
+    #[cfg(not(debug_assertions))]
+    {
+        let data = app
+            .path()
+            .app_data_dir()
+            .unwrap_or_else(|_| config_dir(app));
+        cos_home_at(&data)
+    }
+}
+
+/// 纯路径版 cos_home：`base` 为 release 形态的 `app_data_dir`（debug 忽略）。
+pub fn cos_home_at(base: &Path) -> PathBuf {
+    #[cfg(debug_assertions)]
+    {
+        let _ = base;
         let harness = std::env::var("DIVER_HARNESS_DIR")
             .map(PathBuf::from)
             .unwrap_or_else(|_| {
@@ -52,10 +69,7 @@ pub fn cos_home(app: &AppHandle) -> PathBuf {
     }
     #[cfg(not(debug_assertions))]
     {
-        app.path()
-            .app_data_dir()
-            .unwrap_or_else(|_| config_dir(app))
-            .join("cos")
+        base.join("cos")
     }
 }
 
@@ -82,7 +96,7 @@ where
 /// 从 `base` 目录下的文件读取并反序列化指定类型的配置。
 ///
 /// 文件不存在或内容解析失败时返回 `T::default()`，保证应用始终可用。
-pub fn load_at<T>(base: &PathBuf, file_name: &str) -> T
+pub fn load_at<T>(base: &Path, file_name: &str) -> T
 where
     T: DeserializeOwned + Default,
 {
@@ -95,7 +109,7 @@ where
 /// 将配置序列化为 JSON 并写入 `base` 目录下的文件，必要时自动创建目录。
 ///
 /// 返回是否写盘成功。
-pub fn save_at<T>(base: &PathBuf, file_name: &str, value: &T) -> bool
+pub fn save_at<T>(base: &Path, file_name: &str, value: &T) -> bool
 where
     T: Serialize,
 {
@@ -110,4 +124,37 @@ where
         .ok()
         .and_then(|json| std::fs::write(&path, json).ok())
         .is_some()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde::Deserialize;
+
+    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+    struct Demo {
+        n: u32,
+        s: String,
+    }
+
+    #[test]
+    fn load_save_at_roundtrip() {
+        let dir = std::env::temp_dir().join(format!("diver-cfg-io-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let v = Demo {
+            n: 7,
+            s: "你好".into(),
+        };
+        assert!(save_at(&dir, "demo.json", &v));
+        let loaded: Demo = load_at(&dir, "demo.json");
+        assert_eq!(loaded, v);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn load_at_missing_returns_default() {
+        let dir = std::env::temp_dir().join(format!("diver-cfg-miss-{}", std::process::id()));
+        let loaded: Demo = load_at(&dir, "nope.json");
+        assert_eq!(loaded, Demo::default());
+    }
 }

@@ -3,10 +3,12 @@
 //! API Key 等凭据只落盘在本机配置，不回传给前端（`to_view` 只回布尔）。
 //! 空串 secret 在 `merge_from` 时保留旧值，与设置面板「留空不改」一致。
 
+use std::path::Path;
+
 use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
 
-use super::{load, save};
+use super::{config_dir, load_at, save_at};
 
 pub const FILE_NAME: &str = "tts.json";
 
@@ -244,14 +246,53 @@ pub struct TtsAudio {
     pub mime: String,
 }
 
-pub fn load_config(app: &AppHandle) -> TtsConfig {
-    let mut cfg: TtsConfig = load(app, FILE_NAME);
+/// 纯路径读取 TTS 配置。
+pub fn load_config_at(base: &Path) -> TtsConfig {
+    let mut cfg: TtsConfig = load_at(base, FILE_NAME);
     cfg.normalize_provider_defaults();
     cfg
 }
 
-pub fn save_config(app: &AppHandle, config: &TtsConfig) -> bool {
+/// 纯路径保存 TTS 配置。
+pub fn save_config_at(base: &Path, config: &TtsConfig) -> bool {
     let mut cfg = config.clone();
     cfg.normalize_provider_defaults();
-    save(app, FILE_NAME, &cfg)
+    save_at(base, FILE_NAME, &cfg)
+}
+
+pub fn load_config(app: &AppHandle) -> TtsConfig {
+    load_config_at(&config_dir(app))
+}
+
+pub fn save_config(app: &AppHandle, config: &TtsConfig) -> bool {
+    save_config_at(&config_dir(app), config)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn load_save_at_roundtrip() {
+        let dir = std::env::temp_dir().join(format!("diver-tts-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut cfg = TtsConfig::default();
+        cfg.provider = TtsProvider::Minimax;
+        cfg.voice = "茉莉".into();
+        cfg.api_key = "secret".into();
+        assert!(save_config_at(&dir, &cfg));
+        let loaded = load_config_at(&dir);
+        assert_eq!(loaded.provider, TtsProvider::Minimax);
+        assert_eq!(loaded.voice, "茉莉");
+        assert_eq!(loaded.api_key, "secret");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn load_at_missing_returns_default_with_normalized_provider() {
+        let dir = std::env::temp_dir().join(format!("diver-tts-miss-{}", std::process::id()));
+        let cfg = load_config_at(&dir);
+        assert_eq!(cfg.provider, TtsProvider::Mimo);
+        assert!(!cfg.model.is_empty());
+    }
 }

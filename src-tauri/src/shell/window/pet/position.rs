@@ -4,9 +4,8 @@ use std::time::{Duration, Instant};
 
 use tauri::{AppHandle, Manager, PhysicalPosition, WebviewWindow};
 
-use super::{
-    now_ms, persist_position, system_drag_active, ANIM_GEN, LAST_POS_SAVE_MS, PET_WINDOW_LABEL,
-};
+use super::flags::{now_ms, system_drag_active, ANIM_GEN, LAST_POS_SAVE_MS};
+use super::window::{persist_position, PET_WINDOW_LABEL};
 use crate::config::pet_window;
 use diver_geom::*;
 

@@ -1,201 +1,30 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from "vue";
-import {
-  listPluginsApi,
-  togglePluginApi,
-  switchProfileApi,
-  installProfilePluginApi,
-  uninstallProfilePluginApi,
-  getNativeStatusApi,
-  getPluginConfigsApi,
-  savePluginConfigApi,
-  type PluginConfigView,
-  type PluginInfo,
-  type NativeStatus,
-} from "../../api";
-import { onTauriEvent, tauriAvailable } from "../../tauri";
-import type { SidecarStatus } from "../../types";
+import { onBeforeUnmount, onMounted } from "vue";
+import { usePluginsTab } from "./composables/usePluginsTab";
+import { usePluginConfigs } from "./composables/usePluginConfigs";
+import PluginConfigForm from "./children/PluginConfigForm.vue";
 
-const plugins = ref<PluginInfo[]>([]);
-const loading = ref(false);
-const busyId = ref<string | null>(null);
-const error = ref("");
-const hint = ref("");
-const activeProfile = ref("companion");
-const native = ref<NativeStatus | null>(null);
-const profileBusy = ref(false);
-const installSpec = ref("");
-const installBusy = ref(false);
+const {
+  plugins,
+  loading,
+  busyId,
+  error,
+  hint,
+  activeProfile,
+  native,
+  profileBusy,
+  installSpec,
+  installBusy,
+  bindSidecarReadyTip,
+  refresh,
+  onToggle,
+  onSwitchProfile,
+  onInstall,
+  onUninstall,
+  dispose,
+} = usePluginsTab();
 
-/** 有重启在飞时，等 sidecar running 再把「重启中…」改成「已重启成功」。 */
-let pendingRestartHint = false;
-let stopSidecarListen: (() => void) | null = null;
-
-function markRestartPending(message: string) {
-  pendingRestartHint = true;
-  hint.value = message;
-}
-
-function bindSidecarReadyTip() {
-  if (!tauriAvailable() || stopSidecarListen) return;
-  void onTauriEvent<SidecarStatus>("sidecar://status", (status) => {
-    if (status.state !== "running" || !pendingRestartHint) return;
-    pendingRestartHint = false;
-    hint.value = hint.value
-      .replace(/sidecar 正在重启…/, "sidecar 已重启成功")
-      .replace(/sidecar 重启中…/, "sidecar 已重启成功");
-    void refresh();
-  }).then((unlisten) => {
-    stopSidecarListen = unlisten;
-  });
-}
-
-async function refresh() {
-  loading.value = true;
-  error.value = "";
-  try {
-    const res = await listPluginsApi();
-    activeProfile.value = res.activeProfile;
-    plugins.value = res.plugins;
-    try {
-      native.value = await getNativeStatusApi();
-    } catch {
-      native.value = null;
-    }
-  } catch (e) {
-    error.value = String(e);
-  } finally {
-    loading.value = false;
-  }
-}
-
-async function onToggle(plugin: PluginInfo, enabled: boolean) {
-  if (!plugin.toggleable) return;
-  busyId.value = plugin.id;
-  error.value = "";
-  hint.value = "";
-  try {
-    const res = await togglePluginApi(plugin.id, enabled, true);
-    plugins.value = res.plugins;
-    activeProfile.value = res.activeProfile;
-    markRestartPending(
-      enabled
-        ? `已启用「${plugin.displayName}」，sidecar 正在重启…`
-        : `已禁用「${plugin.displayName}」，sidecar 正在重启…`,
-    );
-  } catch (e) {
-    error.value = String(e);
-    await refresh();
-  } finally {
-    busyId.value = null;
-  }
-}
-
-// ---- 插件 config（设置页表单，Desktop model-config 风格）----
-const configMap = ref<Record<string, PluginConfigView>>({});
-const draft = ref<Record<string, Record<string, string | boolean>>>({});
-
-async function loadPluginConfigs() {
-  try {
-    const res = await getPluginConfigsApi();
-    const map: Record<string, PluginConfigView> = {};
-    const drafts: Record<string, Record<string, string | boolean>> = {};
-    for (const item of res.plugins) {
-      map[item.id] = item;
-      const values: Record<string, string | boolean> = {};
-      for (const f of item.fields) {
-        if (f.type === "boolean") values[f.key] = f.value === "true" || f.default === true;
-        else values[f.key] = f.value ?? (f.default != null ? String(f.default) : "");
-      }
-      drafts[item.id] = values;
-    }
-    configMap.value = map;
-    draft.value = drafts;
-  } catch {
-    configMap.value = {};
-  }
-}
-
-async function onSaveConfig(id: string) {
-  const fields = configMap.value[id]?.fields ?? [];
-  const values: Record<string, string | number | boolean | null> = {};
-  const d = draft.value[id] ?? {};
-  for (const f of fields) {
-    const raw = d[f.key];
-    if (f.type === "boolean") {
-      values[f.key] = raw === true || raw === "true";
-    } else if (f.type === "number") {
-      const s = String(raw ?? "");
-      values[f.key] = s === "" ? null : Number(s);
-    } else {
-      values[f.key] = raw === "" || raw == null ? null : String(raw);
-    }
-  }
-  await savePluginConfigApi(id, values);
-  await loadPluginConfigs();
-  hint.value = "插件配置已保存，sidecar 重启后生效";
-}
-
-async function onSwitchProfile(profile: "companion" | "safe") {
-  if (profileBusy.value) return;
-  if (activeProfile.value === profile) return;
-  profileBusy.value = true;
-  error.value = "";
-  hint.value = "";
-  try {
-    const res = await switchProfileApi(profile, true);
-    activeProfile.value = res.activeProfile;
-    const list = await listPluginsApi();
-    plugins.value = list.plugins;
-    markRestartPending(
-      profile === "safe"
-        ? "已切换安全模式（核心 + 后端），sidecar 正在重启…"
-        : "已切回 companion 完整组合，sidecar 正在重启…",
-    );
-  } catch (e) {
-    error.value = String(e);
-    await refresh();
-  } finally {
-    profileBusy.value = false;
-  }
-}
-
-async function onInstall() {
-  const spec = installSpec.value.trim();
-  if (!spec || installBusy.value) return;
-  installBusy.value = true;
-  error.value = "";
-  hint.value = "";
-  try {
-    const res = await installProfilePluginApi(spec, true);
-    plugins.value = res.plugins;
-    markRestartPending(`已安装 ${spec}，sidecar 正在重启…`);
-    installSpec.value = "";
-  } catch (e) {
-    error.value = String(e);
-  } finally {
-    installBusy.value = false;
-    await refresh().catch(() => {});
-  }
-}
-
-async function onUninstall(p: PluginInfo) {
-
-  if (p.kind !== "profile") return;
-  busyId.value = p.id;
-  error.value = "";
-  hint.value = "";
-  try {
-    const res = await uninstallProfilePluginApi(p.id, true);
-    plugins.value = res.plugins;
-    markRestartPending(`已卸载 ${p.packageName}，sidecar 正在重启…`);
-  } catch (e) {
-    error.value = String(e);
-  } finally {
-    busyId.value = null;
-    await refresh().catch(() => {});
-  }
-}
+const { configMap, draft, loadPluginConfigs, onSaveConfig } = usePluginConfigs(hint);
 
 onMounted(() => {
   bindSidecarReadyTip();
@@ -203,10 +32,11 @@ onMounted(() => {
   void loadPluginConfigs();
 });
 
-onBeforeUnmount(() => {
-  stopSidecarListen?.();
-  stopSidecarListen = null;
-});
+onBeforeUnmount(() => dispose());
+
+function hasConfig(p: { id: string }) {
+  return !!configMap.value[p.id]?.hasConfig;
+}
 </script>
 
 <template>
@@ -275,28 +105,14 @@ onBeforeUnmount(() => {
   <div v-else-if="!plugins.length" class="hint">未发现 companion 插件（检查 cos-plugins / plugins 目录）。</div>
 
   <div v-for="p in plugins" :key="p.id" class="plugin-row">
-    <div v-if="configMap[p.id]?.hasConfig" class="plugin-config">
-      <div class="config-title">{{ configMap[p.id]?.title || p.displayName }} 配置</div>
-      <label v-for="f in configMap[p.id].fields" :key="f.key" class="config-field">
-        <span class="config-label">{{ f.label }}</span>
-        <input
-          v-if="f.type === 'boolean'"
-          type="checkbox"
-          v-model="draft[p.id][f.key]"
-        />
-        <select v-else-if="f.type === 'select'" v-model="draft[p.id][f.key]">
-          <option v-for="opt in f.options || []" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
-        </select>
-        <input
-          v-else
-          :type="f.type === 'password' || f.secret ? 'password' : f.type === 'number' ? 'number' : 'text'"
-          v-model="draft[p.id][f.key]"
-          :placeholder="f.default != null ? String(f.default) : ''"
-        />
-        <span v-if="f.description" class="config-desc">{{ f.description }}</span>
-      </label>
-      <button class="btn" :disabled="busyId === p.id" @click="onSaveConfig(p.id)">保存配置</button>
-    </div>
+    <PluginConfigForm
+      v-if="hasConfig(p)"
+      :plugin-id="p.id"
+      :config="configMap[p.id]"
+      :draft="draft[p.id]"
+      :busy="busyId === p.id"
+      @save="onSaveConfig"
+    />
     <div class="plugin-main">
       <div class="plugin-title">
         <span class="plugin-name">{{ p.displayName }}</span>
@@ -351,37 +167,6 @@ onBeforeUnmount(() => {
 }
 .plugin-row:last-of-type {
   border-bottom: none;
-}
-.plugin-config {
-  width: 100%;
-  margin-top: 0.5rem;
-  padding: 0.75rem;
-  border: 1px solid var(--rule);
-  border-radius: var(--radius);
-  background: var(--paper-raised);
-}
-.config-title {
-  font-weight: 600;
-  font-size: 13px;
-  color: var(--ink);
-  margin-bottom: 0.5rem;
-}
-.config-field {
-  display: grid;
-  grid-template-columns: 10rem 1fr;
-  gap: 0.35rem 0.5rem;
-  align-items: center;
-  margin-bottom: 0.35rem;
-  font-size: 0.9rem;
-}
-.config-label {
-  color: var(--ink-soft);
-  font-size: 12px;
-}
-.config-desc {
-  grid-column: 2;
-  font-size: 0.8rem;
-  color: var(--ink-muted);
 }
 .profile-row {
   display: flex;

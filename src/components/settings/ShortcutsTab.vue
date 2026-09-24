@@ -1,217 +1,57 @@
 <script setup lang="ts">
 // 全局快捷键设置页（热插拔：保存即注册/注销，无需重启 sidecar/应用）。
 // 组合键经按键捕获生成，词法对齐 tauri-plugin-global-shortcut（global-hotkey parse_hotkey）。
-import { onBeforeUnmount, onMounted, ref } from "vue";
+import { onMounted } from "vue";
 import {
-  listShortcuts,
-  setShortcut,
-  removeShortcut,
-  suspendShortcuts,
-  resumeShortcuts,
   SHORTCUT_ACTION_LABELS,
   tauriAvailable,
   type ShortcutAction,
-  type ShortcutBinding,
 } from "../../tauri";
-import {
-  eventToAccelerator,
-  isCaptureCancel,
-  isImeEvent,
-  modifierHint,
-} from "../../hotkey";
+import { useShortcuts } from "./composables/useShortcuts";
+import { useHotkeyCapture } from "./composables/useHotkeyCapture";
 
-const bindings = ref<ShortcutBinding[]>([]);
-const loading = ref(false);
-const busyId = ref<string | null>(null);
-const error = ref("");
-const hint = ref("");
+const {
+  bindings,
+  loading,
+  busyId,
+  error,
+  hint,
+  newAction,
+  newAccelerator,
+  adding,
+  refresh,
+  onToggle,
+  onSaveAccelerator,
+  onRemove,
+  onAdd,
+} = useShortcuts();
 
-// 新增表单
-const newAction = ref<ShortcutAction>("show-main");
-const newAccelerator = ref("");
-const adding = ref(false);
-
-// 录制：null = 未录制；"__new__" = 新增表单；其余为绑定 id
-const capturingId = ref<string | null>(null);
-const capturePreview = ref("");
+const { capturingId, capturePreview, startCapture, stopCapture, dispose } = useHotkeyCapture({
+  onError: (m) => {
+    error.value = m;
+  },
+  onCaptured: async (target, accel) => {
+    if (target === "__new__") {
+      newAccelerator.value = accel;
+      await onAdd();
+      return;
+    }
+    const binding = bindings.value.find((b) => b.id === target);
+    if (binding) await onSaveAccelerator(binding, accel);
+  },
+});
 
 const actionLabels = SHORTCUT_ACTION_LABELS;
 const actionOptions = Object.entries(actionLabels) as [ShortcutAction, string][];
 
-async function refresh() {
-  if (!tauriAvailable()) return;
-  loading.value = true;
-  error.value = "";
-  try {
-    bindings.value = await listShortcuts();
-  } catch (e) {
-    error.value = String(e);
-  } finally {
-    loading.value = false;
-  }
-}
-
-function detachCapture() {
-  capturingId.value = null;
-  capturePreview.value = "";
-  window.removeEventListener("keydown", onCaptureKey, true);
-}
-
-function stopCapture() {
-  detachCapture();
-  void resumeShortcuts().catch((e) => {
-    error.value = String(e);
-  });
-}
-
-function startCapture(id: string) {
-  // 只拆监听，不要 resume——避免与随后的 suspend 交错
-  detachCapture();
-  capturingId.value = id;
-  capturePreview.value = "";
-  window.addEventListener("keydown", onCaptureKey, true);
-  // 挂起全局热键：Windows RegisterHotKey 会吞掉已注册组合的 keydown
-  void suspendShortcuts().catch((e) => {
-    error.value = `挂起全局快捷键失败（录制可能收不到按键）: ${e}`;
-  });
-}
-
-function onCaptureKey(e: KeyboardEvent) {
-  // IME 假按键不参与录制；也不要 preventDefault，以免打断输入法
-  if (isImeEvent(e)) return;
-
-  // 录制期间吞掉按键，避免触发页面快捷键 / 输入框
-  e.preventDefault();
-  e.stopPropagation();
-
-  if (isCaptureCancel(e)) {
-    stopCapture();
-    return;
-  }
-
-  const accel = eventToAccelerator(e);
-  if (accel === null) {
-    // 只按了修饰键：显示前缀提示
-    capturePreview.value = modifierHint(e);
-    return;
-  }
-
-  const target = capturingId.value;
-  detachCapture();
-  if (target === null) {
-    void resumeShortcuts().catch(() => {});
-    return;
-  }
-
-  void (async () => {
-    try {
-      if (target === "__new__") {
-        newAccelerator.value = accel;
-        await onAdd();
-        return;
-      }
-      const binding = bindings.value.find((b) => b.id === target);
-      if (binding) await onSaveAccelerator(binding, accel);
-    } finally {
-      void resumeShortcuts().catch((e) => {
-        error.value = String(e);
-      });
-    }
-  })();
-}
-
-async function onToggle(binding: ShortcutBinding, enabled: boolean) {
-  if (busyId.value) return;
-  busyId.value = binding.id;
-  error.value = "";
-  hint.value = "";
-  try {
-    const next = { ...binding, enabled };
-    bindings.value = await setShortcut(next);
-    hint.value = enabled
-      ? `已注册 ${binding.accelerator}（立即生效）`
-      : `已注销 ${binding.accelerator}（绑定保留）`;
-  } catch (e) {
-    error.value = String(e);
-    await refresh().catch(() => {});
-  } finally {
-    busyId.value = null;
-  }
-}
-
-async function onSaveAccelerator(binding: ShortcutBinding, accelerator: string) {
-  const accel = accelerator.trim();
-  if (!accel) return;
-  if (accel === binding.accelerator) {
-    hint.value = `组合键未变化（仍为 ${accel}）`;
-    return;
-  }
-  if (busyId.value) return;
-  busyId.value = binding.id;
-  error.value = "";
-  hint.value = "";
-  // 先本地更新，避免异步保存期间 UI 仍显示旧键
-  const optimistic = bindings.value.map((b) =>
-    b.id === binding.id ? { ...b, accelerator: accel } : b,
-  );
-  bindings.value = optimistic;
-  try {
-    const next = { ...binding, accelerator: accel };
-    bindings.value = await setShortcut(next);
-    hint.value = `已更新为 ${accel}（立即生效）`;
-  } catch (e) {
-    error.value = String(e);
-    await refresh().catch(() => {});
-  } finally {
-    busyId.value = null;
-  }
-}
-
-async function onRemove(binding: ShortcutBinding) {
-  if (busyId.value) return;
-  busyId.value = binding.id;
-  error.value = "";
-  hint.value = "";
-  try {
-    bindings.value = await removeShortcut(binding.id);
-    hint.value = `已移除 ${binding.accelerator}`;
-  } catch (e) {
-    error.value = String(e);
-    await refresh().catch(() => {});
-  } finally {
-    busyId.value = null;
-  }
-}
-
-async function onAdd() {
-  const accel = newAccelerator.value.trim();
-  if (!accel || adding.value) return;
-  adding.value = true;
-  error.value = "";
-  hint.value = "";
-  try {
-    const binding: ShortcutBinding = {
-      id: `custom-${Date.now().toString(36)}`,
-      accelerator: accel,
-      action: newAction.value,
-      enabled: true,
-    };
-    bindings.value = await setShortcut(binding);
-    newAccelerator.value = "";
-    hint.value = `已注册 ${accel}（立即生效）`;
-  } catch (e) {
-    error.value = String(e);
-    await refresh().catch(() => {});
-  } finally {
-    adding.value = false;
-  }
-}
-
 onMounted(refresh);
-onBeforeUnmount(() => {
-  detachCapture();
-  void resumeShortcuts().catch(() => {});
+onMounted(() => {
+  window.addEventListener("beforeunload", () => dispose(), { once: true });
 });
+
+function isCapturing(id: string) {
+  return capturingId.value === id;
+}
 </script>
 
 <template>
@@ -232,14 +72,12 @@ onBeforeUnmount(() => {
           <button
             type="button"
             class="accel-capture"
-            :class="{ recording: capturingId === b.id }"
+            :class="{ recording: isCapturing(b.id) }"
             :disabled="busyId === b.id"
-            :title="capturingId === b.id ? '按 Esc 取消' : '点击录制组合键'"
-            @click="
-              capturingId === b.id ? stopCapture() : startCapture(b.id)
-            "
+            :title="isCapturing(b.id) ? '按 Esc 取消' : '点击录制组合键'"
+            @click="isCapturing(b.id) ? stopCapture() : startCapture(b.id)"
           >
-            <template v-if="capturingId === b.id">
+            <template v-if="isCapturing(b.id)">
               {{ capturePreview || "" }}按下快捷键…（Esc 取消）
             </template>
             <template v-else>{{ b.accelerator }}</template>
@@ -247,14 +85,14 @@ onBeforeUnmount(() => {
           <button
             type="button"
             class="btn tiny"
-            :disabled="busyId === b.id || capturingId === b.id"
+            :disabled="busyId === b.id || isCapturing(b.id)"
             title="重新录制"
             @click="startCapture(b.id)"
           >
             录制
           </button>
         </div>
-        <div class="binding-action">{{ actionLabels[b.action] }}</div>
+        <div class="binding-action">{{ actionLabels[b.action as ShortcutAction] }}</div>
       </div>
       <label class="switch" :title="b.enabled ? '点击注销' : '点击注册'">
         <input
@@ -278,14 +116,12 @@ onBeforeUnmount(() => {
     <button
       type="button"
       class="accel-capture grow"
-      :class="{ recording: capturingId === '__new__' }"
+      :class="{ recording: isCapturing('__new__') }"
       :disabled="adding"
-      :title="capturingId === '__new__' ? '按 Esc 取消' : '点击录制组合键'"
-      @click="
-        capturingId === '__new__' ? stopCapture() : startCapture('__new__')
-      "
+      :title="isCapturing('__new__') ? '按 Esc 取消' : '点击录制组合键'"
+      @click="isCapturing('__new__') ? stopCapture() : startCapture('__new__')"
     >
-      <template v-if="capturingId === '__new__'">
+      <template v-if="isCapturing('__new__')">
         {{ capturePreview || "" }}按下快捷键…（Esc 取消）
       </template>
       <template v-else>{{ newAccelerator || "点击录制组合键" }}</template>

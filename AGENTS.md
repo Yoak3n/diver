@@ -85,6 +85,31 @@ crates/
 - 公共类型放领域内 `types`；跨层 DTO 放靠近 producer 的 `types`，command 层再映射。
 - 命名用具体动词/名词（`extract_archive`、`parse_major`），避免 `handle_xxx` / `do_xxx` / `misc`。
 
+## 前端（`src/`）与 Diver 插件命名
+
+### 文件与模块（Vue / TS）
+
+- 行数软限 **300**、硬限 **500**；`.vue` 大组件按职责拆子组件/composable。
+- **一文件一职责**：状态 / 传输 / UI / 纯逻辑分文件；禁止再堆「旧版保留」死文件。
+- 入口 composable 只做装配与生命周期；状态与 IO 分离（参考 `composables/chat/`）。
+- 纯函数（markdown、tts 文本、路径、校验）独立可测；禁止在组件里写协议细节。
+- 迁移完成后**删除**被替代文件，不留 `useChat-v2` / `chatState` 式过渡名。
+
+### Diver 专属插件统一命名（`cos-plugins/`）
+
+| 维度 | 规则 | 示例 |
+|------|------|------|
+| npm 包名 | `@diver/<slug>` | `@diver/memory` |
+| 目录名 | `cos-plugins/<slug>`（与包名 slug 一致） | `cos-plugins/memory` |
+| cordis insert id | `<slug>`（与目录/包 slug 一致） | `id: memory` |
+| systemPrompt section | `diver:<slug>` | `diver:voice` |
+| bundle | 包 `@diver/bundle-<name>`，id `diver:<name>` | `@diver/bundle-companion` |
+
+- `slug` 一律 **kebab-case**；目录、`package.json.name`、`cordis.patch.yml` id、`plugins.json` id/filename 必须四同。
+- `file:` 依赖一律 POSIX 斜杠 `file:../<slug>`，禁止 `..\\`。
+- `plugins.json` catalog 必须覆盖 `bundle-companion/cordis.patch.yml` 中全部 `@diver/*` insert。
+- harness 的 `@cos/*` / `@deepseek-ai/dsh-*` 不受本节约束。
+
 ## 重构节奏
 
 1. **拆超长文件**（行为不变）：超 500 行的文件按职责拆开。

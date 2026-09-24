@@ -2,7 +2,14 @@
   "schemaVersion": 1,
   "note": "Companion plugin catalog for the shell UI. Mount truth remains cordis.patch.yml insert rows; this file only carries display metadata and toggle policy.",
   "plugins": [
-    {
+        {
+      "id": "web-tools",
+      "packageName": "@diver/web-tools",
+      "displayName": "联网探索工具",
+      "description": "web_search / web_read / web_explore（Explore 执行面）",
+      "toggleable": true,
+      "defaultEnabled": true
+    },{
       "id": "native-bridge",
       "packageName": "@diver/native-bridge",
       "displayName": "原生 RPC 桥",

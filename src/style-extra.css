@@ -1,0 +1,114 @@
+/* 全局样式续篇（由 style.css 引入）。 */
+
+/* ---------- 设置页共用控件 ---------- */
+.field-label {
+  margin-top: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--ink);
+}
+
+.setting-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--rule);
+  font-size: 13px;
+  color: var(--ink);
+}
+
+.setting-row:last-child {
+  border-bottom: none;
+}
+
+.setting-label {
+  flex: 1;
+  min-width: 0;
+  color: var(--ink);
+  font-weight: 500;
+}
+
+.setting-desc {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--ink-muted);
+  line-height: 1.45;
+}
+
+/* 纸面开关：墨色选中，细轨道 */
+.switch {
+  position: relative;
+  display: inline-block;
+  width: 36px;
+  height: 20px;
+  flex-shrink: 0;
+}
+.switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+  position: absolute;
+}
+.switch .slider {
+  position: absolute;
+  inset: 0;
+  cursor: pointer;
+  background: var(--paper-active);
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius-pill);
+  transition: background var(--dur-hover) ease, border-color var(--dur-hover) ease;
+}
+.switch .slider:before {
+  content: "";
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  left: 2px;
+  top: 2px;
+  background: var(--paper-raised);
+  border: 1px solid var(--rule-strong);
+  border-radius: 50%;
+  transition: transform var(--dur-ui) var(--ease-out);
+}
+.switch input:checked + .slider {
+  background: var(--ink);
+  border-color: var(--ink);
+}
+.switch input:checked + .slider:before {
+  transform: translateX(16px);
+  background: var(--paper);
+  border-color: transparent;
+}
+.switch input:disabled + .slider {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+code {
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  font-size: 0.9em;
+  background: var(--paper-sunken);
+  padding: 1px 5px;
+  border-radius: 4px;
+  color: var(--ink-soft);
+}
+
+/* ---------- 无障碍：减少动态 ---------- */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

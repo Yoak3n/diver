@@ -6,10 +6,13 @@
   "description": "Diver companion bundle (third-party, outside the harness workspace): assembles the diver plugins (@diver/memory + @diver/voice + @diver/backend) as one composition layer. Apply with pnpm start --bundles @diver/bundle-companion.",
   "dependencies": {
     "@diver/backend": "file:../backend",
+    "@diver/basic-tools": "file:../basic-tools",
     "@diver/llm-commandcode": "file:../llm-commandcode",
     "@diver/llm-volcark": "file:../llm-volcark",
+    "@diver/mcp": "file:../mcp",
     "@diver/memory": "file:../memory",
-    "@diver/voice": "file:..\\voice",
+    "@diver/native-bridge": "file:../native-bridge",
+    "@diver/voice": "file:../voice",
     "@diver/web-tools": "file:../web-tools"
   }
 }

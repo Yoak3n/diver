@@ -1,0 +1,180 @@
+/* 桌宠窗口样式（全局：穿透选择器需作用于 PIXI 运行时节点）。
+   视觉与历史 PetApp.vue 内联样式保持一致，禁止改外观。 */
+
+.pet-root {
+  position: relative;
+  display: flex;
+  height: 100vh;
+  width: 100vw;
+  background: transparent;
+  font-family: "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  overflow: hidden;
+  cursor: default;
+  user-select: none;
+  pointer-events: none;
+}
+.pet-root.drag-arming,
+.pet-root.drag-arming .model-host,
+.pet-root.drag-arming .model-host canvas {
+  cursor: default;
+}
+.pet-root.drag-dragging,
+.pet-root.drag-dragging .model-host,
+.pet-root.drag-dragging .model-host canvas {
+  cursor: grabbing;
+}
+.pet-root .model-host,
+.pet-root .model-host canvas {
+  cursor: default;
+}
+
+.drag-charge {
+  position: fixed;
+  z-index: 80;
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+.drag-charge-ring {
+  width: 40px;
+  height: 40px;
+  display: block;
+  filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.35));
+}
+.drag-charge-track {
+  fill: rgba(20, 20, 32, 0.45);
+  stroke: rgba(255, 255, 255, 0.18);
+  stroke-width: 3;
+}
+.drag-charge-fill {
+  fill: none;
+  stroke: #ffb07c;
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-dasharray: 100.53;
+  stroke-dashoffset: 100.53;
+  transform: rotate(-90deg);
+  transform-origin: 50% 50%;
+  animation-name: drag-charge-ring;
+  animation-timing-function: linear;
+  animation-fill-mode: forwards;
+}
+@keyframes drag-charge-ring {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+.pet-root.drag-dragging {
+  cursor: grabbing !important;
+}
+.pet-root.drag-dragging .model-hitbox,
+.pet-root.drag-dragging .model-host .model-hitbox {
+  cursor: grabbing !important;
+}
+.pet-root.drag-arming,
+.pet-root.drag-arming .model-hitbox,
+.pet-root.drag-arming .model-host .model-hitbox {
+  cursor: default !important;
+}
+.pet-root:not(.drag-dragging):not(.drag-arming) .model-hitbox,
+.pet-root:not(.drag-dragging):not(.drag-arming) .model-host .model-hitbox,
+.pet-root:not(.drag-dragging):not(.drag-arming) {
+  cursor: default;
+}
+.drag-charge-hint {
+  font-size: 11px;
+  color: #ffe3c4;
+  background: rgba(28, 29, 44, 0.88);
+  border: 1px solid rgba(255, 176, 124, 0.35);
+  border-radius: 999px;
+  padding: 3px 8px;
+  white-space: nowrap;
+  letter-spacing: 0.02em;
+}
+
+.pet-root .model-area {
+  flex: 1 1 100%;
+  width: 100%;
+}
+.pet-root .bubble-area {
+  position: absolute;
+  top: 8px;
+  bottom: 0;
+  width: 383px;
+  max-width: calc(100% - 16px);
+  z-index: 15;
+}
+.pet-root.bubble-right .bubble-area {
+  right: 8px;
+}
+.pet-root.bubble-left .bubble-area {
+  left: 8px;
+}
+
+.model-area {
+  position: relative;
+  min-height: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.model-host {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.model-host canvas {
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+.model-host .model-hitbox {
+  position: absolute;
+  pointer-events: auto;
+  z-index: 2;
+}
+.loading-hint,
+.load-error {
+  position: absolute;
+  top: 40%;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.6);
+  background: rgba(20, 20, 32, 0.6);
+  padding: 6px 14px;
+  border-radius: 12px;
+  white-space: nowrap;
+}
+.load-error {
+  color: #e8a3a3;
+}
+.runtime-errors {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  right: 8px;
+  font-size: 10px;
+  color: #ff9d9d;
+  background: rgba(20, 10, 10, 0.85);
+  border: 1px solid rgba(255, 100, 100, 0.4);
+  border-radius: 8px;
+  padding: 6px 8px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  z-index: 10;
+}
+
+.bubble-area {
+  position: relative;
+  flex: 1 1 0%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  align-items: stretch;
+  padding: 8px 8px;
+  overflow: hidden;
+}

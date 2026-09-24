@@ -1,0 +1,191 @@
+/* 消息面板 / 输入区 / 模型选择 / 提问卡样式。 */
+
+.chat-flow {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.2);
+  z-index: 8;
+}
+.chat-messages {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
+}
+.chat-msg {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  font-size: 12px;
+  line-height: 1.55;
+  word-break: break-word;
+  padding: 6px 10px;
+  border-radius: 12px;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+.chat-msg.system {
+  justify-content: center;
+  background: transparent !important;
+  padding: 2px 8px;
+}
+.chat-msg.system .system-text {
+  color: #8d89a1;
+  font-size: 11px;
+}
+.chat-msg.assistant {
+  background: rgba(28, 29, 44, 0.75);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: #eceaf5;
+}
+.chat-msg.user {
+  background: rgba(74, 63, 110, 0.65);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #f4f2fa;
+}
+.msg-label {
+  font-size: 10px;
+  opacity: 0.7;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.msg-text {
+  flex: 1;
+  min-width: 0;
+}
+.chat-empty {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.35);
+  text-align: center;
+  padding: 24px 0;
+}
+
+.speech-bubble {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px 6px;
+  border-radius: 14px;
+  font-size: 12px;
+  line-height: 1.55;
+  word-break: break-word;
+  white-space: pre-wrap;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+  z-index: 40;
+  box-sizing: border-box;
+  width: max-content;
+  max-width: min(280px, calc(100vw - 16px));
+  max-height: min(38%, 180px);
+  overflow: hidden;
+  cursor: pointer;
+  transition: box-shadow 0.15s ease, transform 0.15s ease;
+}
+.speech-bubble:hover {
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  transform: translateY(-1px);
+}
+.bubble-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 16px;
+}
+.speech-bubble.assistant {
+  background: rgba(28, 29, 44, 0.94);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #eceaf5;
+}
+.speech-bubble.user {
+  background: linear-gradient(135deg, rgba(74, 63, 110, 0.95), rgba(91, 77, 138, 0.95));
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #f4f2fa;
+}
+.bubble-label {
+  font-size: 10px;
+  opacity: 0.7;
+  flex-shrink: 0;
+}
+.bubble-close {
+  margin-left: auto;
+  border: none;
+  background: transparent;
+  color: inherit;
+  opacity: 0.55;
+  font-size: 14px;
+  line-height: 1;
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  cursor: pointer;
+  padding: 0;
+}
+.bubble-close:hover {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.12);
+}
+.bubble-text {
+  flex: 1;
+  min-width: 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.bubble-hint {
+  align-self: flex-end;
+  font-size: 10px;
+  opacity: 0.55;
+  line-height: 1.2;
+  margin-top: 2px;
+}
+.speech-bubble:hover .bubble-hint {
+  opacity: 0.9;
+}
+.cursor {
+  color: #ffb07c;
+  animation: pulse 0.9s infinite;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+.bubble-enter-active,
+.bubble-leave-active {
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+.bubble-enter-from {
+  opacity: 0;
+  transform: translateY(-10px) scale(0.92);
+  pointer-events: none !important;
+}
+.bubble-leave-to {
+  opacity: 0;
+  transform: translateY(-6px) scale(0.96);
+  pointer-events: none !important;
+}
+
+.conn-dot {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: rgba(255, 100, 100, 0.7);
+  z-index: 12;
+}

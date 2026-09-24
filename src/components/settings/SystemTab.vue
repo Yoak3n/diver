@@ -1,16 +1,11 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
+import { toRef } from "vue";
 import type { HealthInfo, PetInteractionSettings, SettingsInfo } from "../../types";
 import type { SettingsState } from "../../composables/useSettings";
-import { tauriAvailable, onTauriEvent } from "../../tauri";
+import { tauriAvailable } from "../../tauri";
 import PetModelPicker from "../PetModelPicker.vue";
-import {
-  loadModelCatalog,
-  pickModelProfile,
-  selectModelId,
-  PET_MODEL_CHANGED_EVENT,
-} from "../../pet/models";
-import type { PetModelProfile } from "../../pet/models";
+import { usePetInteraction } from "./composables/usePetInteraction";
+import { usePetModelSelect } from "./composables/usePetModelSelect";
 
 const props = defineProps<{
   state: SettingsState;
@@ -24,114 +19,18 @@ defineEmits<{
   changePetSize: [percent: number];
 }>();
 
-// ---------- 桌宠互动感知 ----------
-const DEFAULT_INTERACTION: PetInteractionSettings = {
-  mode: "events",
-  quietMs: 10000,
-  cooldownMs: 45000,
-  maxTriggers: 1,
-  longHoldMs: 3000,
-};
+const settingsInfoRef = toRef(props, "settingsInfo");
+const { interactionForm, interactionMode, onInteractionModeChange, onInteractionNum } =
+  usePetInteraction(settingsInfoRef);
 
-const interactionForm = ref<PetInteractionSettings>({ ...DEFAULT_INTERACTION });
-
-const interactionMode = computed(() => interactionForm.value.mode);
-
-watch(
-  () => props.settingsInfo?.petInteraction,
-  (v) => {
-    if (v) interactionForm.value = { ...DEFAULT_INTERACTION, ...v };
-  },
-  { immediate: true, deep: true },
-);
-
-async function persistInteraction(patch: Partial<PetInteractionSettings>) {
-  const next = { ...interactionForm.value, ...patch };
-  interactionForm.value = next;
-  try {
-    const { saveSettings } = await import("../../api");
-    await saveSettings({ petInteraction: next });
-  } catch (err) {
-    console.error("[settings] save petInteraction failed", err);
-  }
-  // 壳端 ProactiveSpeak 同步（控制面真源）
-  try {
-    const { tauriAvailable } = await import("../../tauri");
-    if (tauriAvailable()) {
-      const { invoke } = await import("@tauri-apps/api/core");
-      await invoke("set_pet_interaction_config", {
-        config: {
-          mode: next.mode,
-          quietMs: next.quietMs,
-          cooldownMs: next.cooldownMs,
-          maxTriggers: next.maxTriggers,
-          longHoldMs: next.longHoldMs,
-        },
-      });
-    }
-  } catch (err) {
-    console.error("[settings] sync presence config failed", err);
-  }
-}
-
-function onInteractionModeChange(mode: PetInteractionSettings["mode"]) {
-  void persistInteraction({ mode });
-}
-
-function onInteractionNum(key: "quietMs" | "cooldownMs" | "maxTriggers" | "longHoldMs", raw: string) {
-  const n = Number(raw);
-  if (!Number.isFinite(n) || n <= 0) return;
-  void persistInteraction({ [key]: Math.round(n) });
-}
-
-// ---------- 桌宠形象模型 ----------
-const petModels = ref<PetModelProfile[]>([]);
-const activePetModelId = ref("");
-const petModelSwitching = ref(false);
-const petModelMsg = ref<string | null>(null);
-
-const activePetModelLabel = computed(
-  () => petModels.value.find((m) => m.id === activePetModelId.value)?.label ?? "—",
-);
-
-async function refreshPetModels() {
-  const catalog = await loadModelCatalog();
-  petModels.value = catalog.models;
-  activePetModelId.value = pickModelProfile(catalog).id;
-}
-
-/** 仅持久化并广播：桌宠窗口监听后自行热切换。 */
-function onPickPetModel(id: string) {
-  if (petModelSwitching.value || id === activePetModelId.value) return;
-  petModelSwitching.value = true;
-  petModelMsg.value = null;
-  try {
-    selectModelId(id);
-    activePetModelId.value = id;
-    petModelMsg.value = "已切换；桌宠窗口会立即换装（未打开则下次启动生效）";
-  } catch (err) {
-    petModelMsg.value = err instanceof Error ? err.message : String(err);
-  } finally {
-    petModelSwitching.value = false;
-  }
-}
-
-onMounted(async () => {
-  try {
-    await refreshPetModels();
-  } catch (err) {
-    petModelMsg.value = err instanceof Error ? err.message : String(err);
-  }
-  // 桌宠侧切换后回到设置页时同步高亮
-  void onTauriEvent<{ id: string }>(PET_MODEL_CHANGED_EVENT, (p) => {
-    if (p?.id) activePetModelId.value = p.id;
-  });
-  window.addEventListener("storage", (e) => {
-    if (e.key === "diver.pet.modelId" && e.newValue) {
-      activePetModelId.value = e.newValue;
-    }
-  });
-});
+const {
+  petModels,
+  activePetModelId,
+  petModelSwitching,
+  petModelMsg,
+  activePetModelLabel,
+  onPickPetModel,
+} = usePetModelSelect();
 </script>
 
 <template>

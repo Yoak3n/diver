@@ -18,6 +18,7 @@
 mod command;
 #[cfg(target_os = "windows")]
 mod job_object;
+mod launch;
 mod lifecycle;
 mod paths;
 mod process;
@@ -33,6 +34,7 @@ pub type SidecarJob = ();
 #[cfg(target_os = "windows")]
 pub use job_object::SidecarJob;
 
+pub use launch::{LaunchContext, LaunchHooks, PreflightStatus};
 pub use paths::DEFAULT_PORT;
 pub use process::SidecarManager;
 pub use status::{SidecarState, SidecarStatus};

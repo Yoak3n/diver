@@ -45,7 +45,15 @@ pub(super) fn start_impl(mgr: &SidecarManager, app: &AppHandle) -> bool {
     }
 
     // P3 preflight：布局/profile 补丁检查；companion 失败时自动降级 safe 一次。
-    let mut report = crate::plugins::preflight(app);
+    // preflight / safe 名由 app 注入（core 不依赖 plugins）。
+    let hooks = mgr.hooks.lock().clone();
+    let Some(hooks) = hooks else {
+        log::error!("sidecar 启动失败：LaunchHooks 未注入（app/setup 应先 set_hooks）");
+        mgr.push_log("[diver] 启动失败：LaunchHooks 未注入".into());
+        mgr.set_state(SidecarState::Crashed);
+        return false;
+    };
+    let mut report = (hooks.preflight)(app);
     if let Some(bak) = &report.quarantined {
         mgr.push_log(format!("[diver] profile 补丁已隔离: {bak}"));
     }
@@ -58,8 +66,8 @@ pub(super) fn start_impl(mgr: &SidecarManager, app: &AppHandle) -> bool {
             mgr.push_log(
                 "[diver] companion 预检失败 → 自动 safe 模式（仅核心 + backend）".into(),
             );
-            if crate::config::profile::set_active_profile(app, crate::plugins::SAFE_PROFILE) {
-                report = crate::plugins::preflight(app);
+            if crate::config::profile::set_active_profile(app, &hooks.safe_profile_name) {
+                report = (hooks.preflight)(app);
             }
         }
         if !report.ok {
@@ -77,7 +85,8 @@ pub(super) fn start_impl(mgr: &SidecarManager, app: &AppHandle) -> bool {
 
     // 构建启动命令：dev 用仓库内 companion.ts；release 用随包 Node +
     // companion-bundle.ts（开放 plugins/ 目录，非 SEA）。
-    let mut cmd = match mgr.build_command(app) {
+    let ctx = (hooks.launch)(app);
+    let mut cmd = match mgr.build_command(app, &ctx) {
         Ok(cmd) => cmd,
         Err(e) => {
             log::error!("sidecar 启动失败: {e}");

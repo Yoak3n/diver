@@ -36,10 +36,14 @@ pub fn is_internal(app: &AppHandle, id: &str, package_name: &str) -> bool {
 }
 
 /// Install a plugin into the active profile via pnpm.
+///
+/// `restart_fn` 由调用方注入（commands/app 包 `SidecarManager::restart`），
+/// plugins 不依赖 core。
 pub fn install_profile_plugin(
     app: &AppHandle,
     spec: &str,
     restart: bool,
+    restart_fn: &dyn Fn(&AppHandle) -> bool,
 ) -> Result<Vec<PluginInfo>, String> {
     let profile = active_profile(app);
     if profile == SAFE_PROFILE {
@@ -107,7 +111,7 @@ pub fn install_profile_plugin(
     log::info!("plugins: installed {package_name} (id={id}, bundle={bundle}) into {profile_dir:?}");
 
     if restart {
-        let _ = crate::core::sidecar::SidecarManager::global().restart(app);
+        let _ = restart_fn(app);
     }
     Ok(super::list_profile_aware(app))
 }

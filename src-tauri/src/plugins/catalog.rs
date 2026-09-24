@@ -185,13 +185,16 @@ pub fn set_plugin_enabled(
 }
 
 /// 启停并重启 sidecar。
+///
+/// `restart_fn` 由调用方注入，plugins 不依赖 core。
 pub fn toggle_plugin(
     app: &AppHandle,
     id: &str,
     enabled: bool,
+    restart_fn: &dyn Fn(&AppHandle) -> bool,
 ) -> Result<Vec<PluginInfo>, String> {
     let plugins = set_plugin_enabled_impl(app, id, enabled)?;
-    let restarted = crate::core::sidecar::SidecarManager::global().restart(app);
+    let restarted = restart_fn(app);
     if !restarted {
         log::warn!("plugins: sidecar 重启未执行（可能未在运行）；配置已写入，下次启动生效");
     }

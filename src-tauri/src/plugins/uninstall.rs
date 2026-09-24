@@ -12,10 +12,13 @@ use super::registry::{read_registry, write_registry};
 use super::{active_profile, plugin_paths_for, PluginInfo, SAFE_PROFILE};
 
 /// Uninstall a profile plugin. Internal plugins are rejected.
+///
+/// `restart_fn` 由调用方注入，plugins 不依赖 core。
 pub fn uninstall_profile_plugin(
     app: &AppHandle,
     id: &str,
     restart: bool,
+    restart_fn: &dyn Fn(&AppHandle) -> bool,
 ) -> Result<Vec<PluginInfo>, String> {
     let profile = active_profile(app);
     if profile == SAFE_PROFILE {
@@ -88,7 +91,7 @@ pub fn uninstall_profile_plugin(
     );
 
     if restart {
-        let _ = crate::core::sidecar::SidecarManager::global().restart(app);
+        let _ = restart_fn(app);
     }
     Ok(super::list_profile_aware(app))
 }

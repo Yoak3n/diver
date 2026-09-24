@@ -4,6 +4,11 @@ use tauri::AppHandle;
 
 use crate::plugins::PluginInfo;
 
+/// 注入给 plugins 的 sidecar 重启回调（plugins 不依赖 core）。
+fn restart_sidecar(app: &AppHandle) -> bool {
+    crate::core::sidecar::SidecarManager::global().restart(app)
+}
+
 /// 列出 companion 插件。
 #[tauri::command]
 pub fn list_plugins(app: AppHandle) -> Vec<PluginInfo> {
@@ -27,7 +32,7 @@ pub fn toggle_plugin(
     id: String,
     enabled: bool,
 ) -> Result<Vec<PluginInfo>, String> {
-    crate::plugins::toggle_plugin(&app, &id, enabled)
+    crate::plugins::toggle_plugin(&app, &id, enabled, &restart_sidecar)
 }
 
 /// 插件布局诊断路径。
@@ -55,7 +60,7 @@ pub fn switch_profile(
     app: AppHandle,
     profile: String,
 ) -> Result<crate::plugins::PreflightReport, String> {
-    crate::plugins::switch_profile_and_restart(&app, &profile)
+    crate::plugins::switch_profile_and_restart(&app, &profile, &restart_sidecar)
 }
 
 /// 安装 profile 插件（pnpm add + 登记），可选重启。
@@ -65,7 +70,12 @@ pub fn install_profile_plugin(
     spec: String,
     restart: Option<bool>,
 ) -> Result<Vec<PluginInfo>, String> {
-    crate::plugins::install::install_profile_plugin(&app, &spec, restart.unwrap_or(true))
+    crate::plugins::install::install_profile_plugin(
+        &app,
+        &spec,
+        restart.unwrap_or(true),
+        &restart_sidecar,
+    )
 }
 
 /// 卸载 profile 插件（internal 拒绝）。
@@ -75,5 +85,10 @@ pub fn uninstall_profile_plugin(
     id: String,
     restart: Option<bool>,
 ) -> Result<Vec<PluginInfo>, String> {
-    crate::plugins::uninstall_profile_plugin(&app, &id, restart.unwrap_or(true))
+    crate::plugins::uninstall_profile_plugin(
+        &app,
+        &id,
+        restart.unwrap_or(true),
+        &restart_sidecar,
+    )
 }

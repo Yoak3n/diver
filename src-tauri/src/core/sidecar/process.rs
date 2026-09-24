@@ -10,6 +10,7 @@ use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use tauri::{AppHandle, Emitter};
 
+use super::launch::LaunchHooks;
 use super::lifecycle::{start_impl, stop_impl};
 use super::status::{SidecarState, SidecarStatus, LOG_CAPACITY};
 use super::SidecarJob;
@@ -26,6 +27,8 @@ pub struct SidecarManager {
     #[cfg(debug_assertions)]
     pub(super) node_bin: String,
     pub(super) stopping: AtomicBool,
+    /// 启动期注入的跨层能力（app 组装；core 不依赖 plugins）。
+    pub(super) hooks: Mutex<Option<LaunchHooks>>,
 }
 
 impl SidecarManager {
@@ -59,8 +62,14 @@ impl SidecarManager {
                 #[cfg(debug_assertions)]
                 node_bin,
                 stopping: AtomicBool::new(false),
+                hooks: Mutex::new(None),
             }
         })
+    }
+
+    /// 注入启动期跨层能力（app/setup 调用一次）。
+    pub fn set_hooks(&self, hooks: LaunchHooks) {
+        *self.hooks.lock() = Some(hooks);
     }
 
     /// 当前状态快照。

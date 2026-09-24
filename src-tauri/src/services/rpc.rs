@@ -52,7 +52,8 @@ async fn route(state: &ServiceState, method: &str, params: &Value) -> Result<Val
     }
     if method.starts_with("presence::") {
         // 存在感回压 / 裁决：控制面在壳（companion-presence-fsm.md）。
-        return presence::dispatch(method, params).map_err(grep::RpcFailure::new);
+        // 分发闭包由 app 注入（services 不依赖 core）。
+        return presence::dispatch(state, method, params).map_err(grep::RpcFailure::new);
     }
     // memory 方法保持无前缀（零迁移）；错误无 code。
     memory::dispatch(&state.memory_db, method, params).map_err(grep::RpcFailure::new)

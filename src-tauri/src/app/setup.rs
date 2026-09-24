@@ -145,13 +145,17 @@ pub fn configure(builder: Builder<tauri::Wry>) -> Builder<tauri::Wry> {
         let _ = crate::app::tray::create_tray_icon(app, false);
 
         // 启动本地服务（SQLite 记忆后端等），端口注入 sidecar。
-        // 通知能力在 app 层包好闭包再注入，services 不依赖 shell。
+        // 通知 / presence 能力在 app 层包好闭包再注入，services 不依赖 shell/core。
         {
             let notify_app = app.handle().clone();
             let notify: crate::services::NotifyFn = std::sync::Arc::new(move |title, body| {
                 crate::shell::notify::show(&notify_app, &title, &body);
             });
-            match crate::services::start(app.handle(), notify) {
+            let presence_dispatch: crate::services::PresenceDispatchFn =
+                std::sync::Arc::new(|method, params| {
+                    crate::core::presence::dispatch_rpc(method, params)
+                });
+            match crate::services::start(app.handle(), notify, presence_dispatch) {
                 Some(port) => std::env::set_var("DIVER_MEMORY_PORT", port.to_string()),
                 None => log::error!("本地服务启动失败，记忆功能不可用"),
             }
@@ -163,6 +167,35 @@ pub fn configure(builder: Builder<tauri::Wry>) -> Builder<tauri::Wry> {
 
         // companion profile：壳端启停插件写在 profiles/companion/cordis.patch.yml。
         crate::plugins::ensure_profile(app.handle());
+
+        // sidecar 启动钩子：profile/布局/preflight 在 plugins 层组装后注入 core，
+        // 保持 plugins ↔ core 零互引。
+        {
+            use crate::core::sidecar::{LaunchContext, LaunchHooks, PreflightStatus};
+            let hooks = LaunchHooks {
+                launch: std::sync::Arc::new(|app: &tauri::AppHandle| {
+                    let profile = crate::plugins::active_profile(app);
+                    let paths = crate::plugins::plugin_paths_for(app, &profile);
+                    LaunchContext {
+                        profile,
+                        bundle_dir: paths.bundle_dir,
+                        plugins_root: paths.plugins_root,
+                    }
+                }),
+                preflight: std::sync::Arc::new(|app: &tauri::AppHandle| {
+                    let r = crate::plugins::preflight(app);
+                    PreflightStatus {
+                        ok: r.ok,
+                        profile: r.profile,
+                        safe_mode: r.safe_mode,
+                        problems: r.problems,
+                        quarantined: r.quarantined,
+                    }
+                }),
+                safe_profile_name: crate::plugins::SAFE_PROFILE.to_string(),
+            };
+            crate::core::sidecar::SidecarManager::global().set_hooks(hooks);
+        }
 
         // 全局快捷键：按配置注册启用绑定（运行时热插拔由 app/shortcut.rs 负责）。
         crate::app::shortcut::ShortcutManager::global().init(app.handle());

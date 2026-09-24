@@ -79,7 +79,13 @@ pub(crate) fn quarantine_invalid_patch(profile_dir: &Path) -> Option<PathBuf> {
 }
 
 /// 切换 profile 并重启 sidecar（设置页「安全模式」入口）。
-pub fn switch_profile_and_restart(app: &AppHandle, profile: &str) -> Result<PreflightReport, String> {
+///
+/// `restart_fn` 由调用方注入，plugins 不依赖 core。
+pub fn switch_profile_and_restart(
+    app: &AppHandle,
+    profile: &str,
+    restart_fn: &dyn Fn(&AppHandle) -> bool,
+) -> Result<PreflightReport, String> {
     let name = profile.trim();
     if name != COMPANION_PROFILE && name != SAFE_PROFILE {
         return Err(format!("未知 profile: {name}（仅支持 {COMPANION_PROFILE} / {SAFE_PROFILE}）"));
@@ -95,7 +101,7 @@ pub fn switch_profile_and_restart(app: &AppHandle, profile: &str) -> Result<Pref
             report.problems
         );
     }
-    let restarted = crate::core::sidecar::SidecarManager::global().restart(app);
+    let restarted = restart_fn(app);
     if !restarted {
         log::warn!("plugins: sidecar 重启未执行；profile={name} 将在下次启动生效");
     }

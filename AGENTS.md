@@ -41,6 +41,8 @@ commands/  →  app/ shell/ core/  →  config/  services/  crates/*
 ```
 
 - `config/` 不得依赖 `app/` `shell/` `core/` `commands/`
+- `services/` 只做本地 RPC 适配：不得依赖 `app/` `shell/` `core/` `plugins/`；需要的能力在 `services::start` 时以闭包/`Arc<dyn Fn>` 注入
+- `plugins/` 与 `core/` **互不依赖**；restart / preflight / profile 等跨域调用经 `app`/`commands` 注入回调
 - `crates/*` 不得依赖 `src-tauri`、Tauri、HTTP、进程
 - core 逻辑不直接摸全局单例；需要的东西用参数 / `State` 注入
 - 需要路径时优先 `&Path` / `PathBuf`，不要为测试逼着构造 `AppHandle`（参考 `config::load_at` / `save_at`）
@@ -49,7 +51,8 @@ commands/  →  app/ shell/ core/  →  config/  services/  crates/*
 
 - 纯函数：几何、解析、prompt 构造、校验、衰减/策略 —— 必须能 `cargo test`，不碰 Tauri。
 - IO：拆出「算什么」和「读写什么」；读写用 `Path` 注入，临时目录做测试。
-- 避免新增 `static` / `OnceLock` 全局；优先 `tauri::State` 或显式传入的 manager。
+- 避免新增跨层 `static` / `OnceLock` 全局；优先 `tauri::State` 或显式传入的 manager。
+- **层内单例允许**：同一逻辑层内的进程级句柄（如 `core` 内 `SidecarManager` / `PresenceHandle`，`app` 内 `ShortcutManager`）可保留 `global()`，但**禁止**被下层/旁层反向摸（`core/services` 不得摸 `app`/`shell` 句柄）。跨层能力一律参数/闭包注入。
 - 新 core 模块合入时附带关键路径单测；重构旧模块时顺手补测试，不欠新债。
 
 ## 目标模块图（`src-tauri`）
@@ -64,7 +67,7 @@ src-tauri/src/
 ├── shell/               # 窗口与桌面集成（window / pet 几何动画 / lightweight）
 ├── core/                # 可单测业务（sidecar / node_runtime / tts / plugins / …）
 ├── config/              # 持久化配置（不得依赖 app/shell/core/commands）
-└── services/            # 本地 axum RPC（供 sidecar 调用）
+└── services/            # 本地 axum RPC 适配（能力由 start 注入；供 sidecar 调用）
 
 crates/
 ├── diver-geom/          # 桌宠几何纯函数（config/shell/core 同向下依赖）

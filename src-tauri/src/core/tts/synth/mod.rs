@@ -65,3 +65,53 @@ pub async fn synthesize_from_config(
     let cfg = load_config(app);
     synthesize(&cfg, text, voice).await
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn cfg(provider: TtsProvider, voice: &str) -> TtsConfig {
+        TtsConfig {
+            provider,
+            voice: voice.to_string(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn resolve_stream_voice_mimo_success() {
+        let c = cfg(TtsProvider::Mimo, "冰糖");
+        let v = resolve_stream_voice(&c, None).unwrap();
+        assert_eq!(v, "冰糖");
+    }
+
+    #[test]
+    fn resolve_stream_voice_mimo_override() {
+        let c = cfg(TtsProvider::Mimo, "冰糖");
+        let v = resolve_stream_voice(&c, Some("茉莉")).unwrap();
+        assert_eq!(v, "茉莉");
+    }
+
+    #[test]
+    fn resolve_stream_voice_non_mimo_unsupported() {
+        for p in [TtsProvider::Minimax, TtsProvider::Volcengine] {
+            let c = cfg(p, "x");
+            let e = resolve_stream_voice(&c, None).unwrap_err();
+            assert_eq!(e, "STREAM_UNSUPPORTED");
+        }
+    }
+
+    #[test]
+    fn resolve_stream_voice_empty_voice_errors() {
+        let c = cfg(TtsProvider::Mimo, "  ");
+        let e = resolve_stream_voice(&c, None).unwrap_err();
+        assert_eq!(e, "未选择声线");
+    }
+
+    #[test]
+    fn resolve_stream_voice_override_empty_falls_back_then_errors() {
+        let c = cfg(TtsProvider::Mimo, "");
+        let e = resolve_stream_voice(&c, Some("   ")).unwrap_err();
+        assert_eq!(e, "未选择声线");
+    }
+}

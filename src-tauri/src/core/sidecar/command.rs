@@ -5,6 +5,7 @@ use tauri::AppHandle;
 #[cfg(not(debug_assertions))]
 use tauri::Manager;
 
+use super::launch::LaunchContext;
 use super::paths::{shutdown_token, LAST_COS_HOME};
 use super::process::SidecarManager;
 #[cfg(not(debug_assertions))]
@@ -14,7 +15,13 @@ use super::paths::{
 
 impl SidecarManager {
     /// 构建 sidecar 启动命令。
-    pub(super) fn build_command(&self, app: &AppHandle) -> Result<Command, String> {
+    ///
+    /// `ctx` 由调用方注入（profile + 插件布局），core 不依赖 plugins。
+    pub(super) fn build_command(
+        &self,
+        app: &AppHandle,
+        ctx: &LaunchContext,
+    ) -> Result<Command, String> {
         #[cfg(not(debug_assertions))]
         {
             // ── release：解析 Node + tsx 启动 companion-bundle.ts ─────────
@@ -103,13 +110,14 @@ impl SidecarManager {
             ));
 
             let mut cmd = Command::new(&node_exe);
+            let profile_args = ctx.profile_args();
             cmd.arg("--import").arg(&tsx_loader)
                 .arg("--expose-internals")
                 .arg(clean(&entry))
                 .arg("--bundles").arg(clean(&bundle_dir))
                 .arg("--plugin-root").arg(clean(&plugins_dir))
                 .arg("--harness").arg(clean(&harness_dir))
-                .arg("--profile").arg(crate::plugins::active_profile(app))
+                .arg(profile_args[0].0).arg(profile_args[0].1)
                 .env("COS_HOME", &cos_home)
                 .env("DIVER_PORT", self.port().to_string())
                 .env("DIVER_SHUTDOWN_TOKEN", shutdown_token())
@@ -186,6 +194,7 @@ impl SidecarManager {
             ));
 
             let mut cmd = Command::new(&self.node_bin);
+            let profile_args = ctx.profile_args();
             cmd.arg("--import")
                 .arg("tsx")
                 .arg("--expose-internals")
@@ -196,25 +205,13 @@ impl SidecarManager {
                 .arg(&plugins_root)
                 .arg("--harness")
                 .arg(&harness_dir)
-                .arg("--profile")
-                .arg(crate::plugins::active_profile(app))
+                .arg(profile_args[0].0)
+                .arg(profile_args[0].1)
                 .env("COS_HOME", &cos_home)
                 .env("DIVER_PORT", self.port().to_string())
                 .env("DIVER_SHUTDOWN_TOKEN", shutdown_token())
-                .env(
-                    "DIVER_BUNDLE_DIR",
-                    crate::plugins::plugin_paths_for(app, &crate::plugins::active_profile(app))
-                        .bundle_dir
-                        .display()
-                        .to_string(),
-                )
-                .env(
-                    "DIVER_PLUGINS_ROOT",
-                    crate::plugins::plugin_paths_for(app, &crate::plugins::active_profile(app))
-                        .plugins_root
-                        .display()
-                        .to_string(),
-                )
+                .env("DIVER_BUNDLE_DIR", ctx.bundle_dir.display().to_string())
+                .env("DIVER_PLUGINS_ROOT", ctx.plugins_root.display().to_string())
                 .env(
                     "DIVER_MCP_CONFIG_FILE",
                     crate::config::mcp::config_path(app).to_string_lossy().to_string(),

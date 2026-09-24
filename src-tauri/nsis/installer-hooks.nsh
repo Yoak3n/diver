@@ -24,8 +24,11 @@
   !insertmacro DiverKillLockingProcesses
   !insertmacro DiverClearExtractedDeps
   Delete "$INSTDIR\resources\sidecar\harness\node_modules.tar"
+  Delete "$INSTDIR\resources\sidecar\harness\node_modules.tar.zst"
   Delete "$INSTDIR\resources\sidecar\plugins\node_modules.tar"
+  Delete "$INSTDIR\resources\sidecar\plugins\node_modules.tar.zst"
   Delete "$INSTDIR\resources\sidecar\node_modules.tar"
+  Delete "$INSTDIR\resources\sidecar\node_modules.tar.zst"
   RMDir /r "$INSTDIR\resources\sidecar"
   RMDir /r "$INSTDIR\resources"
 !macroend

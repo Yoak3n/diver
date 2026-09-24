@@ -49,8 +49,9 @@ parking_lot = "0.12"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
 futures-util = "0.3"
 base64 = "0.22"
-# 首启解压 node_modules.tar（进程内解压，无黑窗；进度经 setup://progress 推给 UI）
+# 首启解压 node_modules.tar.zst（进程内解压，无黑窗；进度经 setup://progress 推给 UI）
 tar = "0.4"
+zstd = "0.13"
 
 mouse_position = "0.1.4"
 delay_timer = "0.11.6"

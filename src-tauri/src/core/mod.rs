@@ -3,6 +3,7 @@ pub mod node_runtime;
 pub mod pet_interaction;
 pub mod presence;
 pub mod presence_schedule;
+pub mod setup_extract;
 pub mod setup_progress;
 pub mod sidecar;
 pub mod timer;

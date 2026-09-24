@@ -22,25 +22,28 @@ const BUILTIN = new Set([
   'url', 'util', 'v8', 'vm', 'wasi', 'worker_threads', 'zlib',
 ])
 
-function loadTarPackages(tarPath) {
+function loadTarPackages(...tarPaths) {
   const set = new Set()
-  if (!existsSync(tarPath)) return set
-  try {
-    const listing = execFileSync('tar', ['-tf', tarPath], {
-      encoding: 'utf8',
-      maxBuffer: 64 * 1024 * 1024,
-    })
-    for (const line of listing.split(/\r?\n/)) {
-      const m = line.replace(/^\.\/?/, '').match(/^((@[^/]+\/[^/]+)|([^/@][^/]+))\//)
-      if (m) set.add(m[1])
+  // 兼容 .tar.zst（bsdtar -tf 自动识别 zstd）与旧 .tar
+  for (const tarPath of tarPaths) {
+    if (!existsSync(tarPath)) continue
+    try {
+      const listing = execFileSync('tar', ['-tf', tarPath], {
+        encoding: 'utf8',
+        maxBuffer: 64 * 1024 * 1024,
+      })
+      for (const line of listing.split(/\r?\n/)) {
+        const m = line.replace(/^\.\/?/, '').match(/^((@[^/]+\/[^/]+)|([^/@][^/]+))\//)
+        if (m) set.add(m[1])
+      }
+    } catch {
+      /* ignore */
     }
-  } catch {
-    /* ignore */
   }
   return set
 }
 
-const tarPkgs = loadTarPackages(join(PLUGINS, 'node_modules.tar'))
+const tarPkgs = loadTarPackages(join(PLUGINS, 'node_modules.tar.zst'), join(PLUGINS, 'node_modules.tar'))
 
 function walkFiles(dir, out = []) {
   if (!existsSync(dir)) return out

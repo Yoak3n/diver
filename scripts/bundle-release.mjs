@@ -281,6 +281,13 @@ if (existsSync(pnpmDir)) {
   console.log(`  ✓ 依赖补全: 提升 ${hoisted} 个传递依赖到顶层`)
 }
 
+// 2.4d 删除 .pnpm store：闭包已全部提升/解引用到顶层与各包嵌套 node_modules，
+// 运行时 Node 解析从不经过 .pnpm；留着只是双倍体积与上万小文件（解压慢主因之一）。
+if (existsSync(pnpmDir)) {
+  rmSync(pnpmDir, { recursive: true, force: true })
+  console.log('  ✓ 已删除 node_modules/.pnpm（提升后无用）')
+}
+
 // 2.5 开放插件目录：源码 + 依赖
 step('开放插件目录 (plugins/)')
 const pluginsDst = join(SIDECAR_RES, 'plugins')
@@ -518,10 +525,9 @@ for (const f of ['cordis.patch.yml', 'bundle.yml', 'package.json']) {
 step('辅助脚本')
 copyFileSync(join(ROOT, 'scripts', 'install-deps.mjs'), join(SIDECAR_RES, 'install-deps.mjs'))
 copyFileSync(join(ROOT, 'scripts', 'plugin-doctor.mjs'), join(SIDECAR_RES, 'plugin-doctor.mjs'))
-copyFileSync(join(ROOT, 'scripts', 'extract-deps.mjs'), join(SIDECAR_RES, 'extract-deps.mjs'))
 
-// 2.8b 归档 node_modules：把海量小文件打成 tar（NSIS 只复制几个大文件，
-// 安装极快）；首次启动 sidecar 前由 extract-deps.mjs 解压一次。
+// 2.8b 归档 node_modules：把海量小文件打成 tar.zst（NSIS 只复制几个大文件，
+// 安装极快）；首次启动 sidecar 前由壳 setup_progress 并行解压（Rust 单链路）。
 // 插件/引擎源码保持开放（不归档），只归档只读依赖。
 // 注意：闭包自检必须在 tar 之前（tar 会删掉 node_modules）。
 step('依赖闭包自检')
@@ -542,11 +548,19 @@ for (const { src, out, label } of tarArchives) {
     console.warn(`  (跳过: ${label} node_modules 不存在 ${src})`)
     continue
   }
-  // tar 归档：Windows 自带 tar.exe；用相对路径（-C 切目录）保证归档内路径无前缀
-  execFileSync('tar', ['-cf', out, '-C', src, '.'], { stdio: 'inherit' })
+  // zstd 归档：Windows 自带 bsdtar 内嵌 libzstd（--zstd 无需 zstd.exe），体积约
+  // 1/3 且解压吞吐高；极老 tar 不支持 --zstd 时回退未压缩 tar。
+  // 相对路径（-C 切目录）保证归档内路径无前缀。
+  let outPath = out.replace(/\.tar$/, '.tar.zst')
+  try {
+    execFileSync('tar', ['--zstd', '-cf', outPath, '-C', src, '.'], { stdio: 'inherit' })
+  } catch {
+    outPath = out
+    execFileSync('tar', ['-cf', outPath, '-C', src, '.'], { stdio: 'inherit' })
+  }
   rmSync(src, { recursive: true, force: true })
-  const size = (existsSync(out) ? (lstatSync(out).size / 1024 / 1024) : 0)
-  console.log(`  ✓ ${label} node_modules → ${label}.tar (${size.toFixed(1)} MB)`)
+  const size = (existsSync(outPath) ? (lstatSync(outPath).size / 1024 / 1024) : 0)
+  console.log(`  ✓ ${label} node_modules → ${outPath.replace(/^.*[\\/]/, '')} (${size.toFixed(1)} MB)`)
 }
 
 // 2.8c 清理 pnpm install 在 packages 里生成的残留 node_modules 空壳

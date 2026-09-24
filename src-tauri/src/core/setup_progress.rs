@@ -3,7 +3,7 @@
 //! 不弹控制台窗口：解压在 Rust 内完成（`tar` crate），下载走 HTTP；
 //! 进度经 Tauri 事件 `setup://progress` 推给前端首启遮罩。
 
-use std::fs::{self, File};
+use std::fs;
 use std::path::{Path, PathBuf};
 
 use parking_lot::Mutex;
@@ -56,20 +56,28 @@ pub fn emit_error(app: &AppHandle, message: impl Into<String>) {
     let _ = app.emit("setup://progress", payload);
 }
 
-/// 解压清单：与 `scripts/extract-deps.mjs` 保持一致（marker 幂等，成功后删归档）。
+/// 解压清单（marker 幂等，成功后删归档）；并行解压实现在 `core::setup_extract`。
 const MARKER: &str = ".deps-extracted";
 
+/// 归档 → 解压目标。优先 `node_modules.tar.zst`（zstd），兼容旧 `node_modules.tar`；
+/// 两者都不存在时无任务。
 fn archives(sidecar_dir: &Path) -> Vec<(PathBuf, PathBuf)> {
-    vec![
-        (
-            sidecar_dir.join("harness").join("node_modules.tar"),
-            sidecar_dir.join("harness").join("node_modules"),
-        ),
-        (
-            sidecar_dir.join("plugins").join("node_modules.tar"),
-            sidecar_dir.join("plugins").join("node_modules"),
-        ),
-    ]
+    [("harness", "node_modules"), ("plugins", "node_modules")]
+        .iter()
+        .filter_map(|(dir, name)| {
+            let parent = sidecar_dir.join(dir);
+            let zst = parent.join(format!("{name}.tar.zst"));
+            let plain = parent.join(format!("{name}.tar"));
+            let archive = if zst.is_file() {
+                zst
+            } else if plain.is_file() {
+                plain
+            } else {
+                return None;
+            };
+            Some((archive, parent.join(name)))
+        })
+        .collect()
 }
 
 /// 是否仍有归档待解压（纯路径判断；与 `ensure_deps_extracted` 的 pending 过滤一致）。
@@ -121,10 +129,10 @@ pub fn needs_bootstrap(app: &AppHandle) -> bool {
     }
 }
 
-/// 首次启动解压 `*.tar`（无子进程、无黑窗）。已解压则秒过。
+/// 首次启动解压 `*.tar.zst` / `*.tar`（无子进程、无黑窗）。已解压则秒过。
 ///
 /// 升级安装时 NSIS 可能留下旧的 `.deps-extracted` 与旧 `node_modules`，
-/// 而新的 `node_modules.tar` 并未解开 —— 必须在 **tar 比 marker 新** 时重解压。
+/// 而新的归档并未解开 —— 必须在 **归档比 marker 新** 时重解压。
 pub fn ensure_deps_extracted(app: &AppHandle, sidecar_dir: &Path) -> Result<(), String> {
     let jobs = archives(sidecar_dir);
     let pending: Vec<_> = jobs
@@ -156,71 +164,67 @@ pub fn ensure_deps_extracted(app: &AppHandle, sidecar_dir: &Path) -> Result<(), 
     }
 
     emit_progress(app, "extract", "正在解压运行依赖…", 3.0, false);
+    // 归档之间目录互不相交：并行解压（各归档内部再并行写盘，见 setup_extract）
+    use std::sync::atomic::{AtomicU32, Ordering};
+    use std::sync::Arc;
+    let slots: Arc<Vec<(AtomicU32, AtomicU32)>> = Arc::new(
+        pending
+            .iter()
+            .map(|_| (AtomicU32::new(0), AtomicU32::new(0)))
+            .collect(),
+    );
+    let mut handles = Vec::new();
     for (i, (archive, dest)) in pending.iter().enumerate() {
+        let archive = archive.clone();
+        let dest = dest.clone();
         let label = dest
             .file_name()
             .map(|s| s.to_string_lossy().to_string())
             .unwrap_or_else(|| "node_modules".into());
-        let base = 8.0 + (i as f32) * 42.0;
-        emit_progress(
-            app,
-            "extract",
-            format!("解压 {label} …"),
-            base,
-            false,
-        );
-        // 升级：清掉旧解压结果，避免新旧文件混杂
-        if dest.exists() {
-            let _ = fs::remove_dir_all(dest);
+        let slots = Arc::clone(&slots);
+        let app = app.clone();
+        handles.push(std::thread::spawn(move || -> Result<(), String> {
+            // 升级：清掉旧解压结果，避免新旧文件混杂
+            if dest.exists() {
+                let _ = fs::remove_dir_all(&dest);
+            }
+            crate::core::setup_extract::extract_archive(&archive, &dest, &mut |n, total| {
+                slots[i].0.store(n, Ordering::SeqCst);
+                slots[i].1.store(total, Ordering::SeqCst);
+                let (sum_done, sum_total) = slots
+                    .iter()
+                    .map(|(d, t)| (d.load(Ordering::SeqCst), t.load(Ordering::SeqCst)))
+                    .fold((0u32, 0u32), |(ad, at), (d, t)| (ad + d, at + t));
+                let p = 8.0 + 84.0 * (sum_done as f32 / sum_total.max(1) as f32);
+                emit_progress(&app, "extract", format!("{label}: {n}/{total} 项"), p, false);
+            })?;
+            fs::write(dest.join(MARKER), chrono::Utc::now().to_rfc3339())
+                .map_err(|e| format!("写入解压标记失败: {e}"))?;
+            // 归档只用于首启解压，成功后删除以省磁盘
+            let _ = fs::remove_file(&archive);
+            Ok(())
+        }));
+    }
+    let mut first_err: Option<String> = None;
+    for h in handles {
+        match h.join() {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => {
+                if first_err.is_none() {
+                    first_err = Some(e);
+                }
+            }
+            Err(_) => {
+                if first_err.is_none() {
+                    first_err = Some("解压线程异常退出".into());
+                }
+            }
         }
-        extract_tar(app, archive, dest, &label, base, 42.0)?;
-        fs::write(dest.join(MARKER), chrono::Utc::now().to_rfc3339())
-            .map_err(|e| format!("写入解压标记失败: {e}"))?;
-        // 归档只用于首启解压，成功后删除以省磁盘
-        let _ = fs::remove_file(archive);
+    }
+    if let Some(e) = first_err {
+        return Err(e);
     }
     emit_progress(app, "extract", "依赖解压完成", 100.0, true);
-    Ok(())
-}
-
-fn extract_tar(
-    app: &AppHandle,
-    archive: &Path,
-    dest: &Path,
-    label: &str,
-    base: f32,
-    span: f32,
-) -> Result<(), String> {
-    fs::create_dir_all(dest).map_err(|e| format!("创建 {}: {e}", dest.display()))?;
-    emit_progress(app, "extract", format!("扫描 {label} 归档…"), base + 1.0, false);
-
-    // 先数条目，便于百分比（两遍读同一归档，避免一次性占内存）
-    let total = {
-        let file = File::open(archive).map_err(|e| format!("打开 {}: {e}", archive.display()))?;
-        let mut ar = tar::Archive::new(file);
-        ar.entries()
-            .map_err(|e| format!("读取 tar: {e}"))?
-            .filter_map(|e| e.ok())
-            .count() as f32
-    }
-    .max(1.0);
-
-    let file = File::open(archive).map_err(|e| format!("打开 {}: {e}", archive.display()))?;
-    let mut ar = tar::Archive::new(file);
-    let mut n = 0u32;
-    for entry in ar.entries().map_err(|e| format!("读取 tar: {e}"))? {
-        let mut entry = entry.map_err(|e| format!("tar 条目: {e}"))?;
-        entry
-            .unpack_in(dest)
-            .map_err(|e| format!("解压到 {}: {e}", dest.display()))?;
-        n += 1;
-        // 小归档也要有进度；大归档每 40 项推一次
-        if n % 40 == 0 || n == total as u32 {
-            let p = base + 4.0 + (span - 4.0) * (n as f32 / total);
-            emit_progress(app, "extract", format!("{label}: {n}/{total:.0} 项"), p, false);
-        }
-    }
-    emit_progress(app, "extract", format!("{label} 解压完成"), base + span, false);
     Ok(())
 }
 

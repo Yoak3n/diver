@@ -22,7 +22,7 @@
 | 与上游关系 | 本体 | 下载/管理 DSH 发行版（`deepseek-harness-pkg`）或本机 CLI `dsh` | **只取框架理念**；`@cos/*` 自研，兼容 `dsh.*` manifest 与 cordis ABI |
 | UI | 官方 Web UI（`dsh web`，端口 3080） | 内嵌 DSH Web + 自研侧栏/面板 | **自研 Vue 陪伴 UI**（不用 DSH 交互层） |
 | 插件来源 | registry / git / profile 安装；社区 `dsh-plugin` | 预设市场 + 随包 internal 插件 + 用户安装 | 仓库内 `@diver/*`（internal）；第三方安装 **未做（P4）** |
-| 核心运行时 | 源码 / npm `@deepseek-ai/dsh` | 随包 Node 22 + 预打包 dsh **或** 本机 CLI | 随包 Node + **磁盘 harness 源码**（tsx）；**无 SEA** |
+| 核心运行时 | 源码 / npm `@deepseek-ai/dsh` | 随包 Node 22 + 预打包 dsh **或** 本机 CLI | **磁盘 harness 源码**（tsx）+ 首启解析/下载 Node（**不随包**）；**无 SEA** |
 
 ```text
 DSH:        插件树 = 产品本体
@@ -56,11 +56,11 @@ Diver:      壳 ≠ 大脑；大脑 = monorepo 内自研 cos（理念对齐 DSH�
 | | DSH | Desktop | Diver |
 |---|---|---|---|
 | 进程 | `dsh <profile>` 单进程（Web/Headless/SDK 由 profile 选） | Tauri + `dsh --profile <id> --host --port` + 内嵌 WebView | Tauri + `companion.ts` / `companion-bundle.ts` + Vue |
-| Node | 本机 Node | **随包 runtime**（22.22.0）优先对齐核心 ABI；local CLI 可选 | 随包 `node.exe` + tsx；dev 用系统 node |
+| Node | 本机 Node | **随包 runtime**（22.22.0）优先对齐核心 ABI；local CLI 可选 | **不随包**：首启解析本机 Node ≥ 22 / 缓存 / 下载（`node_runtime`）+ tsx；dev 用系统 node |
 | 就绪信号 | launcher / 端口 | 端口 + 健康检查 | stdout `DIVER_READY` + `/api/health` |
 | 退出 | 进程管理 | workflow 服务管理 dsh 生命周期 | shutdown token → kill → Job Object |
 | 端口 | `dsh web` 默认 3080 | dev 3081 / prod 3080 | `DIVER_PORT` 默认 53620；Vite 1420 |
-| 打包形态 | npm / 源码 | 安装器下载 core（非把一切烘焙进一个 exe） | NSIS + 随包 Node + 开放源码；**明确弃 SEA** |
+| 打包形态 | npm / 源码 | 安装器下载 core（非把一切烘焙进一个 exe） | NSIS + 开放源码 + **不随包 Node**（首启解析/下载）；**明确弃 SEA** |
 
 ```text
 Desktop:  Tauri ──spawn──► dsh（外部发行版）──HTTP──► 内嵌页面
@@ -182,7 +182,7 @@ patches 里 **entryMap 只含 base**，insert 出来的 id 吃不到 `disabled`�
 | internal 插件策略 | 🟡 | ✅ 对齐概念 | 无强制自愈/不可卸代码路径 |
 | safe profile / 恢复 | 🚫（非桌面） | ✅ | Diver ⬜ → P3 |
 | 核心多版本 / 发行版下载 | N/A（本体） | ✅ | Diver **不需要**（core 在 monorepo） |
-| 随包 Node + 磁盘插件 | N/A | ✅ 同构 | Diver ✅ |
+| 磁盘插件 + 首启解析 Node | N/A | ✅ 同构 | Diver ✅（**不随包** node.exe） |
 | SEA 烘焙 | N/A | 不用 SEA 思路 | Diver 🚫 已弃 |
 | 类型可独立依赖 | ✅ 上游包工程 | 🟡 | Diver ⬜ → P1 |
 | dump-config 预览 | ✅ | 弱 | Diver ⬜ 建议 |
@@ -264,7 +264,7 @@ patches 里 **entryMap 只含 base**，insert 出来的 id 吃不到 `disabled`�
                     │  壳编排层（抄 Desktop）                │
                     │  list / toggle / (P4 install)        │
                     │  safe profile · preflight · recovery │
-                    │  随包 Node · 开放插件目录 · 日志流      │
+                    │  首启解析 Node · 开放插件目录 · 日志流  │
                     └──────────────┬──────────────────────┘
                                    │
                     ┌──────────────▼──────────────────────┐

@@ -1,56 +1,29 @@
-// 语音朗读请求执行 + 口型同步。
+// 语音朗读：挂载桌宠播放端 + 口型同步。
+// 合成/队列在后端；这里只 attach 播放器并按 speaking 态驱动嘴型。
 
-import {
-  onTauriEvent,
-  emitTauriEvent,
-} from "../../tauri";
-import {
-  speakLocal,
-  onTtsSpeakingChange,
-  stopSpeaking,
-  TTS_STOP,
-  TTS_SPEAK_REQUEST,
-  TTS_SPEAK_ACK,
-  TTS_SPEAK_DONE,
-  type TtsSpeakRequest,
-} from "../../tts";
+import { isTtsSpeaking, onTtsSpeakingChange } from "../../tts";
+import { attachTtsPlayer } from "../../tts/player";
 
 export function useLipSync(opts: {
-  getTtsVoice: () => string;
   startMouth: () => (() => void) | null;
 }) {
   let stopMouth: (() => void) | null = null;
   let offTtsMouth: (() => void) | null = null;
-  let speaking = false;
+  let detachPlayer: (() => void) | null = null;
+  let bound = false;
 
   function isSpeaking() {
-    return speaking;
-  }
-
-  function handleTtsRequest(req: TtsSpeakRequest) {
-    if (!req?.text) return;
-    void emitTauriEvent(TTS_SPEAK_ACK, { requestId: req.requestId });
-    void (async () => {
-      try {
-        await speakLocal(req.text, opts.getTtsVoice() || undefined, { force: !!req.force });
-      } catch {
-        /* ignore */
-      } finally {
-        try {
-          await emitTauriEvent(TTS_SPEAK_DONE, { requestId: req.requestId });
-        } catch {
-          /* ignore */
-        }
-      }
-    })();
+    return isTtsSpeaking();
   }
 
   function bindTts() {
-    void onTauriEvent<TtsSpeakRequest>(TTS_SPEAK_REQUEST, (req) => {
-      handleTtsRequest(req);
+    if (bound) return;
+    bound = true;
+    void attachTtsPlayer("pet").then((detach) => {
+      if (bound) detachPlayer = detach;
+      else detach();
     });
     offTtsMouth = onTtsSpeakingChange((v) => {
-      speaking = v;
       if (v) {
         stopMouth?.();
         stopMouth = opts.startMouth();
@@ -59,16 +32,16 @@ export function useLipSync(opts: {
         stopMouth = null;
       }
     });
-    void onTauriEvent(TTS_STOP, () => {
-      stopSpeaking({ broadcast: false });
-    });
   }
 
   function dispose() {
+    bound = false;
     offTtsMouth?.();
     offTtsMouth = null;
     stopMouth?.();
     stopMouth = null;
+    detachPlayer?.();
+    detachPlayer = null;
   }
 
   return { isSpeaking, bindTts, dispose };

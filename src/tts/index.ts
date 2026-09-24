@@ -1,5 +1,5 @@
-// 在线 TTS 朗读公共出口（行为与历史 `src/tts.ts` 一致）。
-// 拆分：types（事件/请求）· level（响度）· pcm（流式）· spoken（去重）· queue（队列与入口）。
+// 在线 TTS 朗读公共出口。
+// 队列/合成在后端；前端 attach 播放器（pet/main）出声并驱动口型。
 
 export {
   TTS_SPEAK_REQUEST,
@@ -10,4 +10,5 @@ export {
 } from "./types";
 export { isTtsSpeaking, onTtsSpeakingChange, getSpeechLevel } from "./level";
 export { claimSpeech } from "./spoken";
-export { speakLocal, speakMessageText, stopSpeaking } from "./queue";
+export { speakMessageText, stopSpeaking } from "./queue";
+export { attachTtsPlayer, type TtsPlayerEvent } from "./player";

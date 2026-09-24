@@ -53,6 +53,11 @@ pub fn generate_handlers() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + 
         tts_list_models,
         tts_synthesize,
         tts_synthesize_stream,
+        tts_attach_player,
+        tts_detach_player,
+        tts_speak,
+        tts_stop,
+        tts_report_end,
         is_pet_window_open,
         notify,
         presence_phase,
@@ -133,6 +138,8 @@ pub fn configure(builder: Builder<tauri::Wry>) -> Builder<tauri::Wry> {
 
     builder.setup(|app| {
         app.manage(crate::app::state::AppState::default());
+        // TTS 播放队列（core 内单例句柄，commands 注入）
+        app.manage(crate::core::tts::TtsPlayer::global());
         crate::app::handle::Handle::global().init(app.handle().clone());
         // shell 窗口管理：注入 AppHandle + 托盘回调（shell 不依赖 app 模块）。
         {

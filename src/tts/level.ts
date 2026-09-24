@@ -29,44 +29,24 @@ export function onTtsSpeakingChange(fn: SpeakingListener): () => void {
 export { setSpeaking };
 
 // ---- 响度电平（桌宠口型） ----
-let audioCtx: AudioContext | null = null;
+// 整段 <audio> 走原生输出，不再 createMediaElementSource（避免叠声/静音）。
+// 流式 PCM 路径通过 adoptAnalyser 共享自己的 analyser 采样。
 let analyser: AnalyserNode | null = null;
-let srcNode: MediaElementAudioSourceNode | null = null;
 let levelData: Uint8Array | null = null;
 let lastLevel = 0;
 
-export function bindLevelAnalyser(el: HTMLAudioElement) {
-  try {
-    const Ctx =
-      window.AudioContext ||
-      (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-    if (!Ctx) return;
-    if (!audioCtx) audioCtx = new Ctx();
-    if (audioCtx.state === "suspended") void audioCtx.resume();
-    srcNode = audioCtx.createMediaElementSource(el);
-    analyser = audioCtx.createAnalyser();
-    analyser.fftSize = 256;
-    analyser.smoothingTimeConstant = 0.5;
-    levelData = new Uint8Array(analyser.frequencyBinCount);
-    srcNode.connect(analyser);
-    analyser.connect(audioCtx.destination);
-  } catch {
-    analyser = null;
-    srcNode = null;
-    levelData = null;
-  }
+export async function bindLevelAnalyser(_el: HTMLAudioElement) {
+  // no-op：保留调用点兼容；口型无 level 时回退正弦动画。
 }
 
 export function teardownLevelAnalyser() {
   try {
-    srcNode?.disconnect();
-    analyser?.disconnect();
+    // 只清引用，不 disconnect 共享的 PCM analyser
+    analyser = null;
+    levelData = null;
   } catch {
     /* ignore */
   }
-  srcNode = null;
-  analyser = null;
-  levelData = null;
   lastLevel = 0;
 }
 

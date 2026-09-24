@@ -3,10 +3,11 @@
 //   /                 → ChatView（主聊天界面）
 //   /settings/:tab?   → SettingsView（设置，左导航标签页）
 //   /pet              → PetView（Live2D 桌宠，独立透明窗口，不套壳）
-import { computed } from "vue";
+import { computed, onBeforeUnmount, onMounted } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import TitleBar from "./components/TitleBar.vue";
 import SetupOverlay from "./components/SetupOverlay.vue";
+import { attachTtsPlayer } from "./tts/player";
 
 const route = useRoute();
 const router = useRouter();
@@ -14,6 +15,19 @@ const router = useRouter();
 const isPet = computed(() => route.name === "pet");
 const isChat = computed(() => route.name === "chat");
 const isSettings = computed(() => route.name === "settings");
+
+// 主窗口挂兜底播放器（桌宠 attach 后优先走 pet）
+let detachMainPlayer: (() => void) | null = null;
+onMounted(() => {
+  if (isPet.value) return;
+  void attachTtsPlayer("main").then((d) => {
+    detachMainPlayer = d;
+  });
+});
+onBeforeUnmount(() => {
+  detachMainPlayer?.();
+  detachMainPlayer = null;
+});
 
 function goChat() {
   void router.push({ name: "chat" });

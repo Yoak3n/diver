@@ -10,6 +10,7 @@ mod presence;
 mod shortcuts;
 mod system;
 mod tts;
+mod tts_player;
 
 pub use config_cmds::*;
 pub use pet::*;
@@ -18,3 +19,4 @@ pub use presence::*;
 pub use shortcuts::*;
 pub use system::*;
 pub use tts::*;
+pub use tts_player::*;

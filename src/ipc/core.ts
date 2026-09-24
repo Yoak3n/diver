@@ -25,9 +25,17 @@ export async function onTauriEvent<T>(event: string, handler: (payload: T) => vo
   return listen<T>(event, (e) => handler(e.payload));
 }
 
-/** 广播 Tauri 事件（跨窗口）。 */
-export async function emitTauriEvent(event: string, payload?: unknown): Promise<void> {
+/**
+ * 广播 Tauri 事件（跨窗口）。
+ * `target` 为窗口 label 时只发给该窗口，避免全局 emit 叠多个 handler。
+ */
+export async function emitTauriEvent(
+  event: string,
+  payload?: unknown,
+  target?: string,
+): Promise<void> {
   if (!tauriAvailable()) return;
-  const { emit } = await import("@tauri-apps/api/event");
-  await emit(event, payload);
+  const { emit, emitTo } = await import("@tauri-apps/api/event");
+  if (target) await emitTo(target, event, payload);
+  else await emit(event, payload);
 }

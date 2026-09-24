@@ -1,17 +1,17 @@
-// MiMo 流式 PCM 播放（24kHz PCM16LE）。
+// MiMo 流式 PCM 会话播放（24kHz PCM16LE）——由后端队列推分片，本模块只负责出声。
 
-import { synthesizeTtsStream } from "../ipc/tts";
 import { adoptAnalyser, setPcmPlaying } from "./level";
 
 const PCM_RATE = 24000;
 let pcmCtx: AudioContext | null = null;
 let pcmAnalyser: AnalyserNode | null = null;
 let pcmNextTime = 0;
-let pcmActiveSources = 0;
 let pcmWaiter: (() => void) | null = null;
 let levelData: Uint8Array | null = null;
+let pcmGen = 0;
+const liveSources = new Set<AudioBufferSourceNode>();
 
-function ensurePcmGraph() {
+async function ensurePcmGraph() {
   try {
     const Ctx =
       window.AudioContext ||
@@ -24,21 +24,34 @@ function ensurePcmGraph() {
         pcmCtx = new Ctx();
       }
     }
-    if (pcmCtx.state === "suspended") void pcmCtx.resume();
+    if (pcmCtx.state === "suspended") {
+      try {
+        await pcmCtx.resume();
+      } catch {
+        /* ignore */
+      }
+    }
+    if (pcmCtx.state !== "running") return false;
     if (!pcmAnalyser) {
       pcmAnalyser = pcmCtx.createAnalyser();
       pcmAnalyser.fftSize = 256;
       pcmAnalyser.smoothingTimeConstant = 0.5;
       levelData = new Uint8Array(pcmAnalyser.frequencyBinCount);
-      pcmAnalyser.connect(pcmCtx.destination);
     }
+    try {
+      pcmAnalyser.disconnect();
+    } catch {
+      /* ignore */
+    }
+    pcmAnalyser.connect(pcmCtx.destination);
     return true;
   } catch {
     return false;
   }
 }
 
-function pcmBase64ToFloat32(b64: string): Float32Array {
+/** PCM16LE base64 → Float32。 */
+export function pcmBase64ToFloat32(b64: string): Float32Array {
   const bin = atob(b64);
   const n = bin.length >> 1;
   const out = new Float32Array(n);
@@ -52,8 +65,49 @@ function pcmBase64ToFloat32(b64: string): Float32Array {
   return out;
 }
 
-function enqueuePcm(b64: string) {
+function stopLiveSources() {
+  for (const src of liveSources) {
+    try {
+      src.onended = null;
+      src.stop();
+    } catch {
+      /* ignore */
+    }
+    try {
+      src.disconnect();
+    } catch {
+      /* ignore */
+    }
+  }
+  liveSources.clear();
+}
+
+export function resetPcmPlayback() {
+  pcmGen++;
+  pcmNextTime = 0;
+  stopLiveSources();
+  setPcmPlaying(false);
+  if (pcmWaiter) {
+    const w = pcmWaiter;
+    pcmWaiter = null;
+    w();
+  }
+}
+
+/** 开始一句 PCM 流（会先 reset 旧会话）。 */
+export async function beginPcmSession(): Promise<void> {
+  resetPcmPlayback();
+  if (!(await ensurePcmGraph())) {
+    throw new Error("AudioContext 不可用或未运行");
+  }
+  adoptAnalyser(pcmAnalyser, levelData);
+  setPcmPlaying(true);
+}
+
+/** 追加一包 PCM16LE base64。 */
+export function enqueuePcmChunk(b64: string): void {
   if (!pcmCtx || !pcmAnalyser) return;
+  const gen = pcmGen;
   const samples = pcmBase64ToFloat32(b64);
   if (samples.length === 0) return;
   const buf = pcmCtx.createBuffer(1, samples.length, PCM_RATE);
@@ -64,10 +118,11 @@ function enqueuePcm(b64: string) {
   const startAt = Math.max(pcmCtx.currentTime + 0.02, pcmNextTime);
   src.start(startAt);
   pcmNextTime = startAt + buf.duration;
-  pcmActiveSources++;
+  liveSources.add(src);
   src.onended = () => {
-    pcmActiveSources--;
-    if (pcmActiveSources <= 0 && pcmWaiter) {
+    liveSources.delete(src);
+    if (gen !== pcmGen) return;
+    if (liveSources.size === 0 && pcmWaiter) {
       const w = pcmWaiter;
       pcmWaiter = null;
       w();
@@ -75,57 +130,25 @@ function enqueuePcm(b64: string) {
   };
 }
 
-export function resetPcmPlayback() {
-  pcmNextTime = 0;
-  pcmActiveSources = 0;
-  setPcmPlaying(false);
-  if (pcmWaiter) {
-    const w = pcmWaiter;
-    pcmWaiter = null;
-    w();
+/** 合成结束，等待已排程 buffer 播完。 */
+export async function finishPcmSession(): Promise<void> {
+  const gen = pcmGen;
+  if (liveSources.size === 0 && pcmNextTime <= (pcmCtx?.currentTime ?? 0)) {
+    setPcmPlaying(false);
+    return;
   }
-}
-
-export async function playPcmStream(
-  text: string,
-  voice: string | undefined,
-  isStale: () => boolean,
-): Promise<void> {
-  if (!ensurePcmGraph()) {
-    throw new Error("AudioContext 不可用");
-  }
-  resetPcmPlayback();
-  // 重绑定 getSpeechLevel 用的 analyser
-  adoptAnalyser(pcmAnalyser, levelData);
-  setPcmPlaying(true);
-  let failed: string | null = null;
-  await synthesizeTtsStream(text, voice, (chunk) => {
-    if (isStale()) return;
-    if (chunk.done) {
-      if (pcmActiveSources <= 0 && pcmWaiter) {
+  await new Promise<void>((resolve) => {
+    pcmWaiter = () => {
+      if (gen === pcmGen) setPcmPlaying(false);
+      resolve();
+    };
+    window.setTimeout(() => {
+      if (pcmWaiter) {
         const w = pcmWaiter;
         pcmWaiter = null;
+        if (gen === pcmGen) setPcmPlaying(false);
         w();
       }
-      return;
-    }
-    try {
-      enqueuePcm(chunk.base64);
-    } catch (e) {
-      failed = e instanceof Error ? e.message : String(e);
-    }
+    }, 60_000);
   });
-  if (isStale()) return;
-  if (failed) throw new Error(failed);
-  if (pcmActiveSources > 0 || pcmNextTime > (pcmCtx?.currentTime ?? 0)) {
-    await new Promise<void>((resolve) => {
-      pcmWaiter = resolve;
-      window.setTimeout(() => {
-        if (pcmWaiter === resolve) {
-          pcmWaiter = null;
-          resolve();
-        }
-      }, 120_000);
-    });
-  }
 }

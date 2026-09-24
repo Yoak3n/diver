@@ -1,4 +1,4 @@
-// 在线 TTS 相关 IPC（配置读写 / 声线 / 合成）。
+// 在线 TTS 相关 IPC（配置读写 / 声线 / 合成 / 播放队列）。
 
 import type { TtsAudio, TtsConfigPatch, TtsConfigView, TtsVoice } from "../types";
 import { invoke } from "./core";
@@ -23,12 +23,35 @@ export function listTtsModels(provider: string): Promise<string[]> {
   return invoke<string[]>("tts_list_models", { provider });
 }
 
-/** 在线合成语音（base64 音频）。 */
+/** 在线合成语音（base64 音频）——设置试听/调试用；日常朗读走 tts_speak。 */
 export function synthesizeTts(text: string, voice?: string): Promise<TtsAudio> {
   return invoke<TtsAudio>("tts_synthesize", { text, voice: voice || null });
 }
 
-/** MiMo 流式 PCM 分片。 */
+/** 入队朗读（后端 latest-wins；force 打断当前）。 */
+export function ttsSpeak(
+  text: string,
+  voice?: string,
+  force?: boolean,
+): Promise<void> {
+  return invoke<void>("tts_speak", {
+    text,
+    voice: voice || null,
+    force: !!force,
+  });
+}
+
+/** 停止当前朗读并清空待播。 */
+export function ttsStop(): Promise<void> {
+  return invoke<void>("tts_stop");
+}
+
+/** 前端播完一句后回报。 */
+export function ttsReportEnd(requestId: string): Promise<void> {
+  return invoke<void>("tts_report_end", { requestId });
+}
+
+/** MiMo 流式 PCM 分片（调试/兼容旧调用）。 */
 export interface TtsPcmChunk {
   base64: string;
   done: boolean;

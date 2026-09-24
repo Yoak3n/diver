@@ -28,7 +28,7 @@ let emotionMapReady = false;
 const {
   messages, busy, connected, composer, attachments, isReady, canSend,
   addAttachments, removeAttachment, connect, send, startAutoRefresh,
-  ttsVoice, pendingQuestion, submitQuestionAnswer,
+  pendingQuestion, submitQuestionAnswer,
 } = usePetChat();
 
 const click = useClickthrough({ getPet: () => petModel.getPet() });
@@ -66,7 +66,6 @@ watch(modelHost, (el) => {
 }, { immediate: true });
 
 const lip = useLipSync({
-  getTtsVoice: () => ttsVoice.value || "",
   startMouth: () => petModel.getPet()?.startMouth() ?? null,
 });
 const emotion = usePetEmotion({
@@ -151,7 +150,9 @@ usePetLifecycle({
     emotionMapReady = true;
   },
   onModelError: (err) => {
-    petModel.loadError = err instanceof Error ? err.message : String(err);
+    if (!petModel.loadError) {
+      petModel.loadError = err instanceof Error ? err.message : String(err);
+    }
     petModel.loading = false;
     console.error("[pet] model load failed:", err);
   },

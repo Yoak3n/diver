@@ -58,13 +58,7 @@ pub(super) async fn synthesize_mimo(
         .json()
         .await
         .map_err(|e| format!("MiMo TTS 响应解析失败: {e}"))?;
-    let audio_b64 = json
-        .get("choices")
-        .and_then(|c| c.get(0))
-        .and_then(|c| c.get("message"))
-        .and_then(|m| m.get("audio"))
-        .and_then(|a| a.get("data"))
-        .and_then(|d| d.as_str())
+    let audio_b64 = extract_audio_b64(&json)
         .ok_or_else(|| "MiMo TTS 响应缺少 audio.data".to_string())?;
 
     let bytes = B64
@@ -154,14 +148,7 @@ where
             let Ok(row) = serde_json::from_str::<serde_json::Value>(payload) else {
                 continue;
             };
-            let audio_b64 = row
-                .get("choices")
-                .and_then(|c| c.get(0))
-                .and_then(|c| c.get("delta"))
-                .and_then(|d| d.get("audio"))
-                .and_then(|a| a.get("data"))
-                .and_then(|d| d.as_str());
-            if let Some(b64) = audio_b64 {
+            if let Some(b64) = extract_audio_b64(&row) {
                 if !b64.is_empty() {
                     on_chunk(b64.to_string(), false)?;
                 }
@@ -170,4 +157,66 @@ where
     }
     on_chunk(String::new(), true)?;
     Ok(())
+}
+
+/// 从 chat.completions 响应/流分片里抠 base64 音频。
+///
+/// 兼容 OpenAI 音频两种形态：
+/// - 整段：`choices[0].message.audio.data`
+/// - 流式：`choices[0].delta.audio` 直接是 base64 字符串
+/// - 嵌套：`choices[0].delta.audio.data` / `message.audio.data`
+fn extract_audio_b64(row: &serde_json::Value) -> Option<&str> {
+    let choice = row.get("choices")?.get(0)?;
+    let node = choice
+        .get("delta")
+        .or_else(|| choice.get("message"))
+        .or_else(|| choice.get("audio"))?;
+    // delta.audio 为字符串
+    if let Some(s) = node.as_str() {
+        return Some(s);
+    }
+    // delta.audio = { data, ... } 或 delta = { audio: "..." } 已在上分支
+    if let Some(s) = node.get("audio").and_then(|a| a.as_str()) {
+        return Some(s);
+    }
+    if let Some(s) = node.get("audio").and_then(|a| a.get("data")).and_then(|d| d.as_str()) {
+        return Some(s);
+    }
+    node.get("data").and_then(|d| d.as_str())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::extract_audio_b64;
+    use serde_json::json;
+
+    #[test]
+    fn stream_delta_audio_as_string() {
+        let row = json!({"choices":[{"delta":{"audio":"QUJD"}}]});
+        assert_eq!(extract_audio_b64(&row), Some("QUJD"));
+    }
+
+    #[test]
+    fn stream_delta_audio_data_nested() {
+        let row = json!({"choices":[{"delta":{"audio":{"data":"REVG"}}}]});
+        assert_eq!(extract_audio_b64(&row), Some("REVG"));
+    }
+
+    #[test]
+    fn message_audio_data_nested() {
+        let row = json!({"choices":[{"message":{"audio":{"data":"R0hJ"}}}]});
+        assert_eq!(extract_audio_b64(&row), Some("R0hJ"));
+    }
+
+    #[test]
+    fn message_audio_as_string() {
+        let row = json!({"choices":[{"message":{"audio":"SUpL"}}]});
+        assert_eq!(extract_audio_b64(&row), Some("SUpL"));
+    }
+
+    #[test]
+    fn missing_audio_is_none() {
+        let row = json!({"choices":[{"delta":{"content":"hi"}}]});
+        assert_eq!(extract_audio_b64(&row), None);
+    }
 }

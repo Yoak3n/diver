@@ -114,6 +114,15 @@ pi（`@earendil-works/pi-coding-agent`）的发行物**几乎不含 node_modules
 
 预期收益：解压时间降一个数量级；改动集中在 `bundle-release.mjs` 与 `setup_progress.rs`。
 
+### P0.5 —— 用户插件覆盖层（已拍板，独立小 PR，可在 P0/P1 之间交付）
+
+- 用户插件目录 `%APPDATA%\com.diver.companion\cos\plugins\` **优先于**安装目录
+  `resources/sidecar/plugins/` 加载：同名插件覆盖层版本生效，新增插件直接放入即可用。
+- 升级安装永不丢失用户修改（NSIS 覆盖安装目录不再伤及用户改动）；官方插件更新仍能
+  通过升级送达安装目录，被覆盖层遮蔽时 `plugin-doctor.mjs` 提示版本差异。
+- 改动集中在插件根解析与加载链路（catalog / cordis.patch 合并语义需定义：同 id 以覆盖层
+  优先），打包链路不动。
+
 ### P1 —— 依赖 vendor 化（pi 式核心，目标形态）
 
 1. **构建期 esbuild 打 vendor**：以依赖闭包每个包的公开入口为 entry（含 exports 子路径），
@@ -159,6 +168,7 @@ pi（`@earendil-works/pi-coding-agent`）的发行物**几乎不含 node_modules
   诊断正常；会话/记忆/工作区路径不受影响。
 - **开放性硬校验**（§3.1）：安装目录 `plugins/<name>/src/*.ts` 为明文 TS（抽样校验
   非打包产物）；`cordis.patch.yml` 插拔、`plugins.json` catalog 与运行时加载一致。
+- **覆盖层生效**（§5 P0.5）：覆盖层同名插件遮蔽安装目录版本；升级安装后用户修改仍在。
 
 ## 8. 待决策
 
@@ -166,7 +176,5 @@ pi（`@earendil-works/pi-coding-agent`）的发行物**几乎不含 node_modules
    若可放弃，则 P1 可更激进（引擎也进 vendor）。
 2. P0 与 P1 是否分两个 PR —— 建议分（P0 可独立回滚，P1 需要冒烟周期）。
 3. ~~是否先在现装包上实测 extract 阶段耗时基线~~ —— 已实测（§1），P0 目标定为 ≤3s。
-4. **升级保留策略**（§3.1 第 5 条）：Tauri NSIS 升级默认覆盖安装目录，用户改过的
-   `plugins/` 源码会被覆盖。可选：(a) 升级时对比备份用户修改并提示；(b) 用户插件
-   覆盖层（`%APPDATA%\com.diver.companion\cos\plugins` 优先于安装目录加载）；
-   (c) 安装器保留 `plugins/` 不覆盖。需选定后纳入实施。
+4. **升级保留策略**（§3.1 第 5 条）：~~待选定~~ —— **已拍板：用户插件覆盖层**（§5 P0.5），
+   `%APPDATA%\...\cos\plugins` 优先于安装目录加载；(a)(c) 两案废弃。

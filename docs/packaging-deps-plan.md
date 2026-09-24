@@ -1,6 +1,7 @@
 # 依赖打包优化方案：消灭 node_modules 海量小文件（参考 pi）
 
-> 状态：方案稿，待确认后实施。目标：消除首启动时解压上万个小文件导致的长时间等待。
+> 状态：**架构已拍板（2026-09-25）**——B′ 播种对账工作区 + cos 核心 P1 bundle +
+> 依赖三层归属；待实施（P0 → P1a → P1b → P1c）。
 
 ## 1. 背景与量化证据
 
@@ -59,13 +60,15 @@ pi（`@earendil-works/pi-coding-agent`）的发行物**几乎不含 node_modules
 
 | 约束 | diver 现状 | 影响 |
 |------|-----------|------|
-| 插件开放 | `plugins/@diver/*` 以 **TS 源码**随包，README.txt 承诺可改/删/增 | 插件本体不能 bundle 死 |
-| 引擎开放 | `harness/packages/@cos/*` 源码随包，tsx 运行时加载 | 同上（约束弱于插件） |
-| TS 运行时 | tsx 加载 TS 源码 | esbuild 原生二进制等必须是真实文件 |
-| 用户可装依赖 | `install-deps.mjs` 为插件追加真实依赖 | node_modules 语义必须保留 |
+| 插件开放 | `plugins/@diver/*` 以 **TS 源码**随包，README.txt 承诺可改/删/增 | 插件本体不能 bundle 死（硬约束 §3.1） |
+| 核心打包 | `@cos/*` 引擎**已拍板 P1 bundle**（运行时不再源码加载） | 核心零 node_modules；`@cos/plugin-api` 需对外垫片 |
+| TS 运行时 | tsx 只负责加载**插件** TS 源码 | tsx/esbuild 二进制作白名单组件，不进 bundle |
+| 用户可装依赖 | `install-deps.mjs` 为插件追加真实依赖 | 插件层 node_modules 语义必须保留 |
 
-结论：**bundle 的对象是「第三方依赖闭包」，不是插件/引擎源码**。源码照旧开放可改，
-依赖从「上万小文件」变成「几百个大 vendor 文件 + 解析垫片」。
+结论（2026-09-25 拍板）：**打包对象 = cos 核心本体 + 全部第三方依赖闭包；插件源码永远
+不进 bundle**。cos 核心像 pi 一样打进少数大文件（P2 可单 exe），核心零 node_modules；
+插件层保持明文 TS，自带插件的第三方依赖 vendor 化成「大文件 + 解析垫片」，用户后装依赖
+走标准 node_modules（完整分层见 §3.2）。
 
 ### 3.1 硬性约束：cos-plugins 插件层源码可读写（不可被打包破坏）
 
@@ -82,29 +85,66 @@ pi（`@earendil-works/pi-coding-agent`）的发行物**几乎不含 node_modules
 
 对各阶段的保证：
 
-| 阶段 | 对 `plugins/<name>/src` 的影响 | 对 `plugins/node_modules` 的影响 |
+| 阶段 | 对插件源码（明文 TS）的影响 | 对插件依赖的影响 |
 |------|------------------------------|-------------------------------|
 | P0 | **零影响**（源码不进归档） | 剪 `.pnpm` / zstd，布局语义不变 |
-| P1 | **零影响**（`@diver/*` 不进 vendor） | npm 包变垫片 + vendor；用户装的真实包优先于垫片 |
-| P2 | 引擎可闭源，**插件源码仍外置加载** | 同 P1 |
+| P1 | **零影响**（`@diver/*` 不进核心 bundle / vendor） | 自带依赖变 vendor+垫片；用户后装真实包优先于垫片 |
+| P2 | **插件源码仍外置加载**（核心单 exe 也不含插件） | 同 P1 |
 
 任何实施若触碰第 1–4 条，视为方案失败，回退该步。
 
+### 3.2 产物分层与文件管理模型（2026-09-25 拍板）
+
+**依赖三层归属**（回答「cos 自身还有 node_modules 吗」——没有）：
+
+| 层 | 产物形态 | node_modules |
+|---|---|---|
+| cos 核心（`@cos/*` + 全部第三方依赖） | esbuild bundle 少数大文件（P2 可单 exe） | **零**；白名单仅 tsx loader + esbuild 二进制 |
+| 自带插件的第三方依赖 | 构建期 vendor 化：`plugins/vendor/*.mjs` + 解析垫片 | 垫片数百文件，随 seed 播种 |
+| 用户后装依赖（`install-deps`） | 真实 npm 包 | `plugins/node_modules`（插件本地 `node_modules` 优先） |
+
+**接口不变量**：插件源码 `import ... from '@cos/plugin-api'` 语义不变 —— 核心 bundle 对外
+暴露 plugin-api 入口，seed 内置 `@cos/plugin-api` 垫片 re-export 核心导出（对齐 pi 的
+external 白名单做法）。
+
+**文件管理模型 B′（播种对账，唯一可改处）**：
+
+```text
+安装目录 resources\sidecar\
+├── core\                    ← cos 核心 bundle + loader 白名单（无 node_modules）
+├── plugins.seed.tar.zst     ← 自带插件源码 + vendor + 垫片（更新载荷，非明文目录）
+└── （node.exe 不随包，维持现状）
+
+用户区 %APPDATA%\com.diver.companion\cos\
+└── plugins\                 ← ★ 唯一明文插件区（agent 与用户只面对这里）
+    ├── <自带插件>\src\*.ts   播种而来，随便改
+    ├── my-plugin\           自写插件，官方永不插手
+    ├── vendor\              自带依赖 bundle（seed 解出）
+    └── node_modules\        垫片 + 用户后装真实包
+```
+
+- **首启**：seed 解开播种到用户区；**升级**：新 seed 对账 —— 未改的插件静默更新，
+  改过的保留用户版 + 官方新版落 `<name>\.incoming\<ver>\` 提示差异，自写插件不动
+  （dpkg conffiles 语义）。
+- **agent 只面对用户区一处**：工具文档 / systemPrompt 只写 `cos/plugins/` 这一路径，
+  `install-deps.mjs` / `plugin-doctor.mjs` 同样只认这一处 —— 从设计上消掉「改错目录」。
+
 ## 4. 方案对比
 
-| 方案 | 小文件数 | 首启解压 | 开放性 | 风险 |
+| 方案 | 小文件数 | 首启解压 | 插件可读写 | 风险 |
 |------|---------|---------|--------|------|
-| A. 现状（pnpm + deref + 未压缩 tar） | ~20,000 | 数十秒 | 完整 | — |
-| B. 仅剪 `.pnpm` + zstd + 并行解压 | ~10,000 | 数秒 | 完整 | 低 |
-| C. **vendor bundle + 垫片（推荐）** | 数百 | **趋近于零** | 完整 | 中 |
-| D. bun compile 单 exe（pi build:binary） | ~0 | 无 | 引擎闭源化 | 高 |
+| A. 现状（pnpm + deref + 未压缩 tar） | ~20,000 | 数十秒 | ✓ | — |
+| B. 仅剪 `.pnpm` + zstd + 并行解压（P0 过渡） | ~10,000 | 数秒 | ✓ | 低 |
+| C. **核心 bundle + 插件 vendor 垫片 + 播种对账（B′，推荐）** | 数百 | **趋近于零** | ✓ | 中 |
+| D. 再进一步 bun compile 单 exe（P2 可选） | ~0 | 无 | ✓（插件仍外置） | 高 |
 
 方案 C 的关键是：**Node 的解析语义不变**（裸 import 仍按 `node_modules/<pkg>` 找），
-只是每个包的实现被换成一个大文件的 re-export 垫片 —— 不需要改 tsx/cordis 加载链路。
+只是每个包的实现被换成大文件 re-export 垫片；核心 bundle 对插件暴露 `@cos/plugin-api`
+入口 —— tsx/cordis 插件加载链路不动。
 
 ## 5. 推荐实施：分阶段
 
-### P0 —— 打包布局修正（低风险，先行止血）
+### P0 —— 打包布局修正（低风险，**过渡期止血**：P1a 落地后 harness 侧自动失效）
 
 1. **剪掉 `.pnpm` store**：闭包已提升到顶层（2.4c 的 BFS），归档前删除 `node_modules/.pnpm`。
    预期条目 20k → ~10k。
@@ -114,37 +154,41 @@ pi（`@earendil-works/pi-coding-agent`）的发行物**几乎不含 node_modules
 
 预期收益：解压时间降一个数量级；改动集中在 `bundle-release.mjs` 与 `setup_progress.rs`。
 
-### P0.5 —— 用户插件覆盖层（已拍板，独立小 PR，可在 P0/P1 之间交付）
+### P1a —— cos 核心 bundle（大头收益：harness/node_modules 整体消失）
 
-- 用户插件目录 `%APPDATA%\com.diver.companion\cos\plugins\` **优先于**安装目录
-  `resources/sidecar/plugins/` 加载：同名插件覆盖层版本生效，新增插件直接放入即可用。
-- 升级安装永不丢失用户修改（NSIS 覆盖安装目录不再伤及用户改动）；官方插件更新仍能
-  通过升级送达安装目录，被覆盖层遮蔽时 `plugin-doctor.mjs` 提示版本差异。
-- 改动集中在插件根解析与加载链路（catalog / cordis.patch 合并语义需定义：同 id 以覆盖层
-  优先），打包链路不动。
+1. esbuild 把 `@cos/*` 引擎 + 全部第三方依赖打成 `core/` 少数大文件（对齐 pi
+   `build-coding-agent-bundle.mjs`：`bundle: true`、minify、banner `createRequire` shim）。
+2. **零 node_modules**：白名单仅 tsx loader + esbuild 二进制（等价 pi 外挂的 jiti）。
+3. 对外暴露 `@cos/plugin-api` 入口 + seed 内垫片，插件 import 语义不变。
+4. `harness/node_modules.tar`（15,050 条目 / 100MB）从安装包中消失；启动链路从
+   「tsx 跑 harness 源码」改为「加载 core bundle」，tsx 只用于插件 TS 源码。
 
-### P1 —— 依赖 vendor 化（pi 式核心，目标形态）
+### P1b —— 插件自带依赖 vendor 化
 
-1. **构建期 esbuild 打 vendor**：以依赖闭包每个包的公开入口为 entry（含 exports 子路径），
-   产出 `vendor/<pkg>.mjs`（`format: cjs`，兼容 require 与 tsx）。
-2. **生成解析垫片**：`node_modules/<pkg>/package.json`（指向 vendor）+ `index.js`
-   re-export；exports 子路径逐入口生成对应垫片文件。
-3. **白名单 external**：esbuild 二进制、wasm、`.node` 原生模块等不可 bundle 的保持真实目录；
-   对齐 pi 的 `validateExternalImports`，新增 `scripts/check-vendor-closure.mjs`：
-   扫描 harness/@cos + plugins/@diver 源码全部裸 import，逐一确认能解析到垫片或白名单，
-   构建失败兜底（吸收现有 `sourceImportNames` 扫描逻辑）。
-4. **归档范围收窄**：垫片 + vendor 是构建产物（只读），可直接随包（NSIS 复制几百个大文件
-   很快）或进一个 zstd 小档；`archives()` 里的解压步骤趋近消失，`.deps-extracted` marker
-   改为内容 hash（升级安装时精准失效）。
-5. **`install-deps.mjs` 语义不变**：用户装的真实包落同级 `node_modules`，真实目录优先于
-   垫片，与垫片共存。
+1. 构建期以自带插件依赖闭包每个包的公开入口为 entry（含 exports 子路径），产出
+   `plugins/vendor/<pkg>.mjs`（`format: cjs`，兼容 require 与 tsx）。
+2. 生成解析垫片 `node_modules/<pkg>/`（package.json + index.js re-export）。
+3. 白名单 external（esbuild 二进制、wasm、`.node`）保持真实文件；新增
+   `scripts/check-vendor-closure.mjs` 校验插件源码全部裸 import 可解析（构建失败兜底，
+   吸收现有 `sourceImportNames` 扫描逻辑）。
+4. `install-deps.mjs` 语义不变：用户后装真实包落 `plugins/node_modules`，真实目录优先于
+   垫片。
 
-预期收益：随包小文件 2 万 → 数百（下降 ~99%）；首启 extract 阶段从数十秒 → <1s 或归零。
+### P1c —— 播种对账工作区（B′，取代原「用户插件覆盖层」决策）
 
-### P2 —— 可选终极（仅在 P1 不达标时评估）
+1. 运行时唯一插件目录 = 用户区 `cos/plugins/`；安装目录侧只保留 `plugins.seed.tar.zst`
+   更新载荷（不再展开明文目录，消除「两份明文」困惑）。
+2. 首启播种；升级对账：未改静默更新、改过的保留 + `.incoming/<ver>/` 并存新版提示、
+   自写不动。出厂 manifest 记录各文件内容 hash（规范化换行）判定「是否改过」。
+3. `plugin-doctor.mjs` 增补：导出官方原版做 diff、提示 `.incoming` 可合并。
 
-- 对齐 pi `build:binary`：`bun build --compile` 把引擎 + vendor 编译成单可执行文件，
-  插件源码仍外置加载。影响面大（启动链路重写、tsx 替换），单独立项。
+预期收益：随包小文件 2 万 → 数百（下降 ~99%）；harness/node_modules 整体消失；
+首启 extract 阶段从数十秒 → <1s 或归零。
+
+### P2 —— 可选终极（P1 达标后单独立项）
+
+- 对齐 pi `build:binary`：`bun build --compile` 把**核心 bundle**编译成单可执行文件，
+  插件源码仍外置加载、seed 播种不变。影响面大（Node 解析、tsx 替换），仅在 P1 不达标时评估。
 
 ## 6. 风险与对策
 
@@ -156,25 +200,31 @@ pi（`@earendil-works/pi-coding-agent`）的发行物**几乎不含 node_modules
 | 原生/wasm 模块 | 白名单真实目录，不进 vendor |
 | 用户手改插件后 import 新依赖 | 文档写明「真实包优先于垫片」；install-deps 兜底 |
 | 升级安装残留旧 vendor | marker 改内容 hash，tar/vendor 比 hash 新则重建 |
+| 核心 bundle 破坏 cordis 动态加载 / 插件发现 | bundle 显式保留 cordis 插件 API 面；启动冒烟覆盖插件装载 |
+| `@cos/plugin-api` 垫片与核心版本漂移 | 垫片由核心构建同源生成；`check-vendor-closure.mjs` 校验 |
+| 对账误判「已修改」（换行 / 编码差异） | manifest 用规范化内容 hash；doctor 可重置基线 |
 
 ## 7. 验收标准
 
 - 基线锚点：当前 extract 阶段 ≈8.5s（热缓存 NVMe 下限，见 §1）。
 - P0 目标：解压耗时 ≤3s（同机同口径）；随包条目数减半（剪 `.pnpm`）。
-- P1 目标：安装包 sidecar 内 <64KB 的文件数下降 ≥90%；首启 extract 阶段 <1s 或归零。
+- P1 目标：安装包 sidecar 内 <64KB 的文件数下降 ≥90%；**核心层 node_modules = 0**；
+  首启 extract 阶段 <1s 或归零。
 - `cargo test --workspace`、`pnpm typecheck`、`cos-plugins/*/scripts/smoke.ts` 全绿；
   `check-vendor-closure.mjs` 通过。
 - 兼容性冒烟：改插件源码重启生效；`install-deps.mjs` 能装新依赖；`plugin-doctor.mjs`
   诊断正常；会话/记忆/工作区路径不受影响。
-- **开放性硬校验**（§3.1）：安装目录 `plugins/<name>/src/*.ts` 为明文 TS（抽样校验
+- **开放性硬校验**（§3.1）：用户区 `plugins/<name>/src/*.ts` 为明文 TS（抽样校验
   非打包产物）；`cordis.patch.yml` 插拔、`plugins.json` catalog 与运行时加载一致。
-- **覆盖层生效**（§5 P0.5）：覆盖层同名插件遮蔽安装目录版本；升级安装后用户修改仍在。
+- **唯一可改处 + 对账生效**（§3.2 B′）：agent/用户只面对 `cos/plugins/` 一处；升级后
+  未改插件已更新、改过的保留且 `.incoming` 可见官方新版、自写插件不动。
 
 ## 8. 待决策
 
-1. harness 引擎（@cos/*）是否保持源码运行 —— 本方案默认**保持**（与插件一致的开放性）；
-   若可放弃，则 P1 可更激进（引擎也进 vendor）。
+1. ~~harness 引擎是否保持源码运行~~ —— **已拍板：P1 核心 bundle**（运行时不再源码加载，
+   仓库源码照旧可读；单 exe 留 P2 评估）。
 2. P0 与 P1 是否分两个 PR —— 建议分（P0 可独立回滚，P1 需要冒烟周期）。
 3. ~~是否先在现装包上实测 extract 阶段耗时基线~~ —— 已实测（§1），P0 目标定为 ≤3s。
-4. **升级保留策略**（§3.1 第 5 条）：~~待选定~~ —— **已拍板：用户插件覆盖层**（§5 P0.5），
-   `%APPDATA%\...\cos\plugins` 优先于安装目录加载；(a)(c) 两案废弃。
+4. ~~升级保留策略~~ —— **已拍板：B′ 播种对账工作区**（§3.2 / §5 P1c），取代早先
+   「用户插件覆盖层」决策（遮蔽语义废弃）；依赖归属同拍板：自带依赖 vendor+垫片、
+   用户后装落 `plugins/node_modules`。

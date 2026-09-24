@@ -72,7 +72,7 @@
   - greeting → `Wave`/`Happy`；farewell → `Wave`/`Sad`；agree → `Nod`
 - **表情叠加（YUI）**：`expressionMap` 把情绪映射到 `exp3` 表情，约 2.8s 后清除，
   与身体动作同时生效，面部更生动
-- **LLM 输出配合**（`cos-plugins/voice`，`diver:voice` 提示词节）：系统提示词
+- **LLM 输出配合**（`cos-plugins/self-prompt`，`diver:self-prompt:style` 提示词节）：系统提示词
   引导陪伴 agent 的输出**口语化、短句、情绪色彩明确**（"哈哈太棒了"、"哇真的假的"），
   让前端情绪推断有更可靠的信号——LLM 表达越自然，桌宠动作越生动
 - **节流与优先级**（`live2d.ts` `playEmotion`）：

@@ -30,7 +30,7 @@ Diver 是三层架构的桌面陪伴 agent：Rust 负责壳与原生扩展，Web
 │    pluginRoot=开放插件目录、profile=companion      │
 │  · 引擎：@cos/*（agent-loop / llm / tools / …）   │
 │  · 陪伴插件 @diver/*（cos-plugins/ 或 plugins/）   │
-│    backend / memory / basic-tools / mcp / voice   │
+│    backend / memory / basic-tools / mcp / self-prompt   │
 │    / llm-commandcode …（bundle insert 组装）       │
 │  · 单会话「diver-companion」JSONL 持久化           │
 └──────────────────────────────────────────────────┘
@@ -93,7 +93,7 @@ Tauri 侧用 axum 起一个只监听 `127.0.0.1` 的 HTTP 服务，供 Node side
 
 - `POST /rpc`：统一 JSON-RPC 入口（`{ method, params }` → `{ ok, data }` / `{ ok: false, error }`）
 - 当前路由：`grep::*` 前缀 → `grep::dispatch`（grep 搜索，`spawn_blocking` 跑
-  `diver-search` 引擎）；其余 → `memory::dispatch`（见 [关系层记忆](memory.md)）
+  `diver-search` 引擎）；`screenshot::*` → `screenshot::dispatch`（`diver-shot` 捕获 + JPEG）；其余 → `memory::dispatch`（见 [关系层记忆](memory.md)）
 - 扩展方式：`ServiceState` 加字段 → `rpc::route` 按 method 前缀分流 → merge 进 Router
 
 grep 搜索后端（crates/diver-search）：用 `grep-regex` / `grep-searcher` / `ignore`

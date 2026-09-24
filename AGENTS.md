@@ -73,7 +73,8 @@ crates/
 ├── diver-geom/          # 桌宠几何纯函数（config/shell/core 同向下依赖）
 ├── diver-memory/        # SQLite 记忆（禁网络/进程）
 ├── diver-presence/      # 陪伴状态机
-└── diver-search/        # 搜索引擎
+├── diver-search/        # 搜索引擎
+└── diver-shot/          # 屏幕捕获 + JPEG 小体积编码（Win GDI / Linux Wayland portal）
 ```
 
 历史模块 `base/` 已拆迁完毕（Phase2）：禁止再引入 `base`，新代码只进 `app/` `shell/` `core/` `commands/` 等上表分层。
@@ -102,7 +103,7 @@ crates/
 | npm 包名 | `@diver/<slug>` | `@diver/memory` |
 | 目录名 | `cos-plugins/<slug>`（与包名 slug 一致） | `cos-plugins/memory` |
 | cordis insert id | `<slug>`（与目录/包 slug 一致） | `id: memory` |
-| systemPrompt section | `diver:<slug>` | `diver:voice` |
+| systemPrompt section | `diver:<slug>` | `diver:self-prompt:style` |
 | bundle | 包 `@diver/bundle-<name>`，id `diver:<name>` | `@diver/bundle-companion` |
 
 - `slug` 一律 **kebab-case**；目录、`package.json.name`、`cordis.patch.yml` id、`plugins.json` id/filename 必须四同。

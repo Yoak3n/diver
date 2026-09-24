@@ -72,6 +72,55 @@ fn archives(sidecar_dir: &Path) -> Vec<(PathBuf, PathBuf)> {
     ]
 }
 
+/// 是否仍有归档待解压（纯路径判断；与 `ensure_deps_extracted` 的 pending 过滤一致）。
+pub fn has_pending_archives(sidecar_dir: &Path) -> bool {
+    archives(sidecar_dir).iter().any(|(archive, dest)| {
+        if !archive.is_file() {
+            return false;
+        }
+        let marker = dest.join(MARKER);
+        if !marker.exists() {
+            return true;
+        }
+        // tar 比 marker 新 → 升级安装，强制重解压
+        match (fs::metadata(archive), fs::metadata(&marker)) {
+            (Ok(a), Ok(m)) => a
+                .modified()
+                .ok()
+                .zip(m.modified().ok())
+                .map(|(at, mt)| at > mt)
+                .unwrap_or(true),
+            _ => true,
+        }
+    })
+}
+
+/// 是否仍需首启准备（归档解压 / Node 下载）。
+///
+/// 仅当需要向用户展示准备进度时才应强制弹出主窗口；**不得**用进程内
+/// `last_progress()` 判断（每次启动都是 `None`，会旁路「启动时打开主窗口」配置）。
+pub fn needs_bootstrap(app: &AppHandle) -> bool {
+    // dev：依赖走本地 pnpm，不走归档解压 / Node 下载
+    #[cfg(debug_assertions)]
+    {
+        let _ = app;
+        false
+    }
+    #[cfg(not(debug_assertions))]
+    {
+        use tauri::Manager;
+        // 与 core/sidecar/command.rs release 路径同一布局
+        let Ok(res) = app.path().resource_dir() else {
+            return true;
+        };
+        let sidecar_dir = res.join("resources").join("sidecar");
+        if has_pending_archives(&sidecar_dir) {
+            return true;
+        }
+        !crate::core::node_runtime::node_available_locally(app)
+    }
+}
+
 /// 首次启动解压 `*.tar`（无子进程、无黑窗）。已解压则秒过。
 ///
 /// 升级安装时 NSIS 可能留下旧的 `.deps-extracted` 与旧 `node_modules`，
@@ -204,5 +253,32 @@ pub fn ensure_node_ready(
             emit_error(app, e.clone());
             Err(e)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pending_archives_false_when_no_tar() {
+        let dir = std::env::temp_dir().join(format!("diver-arch-none-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        assert!(!has_pending_archives(&dir));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn pending_archives_detects_missing_marker() {
+        let dir = std::env::temp_dir().join(format!("diver-arch-{}", std::process::id()));
+        let archive = dir.join("harness").join("node_modules.tar");
+        std::fs::create_dir_all(archive.parent().unwrap()).unwrap();
+        std::fs::write(&archive, b"x").unwrap();
+        assert!(has_pending_archives(&dir));
+        let dest = dir.join("harness").join("node_modules");
+        std::fs::create_dir_all(&dest).unwrap();
+        std::fs::write(dest.join(MARKER), "ok").unwrap();
+        assert!(!has_pending_archives(&dir));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

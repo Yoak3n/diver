@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use tauri::Manager;
 
 use super::download::download_and_extract;
-use super::lookup::{find_cached_node, find_system_node, is_usable_node};
+use super::lookup::{cached_node_file, find_cached_node, find_system_node, is_usable_node};
 use super::types::{node_file_name, NodeRuntime, MIN_NODE_MAJOR, NODE_DIST_VERSION};
 
 /// 解析可用的 Node；必要时下载到缓存。`push` 用于 UI 日志。
@@ -63,4 +63,22 @@ fn runtime_cache_dir(_app: &tauri::AppHandle) -> PathBuf {
         .or_else(|| dirs::data_dir())
         .unwrap_or_else(std::env::temp_dir);
     base.join("Diver").join("runtime")
+}
+
+/// 本地是否已有 Node 候选（env / 随包 / 缓存 / 系统 PATH）。
+/// **不 spawn 版本探测、不触发下载** —— 供启动路径判断「是否仍需 bootstrap」。
+pub fn node_available_locally(app: &tauri::AppHandle) -> bool {
+    if std::env::var_os("DIVER_NODE_BIN").is_some() {
+        return true;
+    }
+    if let Ok(res) = app.path().resource_dir() {
+        let bundled = res.join("resources").join("sidecar").join(node_file_name());
+        if bundled.is_file() {
+            return true;
+        }
+    }
+    if cached_node_file(&runtime_cache_dir(app)).is_some() {
+        return true;
+    }
+    find_system_node().is_some()
 }

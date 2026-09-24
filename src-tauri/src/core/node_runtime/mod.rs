@@ -15,5 +15,5 @@ mod process;
 mod resolve;
 mod types;
 
-pub use resolve::resolve_node;
+pub use resolve::{node_available_locally, resolve_node};
 pub use types::{NodeRuntime, MIN_NODE_MAJOR};

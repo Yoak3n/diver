@@ -108,10 +108,12 @@ impl Manager {
             }
 
             // WebView2：原生可拖区域 + 对齐 DSH 的触摸/滚动特性集。
+            // autoplay：TTS 自动朗读无用户手势，AudioContext / <audio> 会被默认策略静音。
             #[allow(unused_mut)]
             let mut args = String::from(
                 "--enable-features=msWebView2EnableDraggableRegions \
-                 --disable-features=OverscrollHistoryNavigation,msExperimentalScrolling,ElasticOverscroll",
+                 --disable-features=OverscrollHistoryNavigation,msExperimentalScrolling,ElasticOverscroll \
+                 --autoplay-policy=no-user-gesture-required",
             );
             #[cfg(debug_assertions)]
             if window_type == WindowType::Pet {

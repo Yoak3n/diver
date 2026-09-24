@@ -220,11 +220,22 @@ pub fn configure(builder: Builder<tauri::Wry>) -> Builder<tauri::Wry> {
             startup.auto_open_main,
             startup.auto_open_pet
         );
-        // 首启/未就绪时强制出主窗口，避免只看到遮罩或空壳。
-        if startup.auto_open_main || crate::core::setup_progress::last_progress().is_none() {
+        // 仅当用户要求自动打开，或仍需首启准备（解压 / Node）时弹出主窗口看进度。
+        // 禁止用 last_progress().is_none() 兜底 —— 该值是进程内内存，每次启动都是
+        // None，会恒真并旁路「启动时打开主窗口」配置。
+        let bootstrap = crate::core::setup_progress::needs_bootstrap(app.handle());
+        if startup.auto_open_main || bootstrap {
             crate::shell::window::manager::Manager::global()
                 .show_window(WindowType::Main, None);
-            log::info!("[init] main window show_window called");
+            log::info!(
+                "[init] main window show_window called (auto_open_main={}, bootstrap={})",
+                startup.auto_open_main,
+                bootstrap
+            );
+        } else {
+            log::info!(
+                "[init] skip main window (auto_open_main=false, bootstrap=false)"
+            );
         }
 
         // Live2D 桌宠：按配置缩放创建，位置恢复持久化值（无效则默认右下角）。

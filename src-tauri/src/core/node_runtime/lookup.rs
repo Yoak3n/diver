@@ -38,6 +38,37 @@ pub(super) fn find_cached_node(cache_root: &Path) -> Option<PathBuf> {
     None
 }
 
+/// 只查文件是否存在、不 spawn 版本探测（启动路径上避免拖慢）。
+pub(super) fn cached_node_file(cache_root: &Path) -> Option<PathBuf> {
+    let name = node_file_name();
+    if !cache_root.is_dir() {
+        return None;
+    }
+    let rd = std::fs::read_dir(cache_root).ok()?;
+    let mut dirs: Vec<PathBuf> = rd
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .filter(|p| p.is_dir())
+        .collect();
+    dirs.sort();
+    dirs.reverse();
+    for dir in dirs {
+        let direct = dir.join(name);
+        if direct.is_file() {
+            return Some(direct);
+        }
+        if let Ok(rd) = std::fs::read_dir(&dir) {
+            for e in rd.filter_map(|e| e.ok()) {
+                let p = e.path().join(name);
+                if p.is_file() {
+                    return Some(p);
+                }
+            }
+        }
+    }
+    None
+}
+
 pub(super) fn find_system_node() -> Option<PathBuf> {
     // 解析 PATH，避免再 spawn `where`（GUI 父进程下会闪黑窗）。
     if let Ok(path_var) = std::env::var("PATH") {

@@ -43,17 +43,18 @@ export function usePetLifecycle(deps: Deps) {
       } finally {
         deps.setMapReady();
       }
-      void onTauriEvent<{ id: string }>(PET_MODEL_CHANGED_EVENT, (p) => {
-        void deps.onExternalModelChange(p?.id);
-      });
-      window.addEventListener("storage", (e) => {
-        if (e.key === "diver.pet.modelId" && e.newValue) {
-          void deps.onExternalModelChange(e.newValue);
-        }
-      });
     } catch (err) {
       deps.onModelError(err);
     }
+    // 模型热切换监听：与模型加载成败无关，挂上以便失败后重试/切换
+    void onTauriEvent<{ id: string }>(PET_MODEL_CHANGED_EVENT, (p) => {
+      void deps.onExternalModelChange(p?.id);
+    });
+    window.addEventListener("storage", (e) => {
+      if (e.key === "diver.pet.modelId" && e.newValue) {
+        void deps.onExternalModelChange(e.newValue);
+      }
+    });
   });
 
   onBeforeUnmount(() => {

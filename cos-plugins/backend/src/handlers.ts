@@ -315,12 +315,23 @@ export async function handleRequest(
             if (idx === undefined) continue
             const msg = messages[idx] as { tools?: Array<Record<string, unknown>> }
             const list = msg.tools ? [...msg.tools] : []
-            const callId = ev.data.callId !== undefined ? String(ev.data.callId)
-              : (ev.data.message?.callId !== undefined ? String(ev.data.message.callId) : undefined)
+            // 与 SSE 对齐：callId 可能在 data.callId / message.callId / message.source.callId
+            const msgAny = ev.data.message as { callId?: string; source?: { callId?: string } } | undefined
+            const source = msgAny?.source
+            const callId = source?.callId !== undefined ? String(source.callId)
+              : ev.data.callId !== undefined ? String(ev.data.callId)
+              : (msgAny?.callId !== undefined ? String(msgAny.callId) : undefined)
             const raw = String(ev.data.message?.content ?? '')
-            const summary = raw.length > 120 ? `${raw.slice(0, 120)}…` : raw
+            // 与 SSE 对齐：详情可展开，过长仍限幅
+            const summary = raw.length > 4000 ? `${raw.slice(0, 4000)}…` : raw
             const isError = ev.data.message?.isError === true
-            const hit = list.findIndex((t) => callId !== undefined && t.callId === callId)
+            let hit = list.findIndex((t) => callId !== undefined && t.callId === callId)
+            if (hit < 0) {
+              // 无 callId 命中时按名称合并到最近未完成的 call
+              const name = (callId && list.find((t) => t.callId === callId)?.name) || 'tool'
+              const i = [...list].reverse().findIndex((t) => t.name === name && t.status === 'call')
+              hit = i >= 0 ? list.length - 1 - i : -1
+            }
             if (hit >= 0) {
               list[hit] = {
                 ...list[hit],
@@ -328,9 +339,10 @@ export async function handleRequest(
                 ...(summary !== '' ? { summary } : {}),
                 isError,
               }
-            } else {
+            } else if (!(callId !== undefined && list.some((t) => t.callId === callId && t.status === 'result'))) {
+              const name = (callId && list.find((t) => t.callId === callId)?.name) || 'tool'
               list.push({
-                name: 'tool',
+                name,
                 status: 'result',
                 time: Number(ev.time) || Date.now(),
                 ...(callId !== undefined ? { callId } : {}),

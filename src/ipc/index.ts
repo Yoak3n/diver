@@ -9,3 +9,4 @@ export * from "./petWindow";
 export * from "./shortcuts";
 export * from "./window";
 export * from "./mcp";
+export * from "./presence";

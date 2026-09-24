@@ -2,4 +2,5 @@
 // 拆分：moc / bounds / hitbox / layout / motion / expression / look / mouth / react / create。
 
 export { createPetModel } from "./create";
+export { ensureLive2dCore } from "./core";
 export type { PetModelHandle, GroupAliases } from "./types";

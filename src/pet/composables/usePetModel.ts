@@ -3,6 +3,7 @@
 import { ref } from "vue";
 import { MODEL_HEIGHT_RATIO } from "../constants";
 import type { PetModelHandle } from "../live2d";
+import { ensureLive2dCore } from "../live2d/core";
 import {
   loadModelCatalog,
   pickModelProfile,
@@ -10,6 +11,22 @@ import {
   PET_MODEL_CHANGED_EVENT,
 } from "../models";
 import type { PetModelProfile } from "../models";
+
+/** 等待模板 ref 同步到 modelHost（onMounted 与 watch flush 可能竞态）。 */
+async function waitForHost(
+  getHost: () => HTMLElement | null,
+  timeoutMs = 3000,
+): Promise<HTMLElement> {
+  const start = performance.now();
+  for (;;) {
+    const host = getHost();
+    if (host) return host;
+    if (performance.now() - start > timeoutMs) {
+      throw new Error("模型容器未就绪（modelHost 为空）");
+    }
+    await new Promise((r) => requestAnimationFrame(() => r(null)));
+  }
+}
 
 export function usePetModel(opts: {
   getPanelOpen: () => boolean;
@@ -32,16 +49,12 @@ export function usePetModel(opts: {
   }
 
   async function mountPetModel(profile: PetModelProfile) {
-    if (!modelHost.value) {
-      await new Promise((r) => requestAnimationFrame(() => r(null)));
-    }
-    if (!modelHost.value) {
-      throw new Error("模型容器未就绪（modelHost 为空）");
-    }
+    const host = await waitForHost(() => modelHost.value);
     pet?.destroy();
     pet = null;
+    await ensureLive2dCore();
     const mod = await import("../live2d");
-    pet = await mod.createPetModel(modelHost.value, {
+    pet = await mod.createPetModel(host, {
       heightRatio: profile.heightRatio ?? MODEL_HEIGHT_RATIO,
       anchorXRatio: 0.5,
       modelUrl: profile.model3,
@@ -98,12 +111,20 @@ export function usePetModel(opts: {
   }
 
   async function initModel() {
-    if (!modelHost.value) return;
-    const catalog = await loadModelCatalog();
-    modelProfiles.value = catalog.models;
-    const profile = pickModelProfile(catalog);
-    await mountPetModel(profile);
-    loading.value = false;
+    try {
+      const catalog = await loadModelCatalog();
+      modelProfiles.value = catalog.models;
+      const profile = pickModelProfile(catalog);
+      await mountPetModel(profile);
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      console.error("[pet] model load failed:", detail, err);
+      loadError.value = detail;
+      throw err;
+    } finally {
+      // 无论成败都结束「加载桌宠…」，失败时用 loadError 展示原因
+      loading.value = false;
+    }
   }
 
   function destroyPet() {

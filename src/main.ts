@@ -3,34 +3,14 @@ import App from "./App.vue";
 import "./style.css";
 import { router } from "./router";
 import { onTauriEvent } from "./tauri";
+import { ensureLive2dCore } from "./pet/live2d/core";
 
-// Live2D Cubism Core：动态注入经典 <script>（挂载全局 Live2DCubismCore）。
-// 需支持 moc3 v5（YUI 等 Cubism 5 导出模型）；旧 Core 最高 v4 会导致 reviveMoc 失败。
-// 原 pet.html 用静态 <script src="/pet/live2dcubismcore.min.js"> 注入；
-// 改为路由后统一在应用启动时按需动态加载（仅当访问 /pet 时）。
-// 注意：必须在 pixi-live2d-display 创建模型前完成，PetApp 的模型加载是懒
-// 加载（动态 import），时序上动态 script 先行即可。
-function injectLive2dCore(): Promise<void> {
-  return new Promise((resolve, reject) => {
-    if ((window as unknown as { Live2DCubismCore?: unknown }).Live2DCubismCore) {
-      resolve();
-      return;
-    }
-    const script = document.createElement("script");
-    // dev：Vite 按源码路径提供 public/ 资源；release：Tauri 静态托管同路径
-    script.src = "/pet/live2dcubismcore.min.js";
-    script.onload = () => resolve();
-    script.onerror = () => reject(new Error("Live2D Cubism Core 加载失败"));
-    document.head.appendChild(script);
-  });
-}
-
-// 路由切换时：进入 /pet 前确保 Core 已加载（PetApp 的模型加载是异步的，
-// 这里预加载避免竞态）。
+// 进入 /pet 前预加载 Cubism Core，避免 PetApp 模型创建竞态。
+// 实现见 pet/live2d/core.ts（与 createPetModel 共用同一幂等入口）。
 router.beforeEach(async (to) => {
   if (to.path === "/pet" && typeof window !== "undefined") {
     try {
-      await injectLive2dCore();
+      await ensureLive2dCore();
     } catch (e) {
       console.error("[live2d] Core 注入失败:", e);
     }

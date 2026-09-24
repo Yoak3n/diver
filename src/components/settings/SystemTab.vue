@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import { toRef } from "vue";
+import { onMounted, ref, toRef } from "vue";
 import type { HealthInfo, PetInteractionSettings, SettingsInfo } from "../../types";
 import type { SettingsState } from "../../composables/useSettings";
 import { tauriAvailable } from "../../tauri";
+import { useAssistantAvatar } from "../../composables/useAssistantAvatar";
+import AssistantAvatar from "../AssistantAvatar.vue";
 import PetModelPicker from "../PetModelPicker.vue";
 import { usePetInteraction } from "./composables/usePetInteraction";
 import { usePetModelSelect } from "./composables/usePetModelSelect";
@@ -31,9 +33,88 @@ const {
   activePetModelLabel,
   onPickPetModel,
 } = usePetModelSelect();
+
+const { avatarUrl, avatarPath, loadAvatar, setAvatarFromFile, resetAvatar } =
+  useAssistantAvatar();
+const avatarMsg = ref("");
+const avatarBusy = ref(false);
+const fileInput = ref<HTMLInputElement | null>(null);
+
+onMounted(() => {
+  void loadAvatar(true);
+});
+
+async function onPickAvatar(ev: Event) {
+  const input = ev.target as HTMLInputElement;
+  const file = input.files?.[0];
+  input.value = "";
+  if (!file) return;
+  if (!tauriAvailable()) {
+    avatarMsg.value = "仅桌面端可保存自定义头像";
+    return;
+  }
+  avatarBusy.value = true;
+  avatarMsg.value = "";
+  try {
+    await setAvatarFromFile(file);
+    avatarMsg.value = "头像已保存";
+  } catch (e) {
+    avatarMsg.value = e instanceof Error ? e.message : String(e);
+  } finally {
+    avatarBusy.value = false;
+  }
+}
+
+async function onResetAvatar() {
+  if (!tauriAvailable()) return;
+  avatarBusy.value = true;
+  try {
+    await resetAvatar();
+    avatarMsg.value = "已恢复默认头像";
+  } catch (e) {
+    avatarMsg.value = e instanceof Error ? e.message : String(e);
+  } finally {
+    avatarBusy.value = false;
+  }
+}
 </script>
 
 <template>
+  <label class="group-title">助手头像</label>
+  <div class="avatar-row">
+    <AssistantAvatar :size="48" variant="welcome" />
+    <div class="avatar-actions">
+      <button
+        class="btn small"
+        type="button"
+        :disabled="!tauriAvailable() || avatarBusy"
+        @click="fileInput?.click()"
+      >
+        {{ avatarBusy ? "处理中…" : "上传图片" }}
+      </button>
+      <button
+        class="btn small"
+        type="button"
+        :disabled="!tauriAvailable() || avatarBusy || !avatarUrl"
+        @click="onResetAvatar"
+      >
+        恢复默认
+      </button>
+    </div>
+  </div>
+  <input
+    ref="fileInput"
+    class="hidden-input"
+    type="file"
+    accept="image/png,image/jpeg,image/webp,image/gif"
+    @change="onPickAvatar"
+  />
+  <p v-if="avatarMsg" class="hint">{{ avatarMsg }}</p>
+  <p class="hint">
+    文件路径（agent 可直接改写，保存后聊天里生效）：
+    <code>{{ avatarPath || "$COS_HOME/assistant-avatar.png" }}</code>
+  </p>
+
   <label class="group-title">启动窗口</label>
   <div class="sidecar-row">
     <span>启动时打开主窗口</span>
@@ -176,6 +257,20 @@ const {
 </template>
 
 <style scoped>
+.avatar-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 8px;
+}
+.avatar-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.hidden-input {
+  display: none;
+}
 .group-title {
   display: block;
   font-size: 12px;

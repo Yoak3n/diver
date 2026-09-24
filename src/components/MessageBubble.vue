@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, ref } from "vue";
 import type { ChatMessage, ToolActivity } from "../types";
 import ThinkingBlock from "./ThinkingBlock.vue";
+import AssistantAvatar from "./AssistantAvatar.vue";
 import { renderMarkdownHtml } from "../markdown";
 
 const props = defineProps<{
@@ -25,6 +26,20 @@ const metaOnly = computed(
 );
 const showBubble = computed(() => hasContent.value);
 
+/** 工具行展开态：key = callId ?? name#index */
+const openTools = ref<Set<string>>(new Set());
+
+function toolKey(t: ToolActivity, i: number): string {
+  return t.callId ?? `${t.name}#${i}`;
+}
+
+function toggleTool(key: string) {
+  const next = new Set(openTools.value);
+  if (next.has(key)) next.delete(key);
+  else next.add(key);
+  openTools.value = next;
+}
+
 function fmtTime(ts: number): string {
   const d = new Date(ts);
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
@@ -40,11 +55,19 @@ function toolPreview(t: ToolActivity): string {
   if (s === "") return "";
   return s.length > 80 ? `${s.slice(0, 80)}…` : s;
 }
+
+function toolDetail(t: ToolActivity): string {
+  return (t.summary ?? "").trim();
+}
 </script>
 
 <template>
   <div class="msg-row" :class="[msg.kind, { 'meta-only': metaOnly }]">
-    <div v-if="msg.kind === 'assistant' && !metaOnly" class="avatar small">✦</div>
+    <AssistantAvatar
+      v-if="msg.kind === 'assistant' && !metaOnly"
+      :size="26"
+      variant="avatar"
+    />
     <div class="bubble-wrap" :class="{ 'with-thinking': hasThinking, 'with-tools': hasTools }">
       <ThinkingBlock
         v-if="hasThinking"
@@ -54,16 +77,27 @@ function toolPreview(t: ToolActivity): string {
       <div v-if="hasTools" class="tool-records">
         <div
           v-for="(t, i) in toolList"
-          :key="t.callId ?? i"
+          :key="toolKey(t, i)"
           class="tool-record"
-          :class="[t.status, { error: t.isError }]"
+          :class="[t.status, { error: t.isError, open: openTools.has(toolKey(t, i)) }]"
         >
-          <span class="tool-icon" aria-hidden="true">⚙</span>
-          <span class="tool-name">{{ t.name }}</span>
-          <span class="sep">·</span>
-          <span class="tool-status">{{ toolLabel(t) }}</span>
-          <span v-if="toolPreview(t)" class="sep">·</span>
-          <span v-if="toolPreview(t)" class="tool-summary">{{ toolPreview(t) }}</span>
+          <button
+            class="tool-row"
+            type="button"
+            :title="toolDetail(t) ? '点击展开/收起结果' : undefined"
+            @click="toggleTool(toolKey(t, i))"
+          >
+            <span class="tool-icon" aria-hidden="true">⚙</span>
+            <span class="tool-name">{{ t.name }}</span>
+            <span class="sep">·</span>
+            <span class="tool-status">{{ toolLabel(t) }}</span>
+            <span v-if="toolPreview(t)" class="sep">·</span>
+            <span v-if="toolPreview(t)" class="tool-summary">{{ toolPreview(t) }}</span>
+            <span v-if="toolDetail(t)" class="tool-chevron" :class="{ open: openTools.has(toolKey(t, i)) }">›</span>
+          </button>
+          <div v-if="openTools.has(toolKey(t, i)) && toolDetail(t)" class="tool-detail">
+            <pre>{{ toolDetail(t) }}</pre>
+          </div>
         </div>
       </div>
       <template v-if="showBubble || (msg.images?.length ?? 0) > 0">
@@ -213,12 +247,23 @@ function toolPreview(t: ToolActivity): string {
   color: var(--ink-muted);
 }
 .tool-record {
+  min-width: 0;
+  padding: 2px 0;
+}
+.tool-row {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
   gap: 6px;
   min-width: 0;
+  width: 100%;
   padding: 2px 0;
+  background: none;
+  border: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
 }
 .tool-icon {
   flex-shrink: 0;
@@ -251,6 +296,32 @@ function toolPreview(t: ToolActivity): string {
   white-space: nowrap;
   color: var(--ink-dim);
   flex: 1;
+}
+.tool-chevron {
+  flex-shrink: 0;
+  color: var(--ink-faint);
+  transition: transform var(--dur-ui) var(--ease-out);
+}
+.tool-chevron.open {
+  transform: rotate(90deg);
+}
+.tool-detail {
+  margin: 2px 0 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--paper-sunken);
+  max-height: 240px;
+  overflow: auto;
+}
+.tool-detail pre {
+  margin: 0;
+  font-family: ui-monospace, "Cascadia Code", "Consolas", monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--ink-muted);
 }
 .bubble-foot {
   display: flex;

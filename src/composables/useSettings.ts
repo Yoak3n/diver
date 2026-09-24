@@ -27,6 +27,7 @@ export type SettingsTab =
   | "plugins"
   | "shortcuts"
   | "schedule"
+  | "presence"
   | "system";
 
 export const SETTINGS_TABS: Array<{ id: SettingsTab; label: string }> = [
@@ -36,6 +37,7 @@ export const SETTINGS_TABS: Array<{ id: SettingsTab; label: string }> = [
   { id: "plugins", label: "插件" },
   { id: "shortcuts", label: "快捷键" },
   { id: "schedule", label: "日程" },
+  { id: "presence", label: "状态机" },
   { id: "system", label: "系统" },
 ];
 

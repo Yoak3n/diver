@@ -157,9 +157,14 @@ export function createStreamHandler(deps: Deps) {
         if (e.status === "call") {
           tools.value.push({ ...tool });
         } else {
+          // result 合并进对应 call，不再另推一条（避免「调用+结果」叠成两行）
           const last = [...tools.value].reverse().find((t) => t.name === e.name && t.status === "call");
-          if (last) last.status = "result";
-          if (e.summary) {
+          if (last) {
+            last.status = "result";
+            if (tool.summary !== undefined) last.summary = tool.summary;
+            if (tool.isError !== undefined) last.isError = tool.isError;
+            if (tool.callId !== undefined) last.callId = tool.callId;
+          } else {
             tools.value.push({ ...tool });
           }
         }
@@ -174,6 +179,10 @@ export function createStreamHandler(deps: Deps) {
             if (m.thinkingStreaming) m.thinkingStreaming = false;
           }
           collapseTurnActivity();
+          // agent 可能改写了 $COS_HOME/assistant-avatar.* —— 轮末重读磁盘
+          void import("../useAssistantAvatar").then((m) => {
+            void m.useAssistantAvatar().loadAvatar(true);
+          });
           if (e.reason === "max-tokens") {
             error.value = "本轮回复被输出长度上限截断了，可发送「继续」补完";
           } else if (e.reason && e.reason !== "completed") {

@@ -1,12 +1,14 @@
 <script setup lang="ts">
-import { nextTick, ref, watch } from "vue";
+import { nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import type { ChatMessage, ToolActivity, UserQuestion, UserQuestionAnswerItem } from "../types";
 import { tauriAvailable } from "../tauri";
+import { isNearBottom } from "../scroll";
 import { onTtsSpeakingChange, speakMessageText, stopSpeaking } from "../tts";
 import MessageBubble from "./MessageBubble.vue";
 import ActivitySummary from "./ActivitySummary.vue";
 import WelcomeCard from "./WelcomeCard.vue";
 import QuestionCard from "./QuestionCard.vue";
+import JumpToBottom from "./JumpToBottom.vue";
 
 const props = defineProps<{
   messages: ChatMessage[];
@@ -39,6 +41,7 @@ function isActivityExpanded(groupId: string): boolean {
 
 const scrollEl = ref<HTMLElement | null>(null);
 const ttsSpeaking = ref(false);
+const stickToBottom = ref(true);
 let offTtsSpeaking: (() => void) | null = null;
 
 function bindTtsSpeaking() {
@@ -48,17 +51,27 @@ function bindTtsSpeaking() {
   });
 }
 
-import { onMounted, onBeforeUnmount } from "vue";
 onMounted(bindTtsSpeaking);
 onBeforeUnmount(() => offTtsSpeaking?.());
+
+function onScroll() {
+  const el = scrollEl.value;
+  if (!el) return;
+  stickToBottom.value = isNearBottom(el.scrollTop, el.scrollHeight, el.clientHeight);
+}
 
 function stopTts() {
   stopSpeaking();
 }
 
-function scrollToBottom() {
+/** force：按钮点击 / 需要贴底的场景；默认仅贴近底部时跟随。 */
+function scrollToBottom(force = false) {
   nextTick(() => {
-    if (scrollEl.value) scrollEl.value.scrollTop = scrollEl.value.scrollHeight;
+    const el = scrollEl.value;
+    if (!el) return;
+    if (!force && !stickToBottom.value) return;
+    el.scrollTop = el.scrollHeight;
+    stickToBottom.value = true;
   });
 }
 
@@ -75,7 +88,7 @@ async function speak(msg: ChatMessage) {
 
 <template>
   <main class="chat">
-    <div ref="scrollEl" class="chat-scroll">
+    <div ref="scrollEl" class="chat-scroll" @scroll.passive="onScroll">
       <div v-if="ttsSpeaking" class="tts-stop-bar">
         <span>正在朗读…</span>
         <button type="button" class="btn small" @click="stopTts">停止朗读</button>
@@ -136,6 +149,8 @@ async function speak(msg: ChatMessage) {
         </div>
       </template>
     </div>
+
+    <JumpToBottom :visible="!stickToBottom" @jump="scrollToBottom(true)" />
   </main>
 </template>
 

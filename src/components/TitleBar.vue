@@ -12,6 +12,8 @@ import {
   windowToggleMaximize,
 } from "../tauri";
 import { chrome } from "../composables/useChrome";
+import AssistantAvatar from "./AssistantAvatar.vue";
+import PresencePhaseChip from "./PresencePhaseChip.vue";
 
 withDefaults(
   defineProps<{
@@ -84,7 +86,7 @@ onUnmounted(() => {
       </button>
 
       <div class="brand">
-        <span class="brand-mark" aria-hidden="true">✦</span>
+        <AssistantAvatar :size="18" variant="brand" />
         <span class="brand-name">Diver</span>
       </div>
 
@@ -94,6 +96,7 @@ onUnmounted(() => {
         <span class="dot" :class="chrome.dotClass"></span>
         <span class="status-text">{{ chrome.statusText }}</span>
         <span v-if="chrome.modelLabel" class="model">{{ chrome.modelLabel }}</span>
+        <PresencePhaseChip :active="showStatus" />
       </div>
 
       <button

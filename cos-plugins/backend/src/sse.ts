@@ -128,7 +128,8 @@ export function attachEventListeners(
         const name = (callId && state.toolNames.get(callId)) || state.toolNames.values().next().value || 'tool'
         if (callId) state.toolNames.delete(callId)
         const raw = String(ev.data.message?.content ?? '')
-        const summary = raw.length > 120 ? `${raw.slice(0, 120)}…` : raw
+        // 展开详情用：放宽截断（UI 折叠预览另做 80 字）；过长工具输出仍限幅防 SSE 膨胀
+        const summary = raw.length > 4000 ? `${raw.slice(0, 4000)}…` : raw
         broadcast({
           type: 'tool',
           name,

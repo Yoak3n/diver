@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import AssistantAvatar from "./AssistantAvatar.vue";
+
 defineProps<{
   modelConfigured: boolean;
 }>();
@@ -11,7 +13,7 @@ defineEmits<{
 
 <template>
   <div class="welcome">
-    <div class="welcome-mark">✦</div>
+    <AssistantAvatar :size="40" variant="welcome" />
     <h2>你好呀，想聊点什么？</h2>
     <p v-if="modelConfigured" class="welcome-sub">
       我会一直陪着你。有什么想聊的、想查的、想计划的，都可以告诉我。

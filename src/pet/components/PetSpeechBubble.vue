@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import AssistantAvatar from "../../components/AssistantAvatar.vue";
+
 defineProps<{
   kind: "user" | "assistant";
   text: string;
@@ -27,7 +29,7 @@ const emit = defineEmits<{
   >
     <div class="bubble-head">
       <span v-if="kind === 'user'" class="bubble-label">我</span>
-      <span v-else class="bubble-label">✦</span>
+      <AssistantAvatar v-else :size="18" variant="label" />
       <button class="bubble-close" title="关闭" @pointerdown.stop @click.stop="emit('close')">
         ×
       </button>

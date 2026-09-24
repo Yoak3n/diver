@@ -2,15 +2,19 @@
 
 import { nextTick, type Ref } from "vue";
 import type { ChatMessage, ToolActivity } from "../../types";
+import { isNearBottom } from "../../scroll";
 
 export function createMessageOps(
   messages: Ref<ChatMessage[]>,
   stepIdAlias: Map<string, string>,
 ) {
-  function scrollToBottom() {
+  /** force：新消息插入等主动场景；默认仅贴近底部时跟随，避免打断上翻阅读。 */
+  function scrollToBottom(force = false) {
     nextTick(() => {
       const el = document.querySelector(".chat-scroll");
-      if (el) el.scrollTop = el.scrollHeight;
+      if (!(el instanceof HTMLElement)) return;
+      if (!force && !isNearBottom(el.scrollTop, el.scrollHeight, el.clientHeight)) return;
+      el.scrollTop = el.scrollHeight;
     });
   }
 
@@ -21,7 +25,8 @@ export function createMessageOps(
     } else {
       messages.value.push({ streaming: false, ...msg });
     }
-    scrollToBottom();
+    // 新消息进时间线：强制贴底，避免发送后看不见自己那条
+    scrollToBottom(true);
   }
 
   function appendChunk(messageId: string, delta: string) {
@@ -84,21 +89,35 @@ export function createMessageOps(
     const m = messages.value[idx];
     const list = m.tools ? m.tools.map((t) => ({ ...t })) : [];
     if (tool.status === "result") {
-      const i = tool.callId !== undefined
-        ? list.findIndex((t) => t.callId === tool.callId && t.status === "call")
-        : [...list].reverse().findIndex((t) => t.name === tool.name && t.status === "call");
-      const hit = i >= 0 ? (tool.callId !== undefined ? i : list.length - 1 - i) : -1;
+      // 优先合并到待完成的 call；若结果重放/重挂则就地更新已有 result，避免叠行
+      let hit = -1;
+      if (tool.callId !== undefined) {
+        hit = list.findIndex((t) => t.callId === tool.callId && t.status === "call");
+        if (hit < 0) {
+          hit = list.findIndex((t) => t.callId === tool.callId && t.status === "result");
+        }
+      } else {
+        const i = [...list].reverse().findIndex((t) => t.name === tool.name && t.status === "call");
+        hit = i >= 0 ? list.length - 1 - i : -1;
+      }
       if (hit >= 0) {
         list[hit] = {
           ...list[hit],
           status: "result",
           ...(tool.summary !== undefined ? { summary: tool.summary } : {}),
           ...(tool.isError !== undefined ? { isError: tool.isError } : {}),
+          ...(tool.callId !== undefined ? { callId: tool.callId } : {}),
         };
       } else {
         list.push({ ...tool });
       }
     } else {
+      // 同 callId 的 call 不重复入列（事件重放）
+      if (tool.callId !== undefined && list.some((t) => t.callId === tool.callId)) {
+        messages.value[idx] = { ...m, tools: list };
+        scrollToBottom();
+        return;
+      }
       list.push({ ...tool });
     }
     messages.value[idx] = { ...m, tools: list };

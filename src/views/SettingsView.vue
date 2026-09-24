@@ -16,6 +16,7 @@ import McpTab from "../components/settings/McpTab.vue";
 import PluginsTab from "../components/settings/PluginsTab.vue";
 import ShortcutsTab from "../components/settings/ShortcutsTab.vue";
 import ScheduleTab from "../components/settings/ScheduleTab.vue";
+import PresenceTab from "../components/settings/PresenceTab.vue";
 
 const route = useRoute();
 const router = useRouter();
@@ -88,6 +89,7 @@ const tabs = SETTINGS_TABS;
         <PluginsTab v-else-if="state.activeTab === 'plugins'" />
         <ShortcutsTab v-else-if="state.activeTab === 'shortcuts'" />
         <ScheduleTab v-else-if="state.activeTab === 'schedule'" />
+        <PresenceTab v-else-if="state.activeTab === 'presence'" />
         <SystemTab
           v-else-if="state.activeTab === 'system'"
           :state="state"

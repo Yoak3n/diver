@@ -2,6 +2,7 @@
 import { computed, ref } from "vue";
 import { renderMarkdownHtml } from "../../markdown";
 import type { ChatMessage, ComposerAttachment } from "../../types";
+import AssistantAvatar from "../../components/AssistantAvatar.vue";
 
 const props = defineProps<{
   messages: ChatMessage[];
@@ -59,7 +60,7 @@ function pickAttachImages() {
         </template>
         <template v-else>
           <span v-if="m.kind === 'user'" class="msg-label">我</span>
-          <span v-else class="msg-label">✦</span>
+          <AssistantAvatar v-else :size="20" variant="label" />
           <span class="msg-text">
             <span v-if="(m.images?.length ?? 0) > 0" class="msg-images">
               <img

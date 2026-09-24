@@ -4,6 +4,7 @@
 import { Live2DModel } from "pixi-live2d-display/cubism4";
 import * as PIXI from "pixi.js";
 import { assertMocSupported, enrichLoadError } from "./moc";
+import { ensureLive2dCore } from "./core";
 import { computeCharBounds } from "./bounds";
 import { createHitboxEl, readHitbox } from "./hitbox";
 import { createLayoutController } from "./layout";
@@ -60,10 +61,20 @@ export async function createPetModel(
 
   // 注意：不能用 autoInteract —— pixi-live2d-display 0.4 依赖 renderer.plugins.interaction
   // （pixi 6 API），pixi 7.4 中会抛 "manager.on is not a function"。
+  await ensureLive2dCore();
   await assertMocSupported(modelUrl);
   let model: Live2DModel;
   try {
-    model = await Live2DModel.from(modelUrl, { autoInteract: false });
+    // 超时兜底：避免资源异常时 Promise 永不 settle，UI 一直停在「加载中」
+    model = await Promise.race([
+      Live2DModel.from(modelUrl, { autoInteract: false }),
+      new Promise<never>((_, reject) =>
+        setTimeout(
+          () => reject(new Error("模型加载超时（30s）")),
+          30_000,
+        ),
+      ),
+    ]);
   } catch (err) {
     throw enrichLoadError(modelUrl, err);
   }

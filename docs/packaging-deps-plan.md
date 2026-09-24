@@ -67,6 +67,29 @@ pi（`@earendil-works/pi-coding-agent`）的发行物**几乎不含 node_modules
 结论：**bundle 的对象是「第三方依赖闭包」，不是插件/引擎源码**。源码照旧开放可改，
 依赖从「上万小文件」变成「几百个大 vendor 文件 + 解析垫片」。
 
+### 3.1 硬性约束：cos-plugins 插件层源码可读写（不可被打包破坏）
+
+`cos-plugins/` 下的 diver 层插件（`@diver/*`，安装后位于 `resources/sidecar/plugins/`）
+是产品的开放面，**「源码可读写」是需求，不是现状描述**。完整语义：
+
+1. **明文 TS**：`plugins/<name>/src/*.ts` 以可读源码落盘 —— 不编译、不打包、不压缩、
+   不加密；用户（和 agent 自己）可以直接阅读和编辑。
+2. **改动生效**：改 `src/*.ts` 后重启应用即生效（cordis + tsx 运行时加载源码）。
+3. **可增可删**：新增 = 目录 + `cordis.patch.yml` 一行；删除 = 目录 + patch 行，
+   与 [plugins.md](plugins.md) / README.txt 一致。
+4. **依赖可装**：`install-deps.mjs` 为插件追加真实依赖，`plugin-doctor.mjs` 可诊断。
+5. **升级保留**：应用升级后用户对插件源码的修改不应被静默覆盖（策略见 §8.4）。
+
+对各阶段的保证：
+
+| 阶段 | 对 `plugins/<name>/src` 的影响 | 对 `plugins/node_modules` 的影响 |
+|------|------------------------------|-------------------------------|
+| P0 | **零影响**（源码不进归档） | 剪 `.pnpm` / zstd，布局语义不变 |
+| P1 | **零影响**（`@diver/*` 不进 vendor） | npm 包变垫片 + vendor；用户装的真实包优先于垫片 |
+| P2 | 引擎可闭源，**插件源码仍外置加载** | 同 P1 |
+
+任何实施若触碰第 1–4 条，视为方案失败，回退该步。
+
 ## 4. 方案对比
 
 | 方案 | 小文件数 | 首启解压 | 开放性 | 风险 |
@@ -134,6 +157,8 @@ pi（`@earendil-works/pi-coding-agent`）的发行物**几乎不含 node_modules
   `check-vendor-closure.mjs` 通过。
 - 兼容性冒烟：改插件源码重启生效；`install-deps.mjs` 能装新依赖；`plugin-doctor.mjs`
   诊断正常；会话/记忆/工作区路径不受影响。
+- **开放性硬校验**（§3.1）：安装目录 `plugins/<name>/src/*.ts` 为明文 TS（抽样校验
+  非打包产物）；`cordis.patch.yml` 插拔、`plugins.json` catalog 与运行时加载一致。
 
 ## 8. 待决策
 
@@ -141,3 +166,7 @@ pi（`@earendil-works/pi-coding-agent`）的发行物**几乎不含 node_modules
    若可放弃，则 P1 可更激进（引擎也进 vendor）。
 2. P0 与 P1 是否分两个 PR —— 建议分（P0 可独立回滚，P1 需要冒烟周期）。
 3. ~~是否先在现装包上实测 extract 阶段耗时基线~~ —— 已实测（§1），P0 目标定为 ≤3s。
+4. **升级保留策略**（§3.1 第 5 条）：Tauri NSIS 升级默认覆盖安装目录，用户改过的
+   `plugins/` 源码会被覆盖。可选：(a) 升级时对比备份用户修改并提示；(b) 用户插件
+   覆盖层（`%APPDATA%\com.diver.companion\cos\plugins` 优先于安装目录加载）；
+   (c) 安装器保留 `plugins/` 不覆盖。需选定后纳入实施。

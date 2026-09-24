@@ -100,12 +100,13 @@ pi（`@earendil-works/pi-coding-agent`）的发行物**几乎不含 node_modules
 | 层 | 产物形态 | node_modules |
 |---|---|---|
 | cos 核心（`@cos/*` + 全部第三方依赖） | esbuild bundle 少数大文件（P2 可单 exe） | **零**；白名单仅 tsx loader + esbuild 二进制 |
-| 自带插件的第三方依赖 | 构建期 vendor 化：`plugins/vendor/*.mjs` + 解析垫片 | 垫片数百文件，随 seed 播种 |
-| 用户后装依赖（`install-deps`） | 真实 npm 包 | `plugins/node_modules`（插件本地 `node_modules` 优先） |
+| 自带插件的依赖 | host-provided 共享库 → 加载器映射进核心 bundle（不落盘）；核心未提供的私有依赖 → `plugins/vendor/*.mjs` + 解析垫片 | vendor+垫片数百文件，随 seed 播种 |
+| 用户后装依赖（`install-deps`） | 真实 npm 包 | 共享 `plugins/node_modules`（插件本地 `node_modules` 优先；独立 module root 经评估不采纳） |
 
-**接口不变量**：插件源码 `import ... from '@cos/plugin-api'` 语义不变 —— 核心 bundle 对外
-暴露 plugin-api 入口，seed 内置 `@cos/plugin-api` 垫片 re-export 核心导出（对齐 pi 的
-external 白名单做法）。
+**接口不变量（对照 pi 修订）**：插件源码 `import ... from '@cos/plugin-api'` 语义不变 ——
+像 pi 的 jiti alias / `VIRTUAL_MODULES` 一样，**host-provided 清单**（`@cos/plugin-api` +
+yaml/zod/cosmokit 等核心已有实例的共享库）由加载器**映射进核心 bundle 内部副本**，
+保证单实例；host 包禁止物理安装（`peerDependencies: "*"` 纪律 + 校验，见 §5 P1b）。
 
 **文件管理模型 B′（播种对账，唯一可改处）**：
 
@@ -163,16 +164,22 @@ external 白名单做法）。
 4. `harness/node_modules.tar`（15,050 条目 / 100MB）从安装包中消失；启动链路从
    「tsx 跑 harness 源码」改为「加载 core bundle」，tsx 只用于插件 TS 源码。
 
-### P1b —— 插件自带依赖 vendor 化
+### P1b —— 插件依赖分桶：host-provided 映射 + 私有依赖 vendor 化（对照 pi 修订）
 
-1. 构建期以自带插件依赖闭包每个包的公开入口为 entry（含 exports 子路径），产出
-   `plugins/vendor/<pkg>.mjs`（`format: cjs`，兼容 require 与 tsx）。
-2. 生成解析垫片 `node_modules/<pkg>/`（package.json + index.js re-export）。
-3. 白名单 external（esbuild 二进制、wasm、`.node`）保持真实文件；新增
-   `scripts/check-vendor-closure.mjs` 校验插件源码全部裸 import 可解析（构建失败兜底，
-   吸收现有 `sourceImportNames` 扫描逻辑）。
-4. `install-deps.mjs` 语义不变：用户后装真实包落 `plugins/node_modules`，真实目录优先于
-   垫片。
+1. **host-provided 清单**（对齐 pi 的 jiti alias / `VIRTUAL_MODULES` 模式）：核心 bundle
+   已有实例的共享库（`@cos/plugin-api` 及 yaml/zod/cosmokit 等，清单化）由加载器
+   **映射进核心 bundle 内部副本**，插件 import 语义不变且单实例 —— 禁止垫片物理拷贝
+   这些包（pi 明确教训：物理拷贝绕过映射 → duplicate classes/registries）。
+2. **私有依赖 vendor 化**：仅对核心未提供的依赖，构建期以每包公开入口为 entry（含
+   exports 子路径）产出 `plugins/vendor/<pkg>.mjs`（`format: cjs`，兼容 require 与 tsx）
+   + `node_modules/<pkg>/` 解析垫片（package.json + index.js re-export）。
+3. **manifest 纪律**（对齐 pi packages.md）：host-provided 包只准进
+   `peerDependencies: "*"`，禁进 `dependencies`；`scripts/check-vendor-closure.mjs`
+   校验全部裸 import 可解析，并检出 host 包物理拷贝即报错（吸收现有 `sourceImportNames`
+   扫描逻辑）。
+4. 白名单 external（esbuild 二进制、wasm、`.node`）保持真实文件。
+5. `install-deps.mjs` 语义不变：用户后装真实包落共享 `plugins/node_modules`，真实目录
+   优先于垫片。
 
 ### P1c —— 播种对账工作区（B′，取代原「用户插件覆盖层」决策）
 
@@ -201,7 +208,8 @@ external 白名单做法）。
 | 用户手改插件后 import 新依赖 | 文档写明「真实包优先于垫片」；install-deps 兜底 |
 | 升级安装残留旧 vendor | marker 改内容 hash，tar/vendor 比 hash 新则重建 |
 | 核心 bundle 破坏 cordis 动态加载 / 插件发现 | bundle 显式保留 cordis 插件 API 面；启动冒烟覆盖插件装载 |
-| `@cos/plugin-api` 垫片与核心版本漂移 | 垫片由核心构建同源生成；`check-vendor-closure.mjs` 校验 |
+| host 包被物理拷贝 → 双实例 / 重复注册（pi 明确教训） | host-provided 清单加载器映射 + manifest 纪律 + `check-vendor-closure.mjs` 报错 |
+| host-provided 映射与核心版本漂移 | 清单由核心构建同源生成；校验脚本核对映射目标存在且同源 |
 | 对账误判「已修改」（换行 / 编码差异） | manifest 用规范化内容 hash；doctor 可重置基线 |
 
 ## 7. 验收标准
@@ -228,3 +236,7 @@ external 白名单做法）。
 4. ~~升级保留策略~~ —— **已拍板：B′ 播种对账工作区**（§3.2 / §5 P1c），取代早先
    「用户插件覆盖层」决策（遮蔽语义废弃）；依赖归属同拍板：自带依赖 vendor+垫片、
    用户后装落 `plugins/node_modules`。
+5. **pi 对照结论（2026-09-25）**：采纳「host-provided 清单映射」「manifest 纪律
+   （peerDep `*` + 禁物理拷贝 + 校验）」两条；「每插件独立 module root」**不采纳**——
+   用户后装依赖维持共享 `plugins/node_modules`（保留插件本地 `node_modules` 优先的
+   覆盖能力）。

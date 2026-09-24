@@ -3,7 +3,7 @@
 use tauri::AppHandle;
 
 use super::catalog::{catalog_for, package_present};
-use super::paths::{active_profile, harness_dir, plugin_paths_for};
+use super::paths::{active_profile, plugin_paths_for};
 use super::profile::quarantine_invalid_patch;
 use super::types::{PreflightReport, SAFE_PROFILE};
 
@@ -17,10 +17,12 @@ pub fn preflight(app: &AppHandle) -> PreflightReport {
     let harness = {
         #[cfg(debug_assertions)]
         {
+            use super::paths::harness_dir;
             harness_dir()
         }
         #[cfg(not(debug_assertions))]
         {
+            use std::path::PathBuf;
             use tauri::Manager as _;
             app.path()
                 .resource_dir()

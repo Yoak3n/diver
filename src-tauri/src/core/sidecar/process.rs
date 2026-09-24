@@ -2,6 +2,7 @@
 //!
 //! 启动/停止细节见 `lifecycle`；优雅退出见 `shutdown`；端口回收见 `reclaim`。
 
+#[cfg(debug_assertions)]
 use std::path::PathBuf;
 use std::process::Child;
 use std::sync::atomic::AtomicBool;

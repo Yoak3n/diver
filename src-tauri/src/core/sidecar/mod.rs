@@ -7,10 +7,10 @@
 //! agent 常驻于 sidecar：窗口隐藏/销毁（轻量模式）不影响它持续运行。
 //!
 //! 两种形态（同一 loader 契约，已放弃 SEA 烘焙路径）：
-//! - dev（debug 构建）：`node --import tsx .../companion.ts`，
+//! - dev（debug 构建）：`node --import tsx .../cos-plugins/companion/src/companion.ts`，
 //!   `--plugin-root <repo>/cos-plugins`、`--bundles .../bundle-companion`、
 //!   `--harness <repo>/harness`、`--profile companion`。
-//! - release：解析 Node（本机/缓存）+ `companion-bundle.ts`（非 SEA）：
+//! - release：解析 Node（本机/缓存）+ `plugins/companion/src/companion-bundle.ts`（非 SEA）：
 //!   `resources/sidecar/{harness/,plugins/,bundles/}`，
 //!   cwd = resources/sidecar，COS_HOME = 用户数据目录（升级不丢数据）。
 //!   Node 不随包：见 `node_runtime`（探测系统 Node，缺失则下载到应用缓存）。

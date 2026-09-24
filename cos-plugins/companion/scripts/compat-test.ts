@@ -7,14 +7,14 @@
  *   T3 跨模块交互 —— memory↔sessions/llm/tools/systemPrompt、backend↔agentLoop/credentials/sessionPersistence
  *   T4 异常场景   —— Rust 后端未启动、API Key 未配置、未知 provider
  *
- * 运行：pnpm tsx scripts/compat-test.ts
+ * 运行：pnpm tsx scripts/compat-test.ts（在 cos-plugins/companion 下）
  */
 
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { boot, bootOptionsFromCli, parseCliArgs } from '@cos/boot'
-import { createUserMessage } from '@cos/types'
+import { boot, bootOptionsFromCli, parseCliArgs } from '../../../harness/packages/boot/src/index.ts'
+import { createUserMessage } from '../../../harness/packages/types/src/index.ts'
 import type { Context } from 'cordis'
 
 const results: Array<{ id: string; name: string; pass: boolean; detail: string }> = []

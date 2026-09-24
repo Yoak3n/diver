@@ -107,7 +107,7 @@ src-tauri/resources/sidecar/                                      # 打进安装
 ```
 Diver.exe
  └─ spawn: resources/sidecar/node.exe --import file:///.../harness/node_modules/tsx/dist/loader.mjs
-            --expose-internals resources/sidecar/harness/packages/sidecar/src/companion-bundle.ts
+            --expose-internals resources/sidecar/plugins/companion/src/companion-bundle.ts
             --profile companion
             --bundles resources/sidecar/bundles/bundle-companion
             --plugin-root resources/sidecar/plugins

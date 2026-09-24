@@ -57,7 +57,7 @@ home / extra patch       外层程序最终覆盖（一般保持为空）
 | 启停覆盖 | `--profile companion` → `$COS_HOME/profiles/companion/cordis.patch.yml` | 生命周期状态 |
 
 **禁止**再引入第三套解析：例如在 `companion.ts` 里手写 `@diver/*` 路径表。  
-共享实现见 `harness/packages/sidecar/src/companion-boot.ts`。
+共享实现见 `cos-plugins/companion/src/companion-boot.ts`。
 
 ### 2.3 启动命令
 
@@ -65,7 +65,7 @@ home / extra patch       外层程序最终覆盖（一般保持为空）
 
 ```text
 node --import tsx --expose-internals
-  <repo>/harness/packages/sidecar/src/companion.ts
+  <repo>/cos-plugins/companion/src/companion.ts
   --profile companion
   --plugin-root <repo>/cos-plugins
   --bundles   <repo>/cos-plugins/bundle-companion
@@ -78,7 +78,7 @@ COS_HOME= <repo>/harness/.cos-home
 
 ```text
 resources/sidecar/node.exe --import file:///.../harness/node_modules/tsx/dist/loader.mjs
-  --expose-internals resources/sidecar/harness/packages/sidecar/src/companion-bundle.ts
+  --expose-internals resources/sidecar/plugins/companion/src/companion-bundle.ts
   --profile companion
   --plugin-root resources/sidecar/plugins
   --bundles    resources/sidecar/bundles/bundle-companion
@@ -197,8 +197,8 @@ export function apply(ctx: Context, config: { greeting: string; verbose: boolean
 
 ```yaml
 # Diver shell-managed profile patch (enable/disable plugin rows).
-- id: voice
-  name: '@diver/voice'
+- id: self-prompt
+  name: '@diver/self-prompt'
   disabled: true
 - id: memory
   name: '@diver/memory'
@@ -344,7 +344,7 @@ cordis loader 只挂载 enabled 插件
 
 | 期 | 主题 | 交付物 | 验收（DoD） |
 |---|---|---|---|
-| **P0** ✅ | 运行时收敛 | `companion-boot.ts`；dev/release 同契约；废 SEA 叙事；boot disable 过滤 | 禁用 voice 后 boot 无 `[voice]`；启用后恢复；cargo/tsc 通过 |
+| **P0** ✅ | 运行时收敛 | `companion-boot.ts`；dev/release 同契约；废 SEA 叙事；boot disable 过滤 | 禁用 self-prompt 后 boot 无 `[self-prompt]`；启用后恢复；cargo/tsc 通过 |
 | **P2** ✅ | 壳端启停 | `plugins/mod.rs` + commands + PluginsTab + catalog | `toggle_plugin` 写 profile 并重启；设置页可列出 internal 插件 |
 | **P1** ✅ | 类型边界 | `@cos/plugin-api` 聚合类型 + cordis Context；插件 tsconfig **只 include src**（无 harness 全量）；`pnpm typecheck` 分层 | `cd cos-plugins/memory && tsc --noEmit` 通过；`pnpm typecheck`（harness+plugins）通过；boot 仍正常 |
 | **P3** ✅ | Profile 自愈 + safe | `active_profile` 壳持久化；`safe` 档案（核心+backend）；preflight；坏补丁 quarantine；失败自动降级 safe | `--profile safe` boot 仅 backend + DIVER_READY；companion 回归正常；设置页可切换档案 |
@@ -384,7 +384,7 @@ cordis loader 只挂载 enabled 插件
 
 **恢复路径：** 安全模式下 UI 仍可连 sidecar → 插件页禁用问题行或修复目录 → 回到 companion → 重启。
 
-**限制：** safe 下不加载 memory/mcp/voice/basic-tools/commandcode（会话/记忆数据仍在磁盘）。
+**限制：** safe 下不加载 memory/mcp/self-prompt/basic-tools/commandcode（会话/记忆数据仍在磁盘）。
 
 ### P4 详细：安装事务（已落地 ✅）
 
@@ -471,9 +471,9 @@ Rust crates / services ──POST /rpc──► @diver/native-bridge（internal�
 
 | 路径 | 角色 |
 |---|---|
-| `harness/packages/sidecar/src/companion-boot.ts` | 统一 boot 契约 |
-| `harness/packages/sidecar/src/companion.ts` | dev 入口 |
-| `harness/packages/sidecar/src/companion-bundle.ts` | release 入口（随包 Node） |
+| `cos-plugins/companion/src/companion-boot.ts` | 统一 boot 契约 |
+| `cos-plugins/companion/src/companion.ts` | dev 入口 |
+| `cos-plugins/companion/src/companion-bundle.ts` | release 入口（随包 Node） |
 | `harness/packages/boot/src/index.ts` | 组合、disable insert 过滤、profile 层 |
 | `harness/packages/plugin-api/src/index.ts` | 第三方插件类型面（P1） |
 | `harness/packages/profile/src/*` | profile 目录/manifest/初始化 |
@@ -482,6 +482,8 @@ Rust crates / services ──POST /rpc──► @diver/native-bridge（internal�
 | `cos-plugins/bundle-companion/plugins.json` | UI catalog |
 | `cos-plugins/bundle-companion/bundle.yml` | `requires` 校验 |
 | `cos-plugins/native-bridge/src/rpc.ts` | 原生 `/rpc` 共享客户端（P5） |
+| `cos-plugins/self-prompt/` | 自改提示词入口（prompts/*.md 热加载 + revise-prompt skill + 可选 restart_agent） |
+| `harness/packages/skills/` | `@cos/skills`：skill 目录 + `load_skill` |
 | `src-tauri/src/plugins/mod.rs` | 壳端启停 + preflight + safe 切换 |
 | `src-tauri/src/config/profile.rs` | active_profile 持久化 |
 | `src-tauri/src/core/sidecar/` | 进程生命周期、`--profile`、preflight 自动降级 |
@@ -501,3 +503,4 @@ Rust crates / services ──POST /rpc──► @diver/native-bridge（internal�
 | （续） | **P3 完成**：safe profile、active_profile、preflight、补丁 quarantine、自动降级 |
 | （续） | **P4 完成**：profile pnpm 安装/卸载、diver-plugins.json、internal 拒卸、hello-tool 冒烟 |
 | （续） | **P5 完成**：`@diver/native-bridge` 共享 RPC 客户端 + native_status；memory/grep 收口 |
+| （续） | **self-prompt**：`voice` 更名；prompts/*.md **assemble 热加载**（改正文不必重启）+ `@cos/skills`（revise-prompt）+ 保留 `restart_agent` 重启回路 |

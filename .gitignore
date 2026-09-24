@@ -30,6 +30,8 @@ dist-ssr
 # Diver sidecar harness
 harness/node_modules
 harness/.dsh-home
+harness/.cos-home
+harness/.cos-home-smoke
 harness/*/node_modules
 harness/*.bundle.mjs
 

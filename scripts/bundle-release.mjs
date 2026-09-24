@@ -36,8 +36,9 @@ const SIDECAR_RES = join(SRC_TAURI, 'resources', 'sidecar')
 // 随包分发的开放插件（源码目录名 = cos-plugins 下的包目录名）。
 // native-bridge / web-tools 是其它插件的运行时库（import @diver/*），必须随包。
 const OPEN_PLUGINS = [
+  'companion',
   'memory',
-  'voice',
+  'self-prompt',
   'backend',
   'basic-tools',
   'mcp',
@@ -431,14 +432,29 @@ for (const pkg of ['@deepseek-ai/schemastery']) {
   }
 }
 
-// 核心 @cos/* 全量拷贝（除 sidecar 入口）：plugin-api 会链式引用
-// subagents / dsh-tools / agent-loop 等，手列必漏。
+// 核心 @cos/* 全量拷贝（除 sidecar 入口与 dsh/ 兼容层目录）：plugin-api 会链式引用
+// subagents / agent-loop 等，手列必漏。dsh 兼容层按 `@deepseek-ai/dsh-*` 落盘。
 {
   const allCos = readdirSync(join(harnessDst, 'packages'), { withFileTypes: true })
-    .filter((e) => e.isDirectory() && e.name !== 'sidecar')
+    .filter((e) => e.isDirectory() && e.name !== 'sidecar' && e.name !== 'dsh')
     .map((e) => e.name)
   for (const pkg of allCos) {
     copyCosPackage(pkg)
+  }
+  // packages/dsh/<short> → node_modules/@deepseek-ai/dsh-<short>
+  const dshRoot = join(harnessDst, 'packages', 'dsh')
+  if (existsSync(dshRoot)) {
+    for (const e of readdirSync(dshRoot, { withFileTypes: true })) {
+      if (!e.isDirectory()) continue
+      const pkgName = `dsh-${e.name}`
+      const src = join(dshRoot, e.name)
+      const dst = join(pluginsNm, '@deepseek-ai', pkgName)
+      if (!existsSync(join(src, 'package.json')) || existsSync(dst)) continue
+      mkdirSync(join(pluginsNm, '@deepseek-ai'), { recursive: true })
+      cpSync(src, dst, { recursive: true, filter: notNodeModules })
+      console.log(`  ✓ @deepseek-ai/${pkgName} (copied)`)
+      expandDeclaredDeps(dst)
+    }
   }
   for (const pkg of allCos) {
     expandDeclaredDeps(join(harnessDst, 'packages', pkg))

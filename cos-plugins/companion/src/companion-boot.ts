@@ -1,23 +1,24 @@
 /**
- * @cos/sidecar/companion-boot — shared companion composition for diver
+ * @diver/companion/companion-boot — shared companion composition for diver
  * (dev `companion.ts` and release `companion-bundle.ts`).
  *
+ * Product layer, lives under `cos-plugins/` (not in the cos harness).
  * Single loader contract (no hand-written @diver path maps):
  *   - pluginPaths  : @cos/* core → <harness>/packages/<pkg>/src/index.ts
- *   - pluginRoot   : open plugins dir (`@scope/name` → <root>/<name>)
+ *   - pluginRoot   : open plugins dir (`@scope/name` → <root>/<name>`)
  *   - bundles      : companion bundle directory (cordis.patch.yml inserts)
  *   - profile      : `companion` under $COS_HOME — user patch layer holds
  *                    enable/disable overrides written by the Tauri shell
  *
  * CLI overrides still win: `--profile` / `--bundles` / `--plugin-root` /
  * `--harness` / `--config`.
- * @module @cos/sidecar/companion-boot
+ * @module @diver/companion/companion-boot
  */
 
 import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
-import type { BootOptions, CliOptions } from '@cos/boot'
+import type { BootOptions, CliOptions } from '../../../harness/packages/boot/src/index.ts'
 import { profilePluginInserts } from './profile-plugins.ts'
 
 /** Default profile id under `$COS_HOME/profiles/` for the companion agent. */
@@ -40,6 +41,7 @@ export const CORE_PLUGIN_NAMES = [
   'system-prompt',
   'persona',
   'tools',
+  'skills',
   'scope',
   'llm-deepseek',
   'mock-llm',
@@ -59,6 +61,7 @@ export const REQUIRED_SERVICES = [
   'credentials',
   'sessionPersistence',
   'subagents',
+  'skills',
 ] as const
 
 export interface CompanionPaths {

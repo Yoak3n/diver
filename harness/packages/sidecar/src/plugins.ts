@@ -14,6 +14,7 @@ import * as persistence from '@cos/persistence'
 import * as systemPrompt from '@cos/system-prompt'
 import * as persona from '@cos/persona'
 import * as tools from '@cos/tools'
+import * as skills from '@cos/skills'
 import * as scope from '@cos/scope'
 import * as llmDeepseek from '@cos/llm-deepseek'
 import * as mockLlm from '@cos/mock-llm'
@@ -30,6 +31,7 @@ export const plugins: Readonly<Record<string, unknown>> = {
   '@cos/system-prompt': systemPrompt,
   '@cos/persona': persona,
   '@cos/tools': tools,
+  '@cos/skills': skills,
   '@cos/scope': scope,
   '@cos/llm-deepseek': llmDeepseek,
   '@cos/mock-llm': mockLlm,

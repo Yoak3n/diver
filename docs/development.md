@@ -32,10 +32,10 @@ diver/
 │  ├─ composables/         # useChat（主窗口）/ useSettings
 │  └─ pet/                 # 桌宠：PetApp.vue / live2d.ts / usePetChat / pet.html
 ├─ src-tauri/              # Rust 壳
-│  ├─ src/commands/        # Tauri IPC 薄适配（system/plugins/shortcuts/tts/presence/pet/config）
+│  ├─ src/commands/        # Tauri IPC 薄适配（system/plugins/shortcuts/tts/tts_player/presence/pet/config）
 │  ├─ src/app/             # 组装与生命周期（setup / events / handle / state / tray / shortcut）
 │  ├─ src/shell/           # 窗口与桌面集成（window/{manager,pet} / lightweight / pet_mouse / notify）
-│  ├─ src/core/            # 可单测业务（sidecar/{process,lifecycle,shutdown,reclaim} / tts/synth / node_runtime / pet_interaction / presence…）
+│  ├─ src/core/            # 可单测业务（sidecar/{process,lifecycle,shutdown,reclaim} / tts/{synth,player} / node_runtime / pet_interaction / presence…）
 │  ├─ src/plugins/         # 插件 catalog/profile/preflight/{registry,package,install,uninstall}
 │  ├─ src/config/          # 持久化配置（window_startup / tts / mcp / shortcuts…）
 │  ├─ src/services/        # 本地服务：axum /rpc + memory RPC handler（notify 经注入闭包）
@@ -44,7 +44,7 @@ diver/
 ├─ crates/diver-memory/    # Rust 记忆后端 crate（SQLite 存储 + 确定性逻辑）
 │  └─ src/db/              # store / topics / events / entities / mappers…
 ├─ harness/                # Node sidecar workspace（pnpm，自研 cos）
-│  ├─ packages/            # 所有 @cos/* 工作区插件包
+│  ├─ packages/            # 所有 @cos/* 工作区插件包（含 skills / system-prompt）
 │  │  └─ profile/          # DSH 对齐的 profile 模型（home/双锚点/平面回退/reconcile）
 │  ├─ scripts/plugin.ts    # pnpm 转发：profile 插件管理
 │  ├─ cos-plugins/         # 第三方 @diver/*（本仓库实际在仓库根 ../cos-plugins）
@@ -63,7 +63,7 @@ cd harness
 pnpm install
 $env:COS_HOME = "$PWD\.cos-home"
 $env:DIVER_PORT = "53620"
-node --import tsx --expose-internals packages/sidecar/src/companion.ts `
+node --import tsx --expose-internals ../cos-plugins/companion/src/companion.ts `
   --profile companion `
   --plugin-root ..\cos-plugins `
   --bundles ..\cos-plugins\bundle-companion `
@@ -95,7 +95,7 @@ node --import tsx --expose-internals packages/sidecar/src/companion.ts `
 # grep 搜索：{ "method": "grep::search", "params": { "pattern": "...", "path": "..." } }
 ```
 
-Rust 侧单测：`cargo test -p diver-search`（引擎）与 `cargo test -p diver services::grep`（RPC 层）。
+Rust 侧单测：`cargo test -p diver-search`（引擎）、`cargo test -p diver-shot`（截图引擎；Wayland 路径可 `cargo check -p diver-shot --target x86_64-unknown-linux-gnu`）、`cargo test -p diver services::grep` / `services::screenshot`（RPC 层）。
 
 ## 类型检查
 

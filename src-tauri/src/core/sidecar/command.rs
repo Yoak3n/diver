@@ -24,7 +24,7 @@ impl SidecarManager {
     ) -> Result<Command, String> {
         #[cfg(not(debug_assertions))]
         {
-            // ── release：解析 Node + tsx 启动 companion-bundle.ts ─────────
+            // ── release：解析 Node + tsx 启动 plugins/companion/src/companion-bundle.ts ─────────
             // Tauri 在 Windows 上把 resources 打包到 <exe_dir>/resources/，
             // 而 resource_dir() 返回 exe 所在目录，需再拼 resources 前缀。
             let res_dir = app
@@ -142,16 +142,12 @@ impl SidecarManager {
         #[cfg(debug_assertions)]
         {
             // ── dev：仓库内 harness + node/tsx（与 release 同一 loader 契约） ──
-            let entry = self.harness_dir.join("packages/sidecar/src/companion.ts");
-            let entry = if entry.exists() {
-                entry
-            } else {
-                // pnpm 依赖提升布局：入口可能位于仓库根
-                self.harness_dir
-                    .parent()
-                    .unwrap_or(&self.harness_dir)
-                    .join("packages/sidecar/src/companion.ts")
-            };
+            // companion 入口在产品层 cos-plugins/（sidecar 只保留 cos 本体）。
+            let entry = self
+                .harness_dir
+                .parent()
+                .unwrap_or(&self.harness_dir)
+                .join("cos-plugins/companion/src/companion.ts");
             let cos_home = crate::config::cos_home(app);
             let _ = LAST_COS_HOME.set(cos_home.clone());
             if !entry.exists() {

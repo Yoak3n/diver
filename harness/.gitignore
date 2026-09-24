@@ -5,4 +5,6 @@ node_modules/
 main.js
 dist/
 .cos-home/
+.cos-home-smoke/
 .pnpm-store-local/
+*.bundle.mjs

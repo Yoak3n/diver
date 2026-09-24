@@ -110,21 +110,39 @@ importers:
       '@diver/backend':
         specifier: file:../backend
         version: link:../backend
+      '@diver/basic-tools':
+        specifier: file:../basic-tools
+        version: link:../basic-tools
       '@diver/llm-commandcode':
         specifier: file:../llm-commandcode
         version: link:../llm-commandcode
       '@diver/llm-volcark':
         specifier: file:../llm-volcark
         version: link:../llm-volcark
+      '@diver/mcp':
+        specifier: file:../mcp
+        version: link:../mcp
       '@diver/memory':
         specifier: file:../memory
         version: link:../memory
-      '@diver/voice':
-        specifier: file:..\voice
-        version: link:../voice
+      '@diver/native-bridge':
+        specifier: file:../native-bridge
+        version: link:../native-bridge
+      '@diver/self-prompt':
+        specifier: file:../self-prompt
+        version: link:../self-prompt
       '@diver/web-tools':
         specifier: file:../web-tools
         version: file:cos-plugins/web-tools(@cordisjs/plugin-include@1.0.4)(@cordisjs/plugin-loader@1.0.0-rc.5)
+
+  cos-plugins/companion:
+    devDependencies:
+      '@types/node':
+        specifier: ^26.2.0
+        version: 26.2.0
+      typescript:
+        specifier: ~5.6.2
+        version: 5.6.3
 
   cos-plugins/llm-commandcode:
     dependencies:
@@ -215,7 +233,7 @@ importers:
         specifier: ~5.6.2
         version: 5.6.3
 
-  cos-plugins/voice:
+  cos-plugins/self-prompt:
     dependencies:
       '@cos/plugin-api':
         specifier: file:../../harness/packages/plugin-api
@@ -235,7 +253,7 @@ importers:
     dependencies:
       '@deepseek-ai/dsh-tools':
         specifier: workspace:*
-        version: link:../../harness/packages/dsh-tools
+        version: link:../../harness/packages/dsh/tools
       cordis:
         specifier: 4.0.0-rc.7
         version: 4.0.0-rc.7(@cordisjs/plugin-include@1.0.4)(@cordisjs/plugin-loader@1.0.0-rc.5)
@@ -313,49 +331,25 @@ importers:
         version: cordis@4.0.0-rc.7(@cordisjs/plugin-include@1.0.4)(@cordisjs/plugin-loader@1.0.0-rc.5)
       '@deepseek-ai/dsh-agent':
         specifier: workspace:*
-        version: link:packages/dsh-agent
+        version: link:packages/dsh/agent
       '@deepseek-ai/dsh-llm':
         specifier: workspace:*
-        version: link:packages/dsh-llm
+        version: link:packages/dsh/llm
       '@deepseek-ai/dsh-scope':
         specifier: workspace:*
-        version: link:packages/dsh-scope
+        version: link:packages/dsh/scope
       '@deepseek-ai/dsh-session':
         specifier: workspace:*
-        version: link:packages/dsh-session
+        version: link:packages/dsh/session
       '@deepseek-ai/dsh-system-prompt':
         specifier: workspace:*
-        version: link:packages/dsh-system-prompt
+        version: link:packages/dsh/system-prompt
       '@deepseek-ai/dsh-tools':
         specifier: workspace:*
-        version: link:packages/dsh-tools
+        version: link:packages/dsh/tools
       '@deepseek-ai/schemastery':
         specifier: 3.18.2
         version: 3.18.2
-      '@diver/backend':
-        specifier: file:../cos-plugins/backend
-        version: link:../cos-plugins/backend
-      '@diver/basic-tools':
-        specifier: file:../cos-plugins/basic-tools
-        version: link:../cos-plugins/basic-tools
-      '@diver/bundle-companion':
-        specifier: file:../cos-plugins/bundle-companion
-        version: link:../cos-plugins/bundle-companion
-      '@diver/llm-commandcode':
-        specifier: file:../cos-plugins/llm-commandcode
-        version: link:../cos-plugins/llm-commandcode
-      '@diver/llm-volcark':
-        specifier: file:../cos-plugins/llm-volcark
-        version: link:../cos-plugins/llm-volcark
-      '@diver/mcp':
-        specifier: file:../cos-plugins/mcp
-        version: link:../cos-plugins/mcp
-      '@diver/memory':
-        specifier: file:../cos-plugins/memory
-        version: link:../cos-plugins/memory
-      '@diver/native-bridge':
-        specifier: file:../cos-plugins/native-bridge
-        version: link:../cos-plugins/native-bridge
       cordis:
         specifier: 4.0.0-rc.7
         version: 4.0.0-rc.7(@cordisjs/plugin-include@1.0.4)(@cordisjs/plugin-loader@1.0.0-rc.5)
@@ -457,43 +451,43 @@ importers:
         specifier: 2.4.0
         version: 2.4.0
 
-  harness/packages/dsh-agent:
+  harness/packages/dsh/agent:
     dependencies:
       '@cos/types':
         specifier: workspace:*
-        version: link:../types
+        version: link:../../types
 
-  harness/packages/dsh-llm:
+  harness/packages/dsh/llm:
     dependencies:
       '@cos/llm':
         specifier: workspace:*
-        version: link:../llm
+        version: link:../../llm
       '@cos/types':
         specifier: workspace:*
-        version: link:../types
+        version: link:../../types
 
-  harness/packages/dsh-scope:
+  harness/packages/dsh/scope:
     dependencies:
       '@cos/scope':
         specifier: workspace:*
-        version: link:../scope
+        version: link:../../scope
 
-  harness/packages/dsh-session:
+  harness/packages/dsh/session:
     dependencies:
       '@cos/types':
         specifier: workspace:*
-        version: link:../types
+        version: link:../../types
 
-  harness/packages/dsh-system-prompt:
+  harness/packages/dsh/system-prompt:
     dependencies:
       '@cos/system-prompt':
         specifier: workspace:*
-        version: link:../system-prompt
+        version: link:../../system-prompt
       '@cos/types':
         specifier: workspace:*
-        version: link:../types
+        version: link:../../types
 
-  harness/packages/dsh-tools:
+  harness/packages/dsh/tools:
     dependencies:
       cordis:
         specifier: ^4.0.0-rc.7
@@ -579,6 +573,9 @@ importers:
       '@cos/types':
         specifier: workspace:*
         version: link:../types
+      '@deepseek-ai/dsh-tools':
+        specifier: workspace:*
+        version: link:../dsh/tools
       '@deepseek-ai/schemastery':
         specifier: 3.18.2
         version: 3.18.2
@@ -642,6 +639,9 @@ importers:
       '@cos/session':
         specifier: workspace:*
         version: link:../session
+      '@cos/skills':
+        specifier: workspace:*
+        version: link:../skills
       '@cos/subagents':
         specifier: workspace:*
         version: link:../subagents
@@ -654,6 +654,12 @@ importers:
       '@cos/types':
         specifier: workspace:*
         version: link:../types
+      cordis:
+        specifier: 4.0.0-rc.7
+        version: 4.0.0-rc.7(@cordisjs/plugin-include@1.0.4)(@cordisjs/plugin-loader@1.0.0-rc.5)
+
+  harness/packages/skills:
+    dependencies:
       cordis:
         specifier: 4.0.0-rc.7
         version: 4.0.0-rc.7(@cordisjs/plugin-include@1.0.4)(@cordisjs/plugin-loader@1.0.0-rc.5)
@@ -684,6 +690,9 @@ importers:
 
   harness/packages/tools:
     dependencies:
+      '@deepseek-ai/dsh-tools':
+        specifier: workspace:*
+        version: link:../dsh/tools
       cordis:
         specifier: 4.0.0-rc.7
         version: 4.0.0-rc.7(@cordisjs/plugin-include@1.0.4)(@cordisjs/plugin-loader@1.0.0-rc.5)
@@ -2929,6 +2938,7 @@ snapshots:
       '@cos/system-prompt': link:harness/packages/system-prompt
       '@cos/tools': link:harness/packages/tools
       '@cos/types': link:harness/packages/types
+      '@deepseek-ai/dsh-tools': link:harness/packages/dsh/tools
       '@deepseek-ai/schemastery': 3.18.2
       cordis: 4.0.0-rc.7(@cordisjs/plugin-include@1.0.4)(@cordisjs/plugin-loader@1.0.0-rc.5)
     transitivePeerDependencies:

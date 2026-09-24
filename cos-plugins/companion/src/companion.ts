@@ -1,28 +1,29 @@
 /**
- * @cos/sidecar/companion — resident HTTP sidecar entry (dev / monorepo).
+ * @diver/companion/companion — resident HTTP sidecar entry (dev / monorepo).
  *
  * Boots the shared companion composition (see companion-boot.ts):
  * core @cos/* from harness sources, @diver/* from the open plugins root,
  * companion bundle layer, profile `companion` for shell-managed enable/disable.
  *
  * Run (from the harness dir; the repo root is located from this module):
- *   node --import tsx --expose-internals packages/sidecar/src/companion.ts
+ *   node --import tsx --expose-internals ../cos-plugins/companion/src/companion.ts
  *   pnpm start:companion
- * @module @cos/sidecar/companion
+ * @module @diver/companion/companion
  */
 
 import { existsSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { boot, bootOptionsFromCli, parseCliArgs } from '@cos/boot'
+import { boot, bootOptionsFromCli, parseCliArgs } from '../../../harness/packages/boot/src/index.ts'
 import type { Context } from 'cordis'
 import { companionBootOptions, resolveCompanionPaths } from './companion-boot.ts'
 
 const cli = parseCliArgs(process.argv.slice(2))
 
-// This file lives at <repo>/harness/packages/sidecar/src/ — four levels up is the repo root.
+// This file lives at <root>/cos-plugins/companion/src/ — three levels up is the root
+// (repo root in dev; resources/sidecar in a packaged layout).
 const here = fileURLToPath(new URL('.', import.meta.url))
-const repoRoot = resolve(here, '..', '..', '..', '..')
+const repoRoot = resolve(here, '..', '..', '..')
 const paths = resolveCompanionPaths(cli, { root: repoRoot, preferCosPlugins: true })
 
 const hasPlugins = existsSync(join(paths.pluginsRoot, 'memory', 'package.json'))

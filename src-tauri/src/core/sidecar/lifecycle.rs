@@ -83,8 +83,8 @@ pub(super) fn start_impl(mgr: &SidecarManager, app: &AppHandle) -> bool {
         report.profile, report.safe_mode
     ));
 
-    // 构建启动命令：dev 用仓库内 companion.ts；release 用随包 Node +
-    // companion-bundle.ts（开放 plugins/ 目录，非 SEA）。
+    // 构建启动命令：dev 用仓库内 cos-plugins/companion/src/companion.ts；
+    // release 用随包 Node + plugins/companion/src/companion-bundle.ts（开放 plugins/ 目录，非 SEA）。
     let ctx = (hooks.launch)(app);
     let mut cmd = match mgr.build_command(app, &ctx) {
         Ok(cmd) => cmd,

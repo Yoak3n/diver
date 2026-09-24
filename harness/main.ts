@@ -4,7 +4,7 @@
  *   - with --prompt (or a positional argument): creates one agent, feeds it the
  *     prompt, waits for the turn to settle, prints the reply, and exits;
  *   - without --prompt: exits with usage (stdin/stdout JSON-RPC is removed;
- *     desktop embedding uses packages/sidecar/src/companion.ts HTTP/SSE).
+ *     desktop embedding uses cos-plugins/companion HTTP/SSE).
  *
  * Usage:
  *   pnpm start --prompt "fix this typo" [--bundles ...] [--provider ...] [--model ...]
@@ -27,7 +27,7 @@ const prompt = cli.prompt ?? cli.rest[0]
 if (prompt === undefined || prompt === '') {
   console.error(
     '[cos] 用法: pnpm start --prompt "…" [--provider …] [--model …]\n'
-    + '       桌面常驻入口请用 packages/sidecar/src/companion.ts（HTTP/SSE，见 docs/plugins.md）。',
+    + '       桌面常驻入口请用 cos-plugins/companion/src/companion.ts（HTTP/SSE，见 docs/plugins.md）。',
   )
   await ctx.fiber.dispose()
   process.exit(1)

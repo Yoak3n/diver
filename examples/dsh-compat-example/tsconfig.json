@@ -11,8 +11,8 @@
     "skipLibCheck": true,
     "paths": {
       "@cos/plugin-api": ["../../harness/packages/plugin-api/src/index.ts"],
-      "@deepseek-ai/dsh-tools": ["../../harness/packages/dsh-tools/src/index.ts"],
-      "@deepseek-ai/dsh-tools/*": ["../../harness/packages/dsh-tools/src/*.ts"],
+      "@deepseek-ai/dsh-tools": ["../../harness/packages/dsh/tools/src/index.ts"],
+      "@deepseek-ai/dsh-tools/*": ["../../harness/packages/dsh/tools/src/*.ts"],
       "cordis": ["../../harness/node_modules/cordis"],
       "cordis/*": ["../../harness/node_modules/cordis/*"]
     }

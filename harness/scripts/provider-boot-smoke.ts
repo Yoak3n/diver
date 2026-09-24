@@ -3,7 +3,7 @@
  * Run from harness/: node --import tsx --expose-internals scripts/provider-boot-smoke.ts
  */
 import { boot, bootOptionsFromCli, parseCliArgs } from '@cos/boot'
-import { companionBootOptions, resolveCompanionPaths } from '../packages/sidecar/src/companion-boot.ts'
+import { companionBootOptions, resolveCompanionPaths } from '../../cos-plugins/companion/src/companion-boot.ts'
 
 const cli = parseCliArgs([
   '--profile', 'companion',

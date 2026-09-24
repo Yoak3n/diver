@@ -28,7 +28,7 @@ pub(super) fn shutdown_token() -> &'static str {
 #[cfg(not(debug_assertions))]
 pub(super) const RELEASE_SIDECAR_DIR: &str = "sidecar";
 #[cfg(not(debug_assertions))]
-pub(super) const RELEASE_ENTRY: &str = "harness/packages/sidecar/src/companion-bundle.ts";
+pub(super) const RELEASE_ENTRY: &str = "plugins/companion/src/companion-bundle.ts";
 #[cfg(not(debug_assertions))]
 pub(super) const RELEASE_BUNDLE_DIR: &str = "bundles/bundle-companion";
 #[cfg(not(debug_assertions))]

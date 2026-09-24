@@ -36,12 +36,12 @@ pub fn preflight(app: &AppHandle) -> PreflightReport {
         problems.push(format!("harness boot 入口缺失: {}", boot_entry.display()));
     }
     if !harness.join("cordis.yml").exists()
-        && !harness.join("packages/sidecar/src/companion.ts").exists()
+        && !harness.join("packages/sidecar/src/plugins.ts").exists()
     {
         // release cwd 侧 cordis.yml 可能在 sidecar 根；dev 在 harness/。
         // 仅在两者都缺时告警——boot 会再报 configPath 问题。
         problems.push(format!(
-            "未找到 harness 标志文件（cordis.yml / companion.ts）: {}",
+            "未找到 harness 标志文件（cordis.yml / plugins.ts）: {}",
             harness.display()
         ));
     }

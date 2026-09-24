@@ -100,11 +100,11 @@ pnpm plugin --profile <name> -- add <package>                   # pnpm 转发：
 ## companion（HTTP/SSE）— 唯一常驻集成面
 
 Diver 桌面端与上层 UI 使用常驻 HTTP/SSE 入口
-`packages/sidecar/src/companion.ts`（dev）或 `companion-bundle.ts`（随包 Node）。
+`cos-plugins/companion/src/companion.ts`（dev）或 `companion-bundle.ts`（随包 Node）。
 **不使用** stdin/stdout JSON-RPC（已移除）。
 
 ```sh
-node --import tsx --expose-internals packages/sidecar/src/companion.ts \
+node --import tsx --expose-internals ../cos-plugins/companion/src/companion.ts \
      --profile companion \
      --plugin-root ../cos-plugins \
      --bundles ../cos-plugins/bundle-companion \

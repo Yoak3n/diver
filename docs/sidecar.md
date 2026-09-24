@@ -35,7 +35,7 @@ bundle     --bundles   → cordis.patch.yml insert（mount 真相）
 启停        --profile   → $COS_HOME/profiles/companion/cordis.patch.yml
 ```
 
-共享实现：`harness/packages/sidecar/src/companion-boot.ts`。  
+共享实现：`cos-plugins/companion/src/companion-boot.ts`。  
 **SEA 已退出 release 路径**（随包 Node + 开放插件目录）。
 
 ## dsh 只取框架、不搬交互层
@@ -44,8 +44,8 @@ bundle     --bundles   → cordis.patch.yml insert（mount 真相）
 |---|---|
 | agent loop（turn/step、流式、工具闭环） | 使用 `@cos/agent-loop` |
 | SessionEvent 日志 + JSONL | `@cos/persistence`（通用事件流） |
-| tools / systemPrompt / credentials / llm | `@cos/*` 核心行 |
-| persona / 传输层 | `@diver/*` 插件（voice / backend） |
+| tools / systemPrompt / skills / credentials / llm | `@cos/*` 核心行 |
+| persona / 传输层 | `@diver/*` 插件（self-prompt / backend） |
 | Web UI 交互层 | **不用**，自研 Vue + `@diver/backend` HTTP/SSE |
 | profile / bundle / patch | companion profile + `@diver/bundle-companion` |
 

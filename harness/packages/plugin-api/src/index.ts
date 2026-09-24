@@ -21,6 +21,7 @@ import '../../credentials/src/index.ts'
 import '../../llm/src/index.ts'
 import '../../persistence/src/index.ts'
 import '../../session/src/index.ts'
+import '../../skills/src/index.ts'
 import '../../subagents/src/index.ts'
 import '../../system-prompt/src/index.ts'
 import '../../tools/src/index.ts'
@@ -38,6 +39,7 @@ export type {
   AgentOptions,
   AgentStatus,
   AssembleContext,
+  AssembledSection,
   AssistantMessage,
   FinishReason,
   GenerateOptions,
@@ -96,16 +98,20 @@ export type { ToolExecutor, ToolOptions, ToolResult } from '../../tools/src/inde
 export { dshToolExecutor } from '../../tools/src/index.ts'
 export type { DshToolDefinition } from '../../tools/src/index.ts'
 
+// Skills registry surface (ctx.skills).
+export type { Skill, SkillMeta } from '../../skills/src/index.ts'
+export { SkillsService } from '../../skills/src/index.ts'
+
 export {
   ToolArgsError,
   defineTool,
   parameterSchemaSpecToJsonSchema,
   validateArgs,
   valueSchemaSpecToJsonSchema,
-} from '../../dsh-tools/src/index.ts'
+} from '@deepseek-ai/dsh-tools'
 export type {
   DefineToolOptions,
   ParameterSchemaSpec,
   ParameterPropertySpec,
   ValueSchemaSpec,
-} from '../../dsh-tools/src/index.ts'
+} from '@deepseek-ai/dsh-tools'

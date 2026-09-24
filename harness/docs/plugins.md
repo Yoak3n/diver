@@ -26,7 +26,7 @@ indexed by the include entry map, so a later `disabled` patch would miss them).
 
 ```sh
 # dev (repo)
-node --import tsx --expose-internals packages/sidecar/src/companion.ts \
+node --import tsx --expose-internals ../cos-plugins/companion/src/companion.ts \
   --profile companion \
   --plugin-root ../cos-plugins \
   --bundles ../cos-plugins/bundle-companion \
@@ -34,7 +34,7 @@ node --import tsx --expose-internals packages/sidecar/src/companion.ts \
 
 # release (install dir)
 node.exe --import file:///.../tsx/dist/loader.mjs \
-  --expose-internals harness/packages/sidecar/src/companion-bundle.ts \
+  --expose-internals resources/sidecar/plugins/companion/src/companion-bundle.ts \
   --profile companion \
   --plugin-root plugins \
   --bundles bundles/bundle-companion \
@@ -81,7 +81,7 @@ declaration in a newer version.
 ```sh
 # diver direct-path (default): boot the companion with the repo's cos-plugins
 pnpm start:companion
-node --import tsx --expose-internals packages/sidecar/src/companion.ts
+node --import tsx --expose-internals ../cos-plugins/companion/src/companion.ts
 
 # generic profile-managed plugins (other cos consumers):
 pnpm plugin --profile <name> -- add <package>
@@ -224,7 +224,7 @@ among themselves so they never fight over the same memory store).
 **Stdin/stdout JSON-RPC (`@cos/sidecar/client` / `server` / `sidecar.ts`) has been
 removed.** Outer programs consume cos through the resident **HTTP/SSE** entry:
 
-- `packages/sidecar/src/companion.ts` (dev) or `companion-bundle.ts` (packaged)
+- `cos-plugins/companion/src/companion.ts` (dev) or `companion-bundle.ts` (packaged)
 - `@diver/backend` serves HTTP/SSE on `DIVER_PORT` and prints `DIVER_READY`
 - The Tauri shell spawns exactly this entry (see `src-tauri/src/base/sidecar.rs`)
 
@@ -232,7 +232,7 @@ Product channels: **backend HTTP/SSE + thin Tauri invoke** — see `docs/channel
 at the repo root.
 
 There is also a resident **HTTP** sidecar for in-process outer programs:
-`packages/sidecar/src/companion.ts` boots the diver direct-path composition
+`cos-plugins/companion/src/companion.ts` boots the diver direct-path composition
 (cos-plugins/bundle-companion) by default — or `--profile <name>` for the
 generic profile form — and stays resident while `@diver/backend` serves
 HTTP/SSE on `DIVER_PORT` (prints `DIVER_READY` on stdout). The Tauri shell
@@ -287,6 +287,7 @@ packages under the DSH names so community plugins can import unchanged:
 | `@deepseek-ai/dsh-agent` | create/resume option types | `ctx.agents.create` / `ctx.agents.resume` → `agentLoop.createAgent` |
 | `@deepseek-ai/dsh-session` | `@cos/types` session types | `ctx.sessions` / `ctx.sessionPersistence.prepare` |
 | `@deepseek-ai/dsh-system-prompt` | `@cos/system-prompt` | `ctx.systemPrompt.section` / `.variable` |
+| — | `@cos/skills` | `ctx.skills.register` / `.list` / `.load` + `load_skill` |
 | `@deepseek-ai/dsh-scope` | `@cos/scope` | scope carriers |
 
 Smoke: `pnpm tsx scripts/dsh-compat-test.ts`. Sample plugin:

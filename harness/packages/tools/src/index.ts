@@ -53,13 +53,13 @@ export interface DshToolDefinition {
  * plugins can `import { defineTool } from '@cos/plugin-api'` (or `@cos/tools`)
  * with the same call shape as `@deepseek-ai/dsh-tools`.
  */
-export { defineTool } from '../../dsh-tools/src/schema.ts'
+export { defineTool } from '@deepseek-ai/dsh-tools/schema'
 export type {
   DefineToolOptions,
   ParameterSchemaSpec,
   ParameterPropertySpec,
   ValueSchemaSpec,
-} from '../../dsh-tools/src/schema.ts'
+} from '@deepseek-ai/dsh-tools/schema'
 
 interface Entry {
   executor: ToolExecutor

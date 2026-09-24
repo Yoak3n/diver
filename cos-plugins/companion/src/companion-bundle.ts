@@ -1,5 +1,5 @@
 /**
- * @cos/sidecar/companion-bundle — resident HTTP companion entry for the
+ * @diver/companion/companion-bundle — resident HTTP companion entry for the
  * packaged (non-SEA) layout: bundled Node + tsx + open plugin directory.
  *
  * Same composition contract as companion.ts (companion-boot.ts):
@@ -20,12 +20,12 @@
  *   --harness <dir>         engine directory
  *   --profile <name>        override companion profile
  *   --cos-home <dir>        override COS_HOME
- * @module @cos/sidecar/companion-bundle
+ * @module @diver/companion/companion-bundle
  */
 
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
-import { boot, bootOptionsFromCli, parseCliArgs } from '@cos/boot'
+import { boot, bootOptionsFromCli, parseCliArgs } from '../../../harness/packages/boot/src/index.ts'
 import type { Context } from 'cordis'
 import { companionBootOptions, resolveCompanionPaths } from './companion-boot.ts'
 

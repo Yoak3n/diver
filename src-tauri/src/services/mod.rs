@@ -11,6 +11,7 @@ mod memory;
 mod notify;
 mod presence;
 mod rpc;
+mod screenshot;
 mod server;
 mod state;
 

@@ -89,7 +89,7 @@ async function readImageResult(target: LocalTarget, size: number | undefined) {
   const tooLarge = (n: number) =>
     new DiverFsError(
       `cannot read "${target.displayPath}": image too large (${n} bytes; max ${IMAGE_MAX_BYTES}). ` +
-        'Next steps: crop/downscale first (e.g. sh + PowerShell/System.Drawing or ffmpeg scale), save a smaller file, then read that. Do not attempt to read raw bytes.',
+        'Next steps: use the screenshot tool (JPEG, region crop) to produce a small file, or crop/downscale this file first. Do not attempt to read raw bytes.',
       'FS_NOT_TEXT',
     )
   if (size !== undefined && size > IMAGE_MAX_BYTES) throw tooLarge(size)

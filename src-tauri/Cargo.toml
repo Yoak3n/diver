@@ -32,6 +32,7 @@ diver-geom = { path = "../crates/diver-geom" }
 diver-memory = { path = "../crates/diver-memory" }
 diver-presence = { path = "../crates/diver-presence" }
 diver-search = { path = "../crates/diver-search" }
+diver-shot = { path = "../crates/diver-shot" }
 axum = "0.8"
 tokio = { version = "^1.44", features = [
     "rt-multi-thread",

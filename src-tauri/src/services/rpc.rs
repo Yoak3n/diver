@@ -9,7 +9,7 @@ use axum::{extract::State, Json};
 use serde::Deserialize;
 use serde_json::{json, Value};
 
-use super::{grep, memory, notify, presence, ServiceState};
+use super::{grep, memory, notify, presence, screenshot, ServiceState};
 
 #[derive(Deserialize)]
 pub struct RpcRequest {
@@ -54,6 +54,14 @@ async fn route(state: &ServiceState, method: &str, params: &Value) -> Result<Val
         // 存在感回压 / 裁决：控制面在壳（companion-presence-fsm.md）。
         // 分发闭包由 app 注入（services 不依赖 core）。
         return presence::dispatch(state, method, params).map_err(grep::RpcFailure::new);
+    }
+    if method.starts_with("screenshot::") {
+        // 截屏是阻塞 GDI：跑在 blocking 线程池（同 grep）。
+        let method = method.to_string();
+        let params = params.clone();
+        return tokio::task::spawn_blocking(move || screenshot::dispatch(&method, &params))
+            .await
+            .map_err(|join_err| grep::RpcFailure::new(format!("screenshot task failed: {join_err}")))?;
     }
     // memory 方法保持无前缀（零迁移）；错误无 code。
     memory::dispatch(&state.memory_db, method, params).map_err(grep::RpcFailure::new)

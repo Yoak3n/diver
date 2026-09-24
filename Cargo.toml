@@ -5,6 +5,7 @@ members = [
     "crates/diver-memory",
     "crates/diver-presence",
     "crates/diver-search",
+    "crates/diver-shot",
     "src-tauri"
 ]
 

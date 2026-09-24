@@ -28,6 +28,18 @@ import { globToRegExp, walkGlob } from '../src/find.ts'
 import { listDirectory } from '../src/ls.ts'
 import { formatSize, truncateHead, truncateTail, truncateLine } from '../src/truncate.ts'
 import { createUnifiedDiff, formatDiffOutput } from '../src/diff.ts'
+import {
+  clampRegionToDisplay,
+  DEFAULT_MAX_WIDTH,
+  DEFAULT_REGION_MAX_WIDTH,
+  displayAtPoint,
+  jpegQualityLadder,
+  parseScreenshotArgs,
+  planEncode,
+  scaleToFit,
+  SHOT_MAX_BYTES,
+  sizeHint,
+} from '../src/screenshot-policy.ts'
 
 let pass = 0
 let fail = 0
@@ -207,6 +219,70 @@ console.log('\n── ls / find walk ──')
   check('find **/*.ts', hits.includes('top.ts') && hits.includes('sub/c.ts') && !hits.includes('readme.md'))
   const one = await walkGlob(dir, '*.md', 10)
   check('find *.md', one.includes('readme.md') && one.length === 1)
+}
+
+console.log('\n── screenshot-policy ──')
+{
+  const full = parseScreenshotArgs({ display: 1 })
+  check('display defaults jpeg/overview', full.format === 'jpeg' && full.intent === 'overview' && full.quality === 68)
+  const crop = parseScreenshotArgs({ region: { x: 10, y: 20, width: 400, height: 300 } })
+  check('region defaults text + higher quality', crop.intent === 'text' && crop.quality === 78)
+  let threw = false
+  try { parseScreenshotArgs({}) } catch { threw = true }
+  check('no target rejects full-dump', threw)
+  threw = false
+  try { parseScreenshotArgs({ display: -1 }) } catch { threw = true }
+  check('negative display rejects', threw)
+  threw = false
+  try { parseScreenshotArgs({ region: { width: 0, height: 10 } }) } catch { threw = true }
+  check('zero region rejects', threw)
+
+  const disp = { x: 2560, y: 0, width: 2560, height: 1440 }
+  const outside = clampRegionToDisplay({ x: 0, y: 0, width: 10, height: 10 }, disp)
+  check('region outside display', outside.outside && outside.region === null)
+  const clipped = clampRegionToDisplay({ x: 2500, y: 0, width: 100, height: 100 }, disp)
+  check('region clipped to display', !clipped.outside && clipped.clipped && clipped.region!.x === 2560 && clipped.region!.width === 40)
+
+  const displays = [
+    { index: 0, name: 'A', primary: true, x: 0, y: 0, width: 2560, height: 1440, work: { x: 0, y: 0, width: 2560, height: 1400 } },
+    { index: 1, name: 'B', primary: false, x: 2560, y: 0, width: 2560, height: 1440, work: { x: 2560, y: 0, width: 2560, height: 1400 } },
+  ]
+  check('displayAtPoint primary', displayAtPoint(10, 10, displays)?.index === 0)
+  check('displayAtPoint secondary', displayAtPoint(3000, 10, displays)?.index === 1)
+
+  const overview = planEncode({
+    source: { x: 0, y: 0, width: 2560, height: 1440 },
+    quality: 68,
+    format: 'jpeg',
+    intent: 'overview',
+  })
+  check('overview maxWidth default', overview.maxWidth === DEFAULT_MAX_WIDTH && overview.maxBytes === SHOT_MAX_BYTES)
+  const textPlan = planEncode({
+    source: { x: 0, y: 0, width: 800, height: 600 },
+    region: { x: 0, y: 0, width: 800, height: 600 },
+    quality: 78,
+    format: 'jpeg',
+    intent: 'text',
+  })
+  check('text region keeps 1:1', textPlan.maxWidth >= 800 && !scaleToFit(800, 600, textPlan.maxWidth).scaled)
+  const wideText = planEncode({
+    source: { x: 0, y: 0, width: 2560, height: 400 },
+    region: { x: 0, y: 0, width: 2560, height: 400 },
+    quality: 78,
+    format: 'jpeg',
+    intent: 'text',
+  })
+  check('wide text region caps at region default', wideText.maxWidth === DEFAULT_REGION_MAX_WIDTH)
+
+  const fit = scaleToFit(2560, 1440, 1920)
+  check('scaleToFit caps width', fit.scaled && fit.width === 1920 && fit.height === 1080)
+  check('scaleToFit no upscale', !scaleToFit(800, 600, 1920).scaled)
+
+  const ladder = jpegQualityLadder(68)
+  check('quality ladder descends', ladder[0] === 68 && ladder[ladder.length - 1] <= 40)
+  check('sizeHint text scaled warns', sizeHint('text', 2048, true).includes('tighter region'))
+  // 体积策略：默认产物上限应明显小于 read 4MB
+  check('shot budget under read limit', SHOT_MAX_BYTES < 4 * 1024 * 1024 && SHOT_MAX_BYTES <= 800 * 1024)
 }
 
 rmSync(dir, { recursive: true, force: true })

@@ -1,4 +1,4 @@
-// @diver/basic-tools — 基础工具插件（read / write / edit / multi_edit / sh / grep / ls / find）。
+// @diver/basic-tools — 基础工具插件（read / write / edit / multi_edit / sh / grep / ls / find / list_displays / screenshot）。
 //
 // 逻辑移植自 DSH 上游（@deepseek-ai/dsh-tool-fs 与 dsh-tool-fs-search），适配
 // @cos/tools 极简注册表（executor 返回 {content} 字符串）：
@@ -18,6 +18,7 @@ import { applyReadTool } from './read.ts'
 import { applyWriteTool } from './write.ts'
 import { applyEditTool } from './edit.ts'
 import { applyMultiEditTool } from './multi-edit.ts'
+import { applyScreenshotTools } from './screenshot.ts'
 import { applyShTool } from './sh.ts'
 import { applyGrepTool } from './grep.ts'
 import { applyLsTool } from './ls.ts'
@@ -81,10 +82,11 @@ export function apply(ctx: Context, config: Config = {}) {
   applyWriteTool(ctx, { workspaceRoot, observation })
   applyEditTool(ctx, { workspaceRoot, observation })
   applyMultiEditTool(ctx, { workspaceRoot, observation })
+  applyScreenshotTools(ctx, { timeoutMs: shTimeoutMs })
   applyShTool(ctx, { workspaceRoot, timeoutMs: shTimeoutMs })
   applyGrepTool(ctx, { workspaceRoot })
   applyLsTool(ctx, { workspaceRoot })
   applyFindTool(ctx, { workspaceRoot })
 
-  console.log(`[basic-tools] 八个基础工具就绪（workspace=${workspaceRoot}, requireObservation=${requireObservation}）`)
+  console.log(`[basic-tools] 十个基础工具就绪（workspace=${workspaceRoot}, requireObservation=${requireObservation}）`)
 }

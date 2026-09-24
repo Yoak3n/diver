@@ -35,7 +35,7 @@ async function main() {
   const patchPath = join(home, 'profiles', 'companion', 'cordis.patch.yml')
   writeFileSync(
     patchPath,
-    `- id: voice\n  name: '@diver/voice'\n  disabled: true\n- id: basic-tools\n  name: '@diver/basic-tools'\n  config:\n    shTimeoutMs: 1\n`,
+    `- id: self-prompt\n  name: '@diver/self-prompt'\n  disabled: true\n- id: basic-tools\n  name: '@diver/basic-tools'\n  config:\n    shTimeoutMs: 1\n`,
     'utf8',
   )
   writePluginConfigValues('basic-tools', '@diver/basic-tools', { shTimeoutMs: 99 })

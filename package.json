@@ -12,6 +12,7 @@
     "pet:models": "node scripts/pet-models.mjs",
     "pet:models:yui": "node scripts/pet-models.mjs --yui",
     "bundle:release": "node scripts/bundle-release.mjs",
+    "start:companion": "pnpm --dir harness exec tsx --expose-internals ../cos-plugins/companion/src/companion.ts --profile companion --plugin-root ../cos-plugins --bundles ../cos-plugins/bundle-companion --harness .",
     "typecheck": "pnpm run typecheck:harness && pnpm run typecheck:plugins",
     "typecheck:harness": "pnpm --dir harness typecheck",
     "typecheck:plugins": "pnpm -r --filter \"./cos-plugins/*\" --filter \"!./cos-plugins/bundle-companion\" typecheck"

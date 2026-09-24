@@ -70,7 +70,7 @@ diver/
 │  └─ config/tts.json     # 在线 TTS 配置
 ├─ crates/diver-memory/    # Rust 记忆后端 crate（SQLite 存储 + 确定性逻辑）
 ├─ crates/diver-search/    # Rust grep 搜索后端 crate（ripgrep 引擎库）
-├─ harness/                # Node sidecar workspace（pnpm，自研 cos）
+├─ harness/                # cos 引擎 submodule（https://github.com/Yoak3n/cos-harness）
 │  ├─ packages/            # @cos/* 引擎（boot/sidecar/profile/…）
 │  └─ .cos-home/           # 仓库本地 cos home（含 profiles/companion；gitignore）
 ├─ cos-plugins/            # @diver/* 插件源码 + bundle-companion
@@ -101,7 +101,7 @@ Key 存入本地凭据库（`harness/.cos-home/.credentials.yaml`），模型默
 ```bash
 cd harness
 $env:COS_HOME = "$PWD\.cos-home"; $env:DIVER_PORT = "53620"
-node --import tsx --expose-internals packages/sidecar/src/companion.ts
+node --import tsx --expose-internals cos-plugins/companion/src/companion.ts
 # 然后访问 http://127.0.0.1:53620/api/health
 ```
 

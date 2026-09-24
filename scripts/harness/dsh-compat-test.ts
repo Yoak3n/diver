@@ -3,8 +3,8 @@
  * Run: pnpm tsx scripts/dsh-compat-test.ts
  */
 import { Context } from 'cordis'
-import ToolsService from '../packages/tools/src/index.ts'
-import { defineTool, parameterSchemaSpecToJsonSchema, ToolArgsError } from '../packages/dsh/tools/src/index.ts'
+import ToolsService from '../../harness/packages/tools/src/index.ts'
+import { defineTool, parameterSchemaSpecToJsonSchema, ToolArgsError } from '../../harness/packages/dsh/tools/src/index.ts'
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(`FAIL: ${message}`)

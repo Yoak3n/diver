@@ -70,7 +70,7 @@ diver/
 │  └─ config/tts.json     # 在线 TTS 配置
 ├─ crates/diver-memory/    # Rust 记忆后端 crate（SQLite 存储 + 确定性逻辑）
 ├─ crates/diver-search/    # Rust grep 搜索后端 crate（ripgrep 引擎库）
-├─ harness/                # cos 引擎 submodule（https://github.com/Yoak3n/cos-harness）
+├─ harness/                # cos 引擎 submodule（https://github.com/Yoak3n/cos）
 │  ├─ packages/            # @cos/* 引擎（boot/sidecar/profile/…）
 │  └─ .cos-home/           # 仓库本地 cos home（含 profiles/companion；gitignore）
 ├─ cos-plugins/            # @diver/* 插件源码 + bundle-companion

@@ -302,6 +302,9 @@ importers:
       '@cos/persona':
         specifier: workspace:*
         version: link:packages/persona
+      '@cos/plugin-api':
+        specifier: workspace:*
+        version: link:packages/plugin-api
       '@cos/profile':
         specifier: workspace:*
         version: link:packages/profile
@@ -314,6 +317,9 @@ importers:
       '@cos/sidecar':
         specifier: workspace:*
         version: link:packages/sidecar
+      '@cos/skills':
+        specifier: workspace:*
+        version: link:packages/skills
       '@cos/subagents':
         specifier: workspace:*
         version: link:packages/subagents

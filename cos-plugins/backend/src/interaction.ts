@@ -59,6 +59,8 @@ export function injectUiLabel(source: unknown): string | null {
       return '（问候）'
     case 'proactive':
       return '（主动）'
+    case 'self-prompt-restart':
+      return '（重启完成）'
     default:
       return s.detail ? `（${s.detail}）` : '（注入）'
   }
@@ -70,5 +72,6 @@ export function injectOrigin(source: unknown): 'interaction' | 'presence' | 'pro
   if (s?.kind !== 'plugin') return null
   if (s?.detail === 'pet-interaction') return 'interaction'
   if (s?.detail === 'presence') return 'presence'
+  if (s?.detail === 'self-prompt-restart') return 'proactive'
   return 'proactive'
 }

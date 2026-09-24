@@ -1,34 +1,8 @@
-// @diver/voice — 陪伴对话风格插件（第三方插件，独立于 harness 工作区部署）。
-//
-// 职责：注册一个 systemPrompt section（diver:voice），约束 LLM 的输出**表达层**：
-//  1. 更像真人对话 —— 短句、口语、自然，去掉客服腔 / 工具清单 / 过度 markdown；
-//  2. 情绪信号明确 —— 让每句回复带清晰的语气与情绪色彩（不是空洞的"好的！"），
-//     与桌宠前端的情绪推断（src/pet/emotion.ts 的 inferEmotion）形成闭环：
-//     LLM 写出"哇！太棒了！" → 前端推断 happy → 桌宠播 Happy 动作。
-//
-// 设计边界（与 @cos/persona、@diver/memory 分工）：
-//  - persona：只给运行环境事实，不预设身份；
-//  - memory：身份卡片（我是什么样的人）由 agent 经 identity 工具自行沉淀；
-//  - voice：不碰"我是谁"，只约束"怎么说"——语气、句式、情绪表达。
-// 因此本 section 排在工具引导（order 100）之后（order 110），作为最后的
-// 表达压轴，不参与身份/记忆的长期上下文。
-//
-// 接入方式（见 harness/docs/plugins.md）：
-//   pnpm add file:../cos-plugins/voice
-//   cordis.patch.yml: - insert: [{ id: voice, name: '@diver/voice' }]
-
-import type { Context } from 'cordis'
-import type {} from '@cos/plugin-api'
-
-export const name = 'voice'
-
-export const inject = ['systemPrompt']
-
-export function apply(ctx: Context) {
-  ctx.systemPrompt.section({
-    name: 'diver:voice',
-    order: 110, // 工具引导(100)之后：表达约束最后压轴，不参与身份/记忆上下文
-    text: `## 怎么说话（表达层约束，不是身份设定）
+---
+order: 110
+name: style
+---
+## 怎么说话（表达层约束，不是身份设定）
 
 对用户说的每一句话，都像和熟人在微信/面对面聊天，而不是客服应答或报告。
 
@@ -56,8 +30,4 @@ export function apply(ctx: Context) {
 - 长篇的冲动往往来自"想说得周全"——挑最想说的先说，其余的等对方接话，
   他真想知道会接着问的。宁可短到被追问，也别长到让人划走。
 - 但不用刻意掐字数：该展开时（对方明确问细节、或情绪需要你说透）就自然
-  说开，篇幅跟着内容走，别为了短而短。`,
-  })
-
-  console.log('[voice] 对话风格提示词已注入（diver:voice, order 110）')
-}
+  说开，篇幅跟着内容走，别为了短而短。

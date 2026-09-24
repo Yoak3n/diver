@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Diver companion bundle (third-party, outside the harness workspace): assembles the diver plugins (@diver/memory + @diver/voice + @diver/backend) as one composition layer. Apply with pnpm start --bundles @diver/bundle-companion.",
+  "description": "Diver companion bundle (third-party, outside the harness workspace): assembles the diver plugins (@diver/memory + @diver/self-prompt + @diver/backend) as one composition layer. Apply with pnpm start --bundles @diver/bundle-companion.",
   "dependencies": {
     "@diver/backend": "file:../backend",
     "@diver/basic-tools": "file:../basic-tools",
@@ -12,7 +12,7 @@
     "@diver/mcp": "file:../mcp",
     "@diver/memory": "file:../memory",
     "@diver/native-bridge": "file:../native-bridge",
-    "@diver/voice": "file:../voice",
+    "@diver/self-prompt": "file:../self-prompt",
     "@diver/web-tools": "file:../web-tools"
   }
 }

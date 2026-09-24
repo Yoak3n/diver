@@ -1,15 +1,16 @@
 {
-  "name": "@diver/voice",
+  "name": "@diver/self-prompt",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Diver companion voice plugin: spoken-dialogue system-prompt section for pet emotion inference.",
+  "description": "Diver self-prompt plugin: model-editable prompt slots + revise-prompt skill + restart/reload loop.",
   "main": "./src/index.ts",
   "exports": {
     ".": "./src/index.ts"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "smoke": "node --import tsx scripts/smoke.ts"
   },
   "dependencies": {
     "@cos/plugin-api": "file:../../harness/packages/plugin-api",

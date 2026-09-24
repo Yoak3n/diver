@@ -43,10 +43,9 @@
     - id: llm-volcark
       name: '@diver/llm-volcark'
 
-    # 对话风格：约束 LLM 输出更像真人对话（口语短句、情绪色彩明确），
-    # 与桌宠前端情绪推断（src/pet/emotion.ts）形成闭环
-    - id: voice
-      name: '@diver/voice'
+    # 自改提示词入口：prompts/*.md 热加载 + revise-prompt skill（restart_agent 可选）
+    - id: self-prompt
+      name: '@diver/self-prompt'
 
     # 后端连接服务：外层程序（Tauri UI）经此 HTTP/SSE 服务驱动陪伴 agent
     - id: backend

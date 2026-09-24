@@ -1,5 +1,5 @@
 # Bundle declaration for @diver/bundle-companion — assemble the Diver companion
-# deployment: relation-layer memory + dialogue voice + backend connector service.
+# deployment: relation-layer memory + self-prompt slots + backend connector service.
 # Apply with:  pnpm start --bundles @diver/bundle-companion
 # (or compose bundles programmatically via BootOptions.bundles).
 # Depends on the harness core rows that provide the injected services.

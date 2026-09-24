@@ -59,10 +59,10 @@
       "defaultEnabled": true
     },
     {
-      "id": "voice",
-      "packageName": "@diver/voice",
-      "displayName": "对话风格",
-      "description": "口语化/短句提示词节，配合桌宠情绪",
+      "id": "self-prompt",
+      "packageName": "@diver/self-prompt",
+      "displayName": "自改提示词",
+      "description": "prompts/*.md 热加载槽位 + revise-prompt skill；restart_agent 保留（改提示词不必重启）",
       "toggleable": true,
       "defaultEnabled": true
     },

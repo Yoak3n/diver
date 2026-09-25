@@ -21,7 +21,7 @@ pnpm tauri dev   # 自动拉起 sidecar + Vite(1420) + 窗口
 首次启动：在设置（⚙）里填入 DeepSeek API Key（或 opencode-go Key，可选）即可开始对话。
 
 - Key 存入本地凭据库 `harness/.cos-home/.credentials.yaml`
-- 模型默认 `deepseek-v4-flash`（可在设置中切换，下次对话生效）
+- 模型默认 `deepseek-flash`（可在设置中切换，下次对话生效）
 
 ## 目录结构
 

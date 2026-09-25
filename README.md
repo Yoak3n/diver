@@ -56,7 +56,7 @@ pnpm tauri dev     # 自动拉起 sidecar + Vite(1420) + 窗口
 ```
 
 首次启动后在设置（⚙）里填入 DeepSeek API Key 即可对话：Key 存本地凭据库
-`harness/.cos-home/.credentials.yaml`，模型默认 `deepseek-v4-flash`（可切换）。
+`harness/.cos-home/.credentials.yaml`，模型默认 `deepseek-flash`（可切换）。
 
 ### 日常开发
 

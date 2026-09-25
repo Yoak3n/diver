@@ -1,8 +1,8 @@
 // @diver/llm-custom — 通用 OpenAI 兼容适配器（一个自定义提供商一个实例）。
 //
 // 配置值全部运行时读取（settingsValue / credentials.get），保存即热生效：
-//   - `<id>.baseUrl`（diver-settings）→ {baseUrl}/chat/completions
-//   - `<id>.models`（diver-settings，逗号分隔）→ 模型目录（advisory）
+//   - `<id>.baseUrl`（cos-settings）→ {baseUrl}/chat/completions
+//   - `<id>.models`（cos-settings，逗号分隔）→ 模型目录（advisory）
 //   - `custom.<id>.apiKey`（secrets 文件）→ Bearer 鉴权
 // @module @diver/llm-custom/openai-compat
 

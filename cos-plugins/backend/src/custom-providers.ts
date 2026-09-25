@@ -2,7 +2,7 @@
 //
 // 「身份」注册表：$COS_HOME/custom-providers.json —— { providers: [{ id, name }] }。
 // 配置值走通用 provider 配置通道（与 @diver/llm-custom 适配器读取端一致）：
-//   - `<id>.baseUrl` / `<id>.models` → diver-settings（保存即热生效）
+//   - `<id>.baseUrl` / `<id>.models` → cos-settings（cos 契约文件，保存即热生效）
 //   - `custom.<id>.apiKey`           → secrets 文件（ctx.credentials 解析）
 // llm-custom 插件监听身份文件热重注册适配器：增删改 ≤2s 内出现在设置面板。
 
@@ -10,7 +10,7 @@ import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import type { Context } from 'cordis'
 
-import { readDiverSettings, writeDiverSettings } from './session-helpers.ts'
+import { writeCosSettings } from './session-helpers.ts'
 import { secretsFileOf, writeSecret } from './secrets.ts'
 
 /** 自定义提供商身份（与 @diver/llm-custom 的落盘解析一致）。 */
@@ -73,7 +73,7 @@ function applyConfig(ctx: Context, id: string, input: CustomProviderInput): void
   const patch: Record<string, unknown> = {}
   if (input.baseUrl !== undefined) patch[`${id}.baseUrl`] = input.baseUrl.trim()
   if (input.models !== undefined) patch[`${id}.models`] = input.models.trim()
-  if (Object.keys(patch).length > 0) writeDiverSettings(patch)
+  if (Object.keys(patch).length > 0) writeCosSettings(patch)
   const key = (input.apiKey ?? '').trim()
   if (key !== '') {
     const ref = `custom.${id}.apiKey`
@@ -115,7 +115,7 @@ export function removeCustomProvider(id: string): boolean {
   const next = list.filter((p) => p.id !== id)
   if (next.length === list.length) return false
   writeIdentities(next)
-  writeDiverSettings({ [`${id}.baseUrl`]: '', [`${id}.models`]: '' })
+  writeCosSettings({ [`${id}.baseUrl`]: '', [`${id}.models`]: '' })
   return true
 }
 

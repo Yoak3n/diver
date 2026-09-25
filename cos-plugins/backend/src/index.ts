@@ -36,6 +36,7 @@ import { applyModelChange, ensureAgent } from './agent.ts'
 import { healthInfo } from './health.ts'
 import { applyProviderConfigs, catalogModels, isConfigured, persistedProvider, providerDecls } from './providers.ts'
 import { mountServer } from './server.ts'
+import { migrateDottedSettings } from './session-helpers.ts'
 import { attachEventListeners, createBroadcast, sseWrite } from './sse.ts'
 import { createWebState } from './state.ts'
 import type { WebHandlerDeps } from './types.ts'
@@ -46,6 +47,8 @@ export const name = 'backend'
 export const inject = ['agents', 'agentLoop', 'llm', 'credentials', 'sessionPersistence']
 
 export function apply(ctx: Context, config: { uiDist?: string }) {
+  // provider 配置通道已迁至 cos 契约文件；先把历史误写进 diver-settings 的带点键搬过去。
+  migrateDottedSettings()
   const port = Number(process.env.DIVER_PORT ?? 53620)
   const uiDist = config?.uiDist ?? process.env.DIVER_UI_DIST ?? resolve(process.cwd(), '..', 'dist')
 

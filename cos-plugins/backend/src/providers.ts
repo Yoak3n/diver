@@ -13,7 +13,7 @@
 import type { Context } from 'cordis'
 import type { AdapterConfigField } from '@cos/plugin-api'
 
-import { readDiverSettings, writeDiverSettings } from './session-helpers.ts'
+import { readCosSettings, readDiverSettings, writeCosSettings } from './session-helpers.ts'
 import { listCustomProviders } from './custom-providers.ts'
 import { secretsFileOf, writeSecret } from './secrets.ts'
 import type { ProviderDeclView } from './types.ts'
@@ -86,7 +86,8 @@ export async function fieldConfigured(ctx: Context, provider: string, field: Ada
 
 /** settings 字段当前值（非 secret；供设置面板回填，便于查看/清空）。 */
 function settingsFieldValue(provider: string, key: string): string {
-  const value = readDiverSettings()[`${provider}.${key}`]
+  // provider 配置通道读 cos 框架契约文件；diver-settings 旧键仅作迁移前兜底。
+  const value = readCosSettings()[`${provider}.${key}`] ?? readDiverSettings()[`${provider}.${key}`]
   return typeof value === 'string' ? value : ''
 }
 
@@ -149,5 +150,5 @@ export async function applyProviderConfigs(
       }
     }
   }
-  if (Object.keys(patch).length > 0) writeDiverSettings(patch)
+  if (Object.keys(patch).length > 0) writeCosSettings(patch)
 }

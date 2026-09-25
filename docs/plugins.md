@@ -92,10 +92,18 @@ COS_HOME= %APPDATA%/com.diver.companion/cos
 | 路径 | dev | release |
 |---|---|---|
 | harness | `harness/` | `resources/sidecar/harness/` |
-| plugins | `cos-plugins/` | `resources/sidecar/plugins/` |
+| plugins | `cos-plugins/` | **`$COS_HOME/plugins/`（用户工作区，B′）** |
+| 出厂镜像 | —（dev 无需） | `resources/sidecar/plugins.seed/`（播种源，运行时不加载） |
+| 进程入口 | `cos-plugins/companion/src/companion.ts` | `resources/sidecar/plugins/companion/src/companion-bundle.ts` |
 | bundle | `cos-plugins/bundle-companion/` | `resources/sidecar/bundles/bundle-companion/` |
 | profile | `$COS_HOME/profiles/companion/` | 同左（COS_HOME 不同） |
 | catalog | `cos-plugins/bundle-companion/plugins.json` | 同结构拷贝到 plugins 布局 |
+
+**B′ 播种对账（release）**：首启把 `plugins.seed/` 明文镜像播种到用户工作区（改
+`src/*.ts` 重启生效）；升级按 `seed-manifest.json` 逐文件 hash 对账——你没改过的插件
+静默更新，改过的保留你的版本、官方新版落 `plugins/.incoming/<ver>/<name>/`（合并后
+删除该目录），自写插件不动。`node plugin-doctor.mjs` 报改动状态与合并提示；
+`node install-deps.mjs` 为工作区装第三方依赖（用户依赖优先于内置）。
 
 ### 2.4 插件契约（与 DSH 同形）
 

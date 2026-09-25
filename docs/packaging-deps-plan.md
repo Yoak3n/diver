@@ -1,7 +1,7 @@
 # 依赖打包优化方案：消灭 node_modules 海量小文件（参考 pi）
 
-> 状态：**架构已拍板（2026-09-25）**——B′ 播种对账工作区 + cos 核心 P1 bundle +
-> 依赖三层归属；待实施（P0 → P1a → P1b → P1c）。
+> 状态：**P0 / P1（V 案）/ P1c（B′ 播种对账）已落地（2026-09-25）**——小文件 2 万 → 数百、
+> 首启解压归零、运行时唯一插件区 = 用户工作区；P2（bun compile）仅在 P1 不达标时评估（现达标，不启动）。
 
 ## 1. 背景与量化证据
 
@@ -114,20 +114,26 @@ pi（`@earendil-works/pi-coding-agent`）的发行物**几乎不含 node_modules
 yaml/zod/cosmokit 等核心已有实例的共享库）由加载器**映射进核心 bundle 内部副本**，
 保证单实例；host 包禁止物理安装（`peerDependencies: "*"` 纪律 + 校验，见 §5 P1b）。
 
-**文件管理模型 B′（播种对账，唯一可改处）**：
+**文件管理模型 B′（播种对账，唯一可改处）**（P1c 已实施，2026-09-25）：
 
 ```text
 安装目录 resources\sidecar\
-├── core\                    ← cos 核心 bundle + loader 白名单（无 node_modules）
-├── plugins.seed.tar.zst     ← 自带插件源码 + vendor + 垫片（更新载荷，非明文目录）
+├── harness\                 ← 引擎源码（@cos/*）
+├── plugins\companion\       ← 进程入口（paths.rs RELEASE_ENTRY，不播种）
+├── plugins.seed\            ← 出厂插件镜像（明文 TS + seed-manifest.json 逐文件 hash；
+│                               只作播种源，运行时不加载——载荷形态选明文镜像而非
+│                               plugins.seed.tar.zst：播种=复制零解压、doctor 可直接 diff）
+├── node_modules\            ← 构建期 vendor（@cos/@diver 映射 + cordis/yaml/第三方闭包 + tsx/esbuild）
 └── （node.exe 不随包，维持现状）
 
 用户区 %APPDATA%\com.diver.companion\cos\
+├── node_modules\            ← junction → sidecar\node_modules（解析链基座，seed 建）
 └── plugins\                 ← ★ 唯一明文插件区（agent 与用户只面对这里）
     ├── <自带插件>\src\*.ts   播种而来，随便改
     ├── my-plugin\           自写插件，官方永不插手
-    ├── vendor\              自带依赖 bundle（seed 解出）
-    └── node_modules\        垫片 + 用户后装真实包
+    ├── node_modules\        用户后装真实包 + @diver\<slug> → ..\<slug>（库导入=用户副本）
+    ├── .incoming\<ver>\     升级冲突时的官方新版（提示合并，合并后删除）
+    └── .seed-state.json     已应用基线（升级判「是否改过」的依据）
 ```
 
 - **首启**：seed 解开播种到用户区；**升级**：新 seed 对账 —— 未改的插件静默更新，
@@ -197,13 +203,30 @@ as-built（`scripts/build-core-bundle.mjs`）：
 `install-deps.mjs`：内置 `@cos`/`@diver`/`@deepseek-ai/dsh-*`/`file:` 无需安装，
 用户后装落 `plugins/node_modules`（解析优先级：插件本地 → plugins → 内置根）。
 
-### P1c —— 播种对账工作区（B′，取代原「用户插件覆盖层」决策）
+### P1c —— 播种对账工作区（B′，取代原「用户插件覆盖层」决策）✅ 已落地（2026-09-25）
 
-1. 运行时唯一插件目录 = 用户区 `cos/plugins/`；安装目录侧只保留 `plugins.seed.tar.zst`
-   更新载荷（不再展开明文目录，消除「两份明文」困惑）。
+> 实施形态两处偏离早先草案，均已在实施中定案：
+> 1. **载荷 = `plugins.seed/` 明文镜像 + `seed-manifest.json`**（非 tar.zst）：播种=复制
+>    零解压（延续 P1「解压归零」）、doctor 直接 diff 官方原版；代价是安装目录多一份
+>    明文镜像（命名即语义：只作播种源）。
+> 2. **对账在 boot 前置步骤跑**（`@cos/boot` `seed.ts`，`seedVersion` 相同零开销跳过）；
+>    纯逻辑单测 node --test 20 用例；Rust 壳只改 `--plugin-root` 一行（指 `cos_home/plugins`）。
+
+1. 运行时唯一插件目录 = 用户区 `cos/plugins/`；安装目录侧 `plugins.seed/` 只作播种源
+   （进程入口 `plugins/companion/` 留安装目录，不播种）。
 2. 首启播种；升级对账：未改静默更新、改过的保留 + `.incoming/<ver>/` 并存新版提示、
    自写不动。出厂 manifest 记录各文件内容 hash（规范化换行）判定「是否改过」。
-3. `plugin-doctor.mjs` 增补：导出官方原版做 diff、提示 `.incoming` 可合并。
+3. `plugin-doctor.mjs` 增补：改动状态报告（对比出厂基线）、`.incoming` 合并提示。
+4. **解析链**（实施中发现并修复）：用户工作区脱离安装树后 Node walk-up 不再命中
+   sidecar/node_modules —— seed 建两级 junction 补齐：`cos/node_modules → sidecar/node_modules`
+   （引擎/vendor 基座）+ `plugins/node_modules/@diver/<slug> → plugins/<slug>`（库导入
+   走用户副本，与挂载一致）。闭包自检改为**用户工作区模拟 + 落点 ⊆ sidecar 零容忍**：
+   旧检查锚定仓库源码，walk-up 借道开发机根 node_modules 会假绿（真机必断，P1c 冒烟
+   暴露于用户区布局）。
+
+实测（组装产物冒烟）：全新工作区首启播种 9 + DIVER_READY 全插件装载（零 import failed）；
+二次启动版本标记相同零对账；升级轮 8 静默更新 + 1 改过保留入 `.incoming/<ver>/memory`
+（用户版继续装载），doctor 报改动状态与合并提示。
 
 预期收益：随包小文件 2 万 → 数百（下降 ~99%）；harness/node_modules 整体消失；
 首启 extract 阶段从数十秒 → <1s 或归零。

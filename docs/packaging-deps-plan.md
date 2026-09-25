@@ -267,12 +267,21 @@ as-built（`scripts/build-core-bundle.mjs`）：
    （peerDep `*` + 禁物理拷贝 + 校验）」两条；「每插件独立 module root」**不采纳**——
    用户后装依赖维持共享 `plugins/node_modules`（保留插件本地 `node_modules` 优先的
    覆盖能力）。
-6. **boot 后运行期 unhandled 兜底（2026-09-25 提出）**：挂载期单插件失败已被 loader
-   逐行隔离（`plugin-loader/index.js:99` 的 `create().catch(logger.error)`，单行跳过
-   不连坐）；但 companion 入口无 `unhandledRejection` / `uncaughtException` 守卫，
-   插件裸 Promise / timer / HTTP handler 的未捕获抛错仍会拖死整个 sidecar。
-   是否补进程级守卫（记日志 + 不静默退出）待定——补则闭合「单插件失败不阻断核心」，
-   不补则该保证只覆盖挂载期。
+6. ~~boot 后运行期 unhandled 兜底~~ —— **已拍板并落地（2026-09-25）**：分级兜底
+   （`harness/packages/boot/src/error-guard.ts`，boot 收尾统一安装）：
+   - **非核心插件**（核心清单之外的 @diver/*）：记日志 + 滑窗熔断——60s 内 5 次
+     未捕获错误即停用该插件 fiber（重启恢复；持久禁用在 cordis.patch.yml 设
+     `disabled: true`），进程存活、不阻断核心；
+   - **核心面**（引擎 @cos/*、核心插件、无法归属）：立即 panic（FATAL 日志 +
+     退出码 1，fail-loud 交壳侧报障，禁止半残僵尸态）。
+   核心插件清单 `DEFAULT_CORE_PLUGINS` = `@diver/backend`（UI 通道）+
+   `@diver/native-bridge`（共享 RPC 库），`BootOptions.corePlugins` 可覆盖。
+   归属判定（纯函数，含单测）：沿错误栈（含 `cause`，根因优先）取第一个「有主」帧
+   ——`plugins/<name>/` 归该插件、`harness/` 归引擎、`node_modules`/`node:` 跳过、
+   未知按核心处理。实测（组装产物冒烟）：非核心 7 连拒 → 5 条隔离日志 + 熔断且
+   fiber 已停用、后续错误吞掉、进程存活 30s；核心面伪造 harness 栈 → FATAL +
+   退出码 1。挂载期隔离（`plugin-loader` 的 `create().catch`）与本守卫互补：
+   前者管装载，后者管运行期。
 7. **P1 V 案拍板（2026-09-25，用户选定「V：只打第三方」）**：第三方闭包 vendor 化
    （esbuild `splitting` 共享 chunk 保单实例 + exports 精确寻址）；`@cos`/`@diver`/
    `@deepseek-ai/dsh-*` 映射垫片指回源码（可读写承诺不变）。spike 验证过的坑已固化

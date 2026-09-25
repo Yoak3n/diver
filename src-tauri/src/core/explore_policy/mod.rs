@@ -11,6 +11,8 @@ use serde_json::{json, Value};
 
 use crate::core::presence::PresenceHandle;
 
+mod log_fmt;
+
 fn api_base() -> String {
     crate::core::sidecar::SidecarManager::global().api_base_url()
 }
@@ -68,21 +70,29 @@ async fn try_start_explore() {
     let now = diver_presence::types::now_ms();
     let wake = PresenceHandle::global().with(|p| p.explore_should_wake(now));
     if !wake {
+        log::debug!("[explore] tick：未到点，跳过");
         return;
     }
+    log::info!("[explore] 到点，拉取候选词");
 
     // 2) 记忆只读取词
     let terms_val = match http_json("GET", &format!("{base}/api/memory/pick-terms?limit=5"), None).await
     {
         Ok(v) => v,
         Err(e) => {
-            log::debug!("[explore] pick-terms 失败: {e}");
+            log::warn!("[explore] pick-terms 失败: {e}");
             return;
         }
     };
     let Some(terms) = terms_val.get("terms").and_then(|t| t.as_array()) else {
+        log::warn!("[explore] pick-terms 响应缺少 terms 字段");
         return;
     };
+    if terms.is_empty() {
+        log::info!("[explore] 无候选词，本次跳过");
+        return;
+    }
+    log::info!("[explore] 候选 {}: {}", terms.len(), log_fmt::candidates_line(terms));
 
     // 3) 逐个候选走 L1+L2（TermRepeat 会跳过）
     for item in terms {
@@ -106,7 +116,7 @@ async fn try_start_explore() {
             p.request_web_explore(term, reason, from_memory_id.clone(), now)
         });
         if !result.is_ok() {
-            log::debug!("[explore] 跳过「{term}」: {result:?}");
+            log::info!("[explore] 跳过「{term}」: {result:?}");
             continue;
         }
         let Some(job) = job else { continue };
@@ -127,7 +137,11 @@ async fn try_start_explore() {
                     .and_then(|v| v.as_str())
                     .unwrap_or_default()
                     .to_string();
-                log::info!("[explore] 启动 job {job_id} term={}", job.term);
+                log::info!(
+                    "[explore] 启动 job {job_id} term={} reason={}",
+                    job.term,
+                    job.reason.as_str()
+                );
                 PresenceHandle::global().with(|p| p.explore_policy().set_job_id(job_id.clone()));
                 // 后台等待完成 / 被打断
                 spawn_waiter(job_id);
@@ -146,6 +160,7 @@ fn spawn_waiter(job_id: String) {
     tauri::async_runtime::spawn(async move {
         let base = api_base();
         let url = format!("{base}/api/memory/explore/{job_id}");
+        let mut poll_fails = 0u32;
         for _ in 0..180 {
             // 最多约 3 分钟
             tokio::time::sleep(Duration::from_secs(2)).await;
@@ -158,18 +173,25 @@ fn spawn_waiter(job_id: String) {
                 Ok(val) => {
                     let state = val.get("state").and_then(|v| v.as_str()).unwrap_or("");
                     if state == "done" || state == "error" || state == "cancelled" {
-                        log::info!("[explore] job {job_id} → {state}");
+                        log::info!("[explore] job {job_id} → {}", log_fmt::job_summary(state, &val));
                         PresenceHandle::global().with(|p| p.explore_policy().release());
                         PresenceHandle::global().apply_event(Event::ExploreEnd);
                         return;
                     }
                 }
                 Err(e) => {
-                    log::debug!("[explore] 轮询失败: {e}");
+                    poll_fails += 1;
+                    // 只告警首次，避免 2s 轮询刷屏
+                    if poll_fails == 1 {
+                        log::warn!("[explore] 轮询 job {job_id} 失败: {e}");
+                    } else {
+                        log::debug!("[explore] 轮询失败（第 {poll_fails} 次）: {e}");
+                    }
                 }
             }
         }
         // 超时兜底
+        log::warn!("[explore] job {job_id} 等待超时（3min），取消");
         cancel_active_job();
         PresenceHandle::global().apply_event(Event::ExploreEnd);
     });
@@ -212,6 +234,7 @@ pub async fn trigger_manual(term: &str, reason: &str) -> Result<Value, String> {
         "sleep" => WebExploreReason::Sleep,
         _ => WebExploreReason::LongIdle,
     };
+    log::info!("[explore] 手动触发「{term}」 reason={}", reason.as_str());
     let (result, job) = PresenceHandle::global().with(|p| {
         p.request_web_explore(term, reason, None, now)
     });
@@ -231,12 +254,14 @@ pub async fn trigger_manual(term: &str, reason: &str) -> Result<Value, String> {
     match http_json("POST", &format!("{base}/api/memory/explore"), Some(payload)).await {
         Ok(val) => {
             if let Some(job_id) = val.get("jobId").and_then(|v| v.as_str()) {
+                log::info!("[explore] 启动 job {job_id} term={}（手动）", job.term);
                 PresenceHandle::global().with(|p| p.explore_policy().set_job_id(job_id));
                 spawn_waiter(job_id.to_string());
             }
             body["dispatch"] = val;
         }
         Err(e) => {
+            log::warn!("[explore] 手动触发 dispatch 失败: {e}");
             PresenceHandle::global().with(|p| p.explore_policy().release());
             PresenceHandle::global().apply_event(Event::ExploreEnd);
             body["dispatchError"] = json!(e);

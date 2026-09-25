@@ -153,8 +153,8 @@ pub(super) fn start_impl(mgr: &SidecarManager, app: &AppHandle) -> bool {
                 }
                 let line = line.unwrap_or_default();
                 mgr.push_log(line.clone());
-                // 实时转发 sidecar 日志到 diver 控制台（调试：压缩/记忆等 dsh 层日志）
-                println!("[sidecar] {}", line);
+                // 实时转发 sidecar 日志进壳日志（控制台 + app.log；含 explore 等执行面日志）
+                log::info!("[sidecar] {}", line);
                 if line.contains("DIVER_READY") {
                     log::info!("sidecar 就绪 (port {})", mgr.port());
                     mgr.push_log("[diver] 就绪 ✓".into());

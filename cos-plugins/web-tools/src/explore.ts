@@ -59,12 +59,18 @@ export async function exploreTerm(
   }
   const signal = overrides?.signal
 
+  const searchStart = Date.now()
   const search = await webSearch(query, policy)
+  console.log(
+    `[explore] search "${query}"（${search.engine}）→ ${search.hits.length} 命中` +
+      `${search.truncated ? '（截断）' : ''} ${Date.now() - searchStart}ms`,
+  )
   const pages: ExplorePageNote[] = []
   let totalChars = 0
   let budgetExhausted = false
 
-  for (const hit of search.hits) {
+  for (const [i, hit] of search.hits.entries()) {
+    const pageNo = i + 1
     if (signal?.aborted) break
     if (pages.length >= policy.maxPages) break
     if (totalChars >= policy.maxTotalChars) {
@@ -96,6 +102,7 @@ export async function exploreTerm(
 
       // 反爬壳 / 403：尝试 bladebro 浏览器读页（仍受 budget 约束）。
       if (policy.browserFallback && (noteError !== undefined || markdown.replace(/\s+/g, '').length < 40)) {
+        console.log(`[explore] P${pageNo} 触发浏览器兜底 ${hit.url}`)
         const viaBrowser = await bladebroRead(hit.url, policy)
         if (viaBrowser) {
           markdown = viaBrowser.markdown
@@ -125,8 +132,13 @@ export async function exploreTerm(
         ...(noteError !== undefined && !bodyOk ? { error: noteError } : {}),
       })
       totalChars += excerpt.length
+      console.log(
+        `[explore] P${pageNo}/${policy.maxPages} ${finalUrl} → ` +
+          (bodyOk ? `ok ${excerpt.length} chars` : `薄页 ${noteError ?? 'EXTRACT_THIN'}`),
+      )
     } catch (error) {
       const message = error instanceof WebError ? `${error.code}: ${error.message}` : String(error)
+      console.warn(`[explore] P${pageNo} ${hit.url} 失败: ${message}`)
       pages.push({
         url: hit.url,
         title: hit.title,
@@ -138,6 +150,9 @@ export async function exploreTerm(
   }
 
   if (totalChars >= policy.maxTotalChars) budgetExhausted = true
+  if (budgetExhausted) {
+    console.log(`[explore] 预算耗尽（${totalChars}/${policy.maxTotalChars} chars），停止读页`)
+  }
 
   const summary = renderExploreSummary({ term, query, hits: search.hits, pages, totalChars, budgetExhausted, summary: '' })
   return {

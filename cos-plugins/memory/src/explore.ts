@@ -101,6 +101,7 @@ export class ExploreJobManager {
       job.endedAt = Date.now()
     }
     if (this.running === id) this.running = null
+    console.warn(`[explore] cancel → job ${id}`)
     return true
   }
 
@@ -149,6 +150,11 @@ export class ExploreJobManager {
       policy?: PolicyOverrides
     },
   ): Promise<void> {
+    const started = Date.now()
+    console.log(
+      `[explore] job ${job.jobId} 开始 term=${input.term} reason=${input.reason ?? '-'}` +
+        (input.fromMemoryId ? ` from=${input.fromMemoryId}` : ''),
+    )
     try {
       const policy = resolvePolicy(DEFAULT_POLICY, input.policy)
       const result = await exploreTerm(input.term, policy, {
@@ -160,9 +166,14 @@ export class ExploreJobManager {
       if (signal.aborted) {
         job.state = 'cancelled'
         job.endedAt = Date.now()
+        console.warn(`[explore] job ${job.jobId} 已取消（${Date.now() - started}ms）`)
         return
       }
       job.result = result
+      console.log(
+        `[explore] job ${job.jobId} 检索完成 hits=${result.hits.length} pages=${result.pages.length}` +
+          ` chars=${result.totalChars}${result.budgetExhausted ? ' 预算耗尽' : ''}（${Date.now() - started}ms）`,
+      )
       // L3 写回：外部视角卡片 + 链到原记忆（设计：探索路径不写，结束时由 memory 写）
       const note = [
         `【外部探索】${result.term}`,
@@ -180,12 +191,15 @@ export class ExploreJobManager {
       job.memoryId = memoryId
       job.state = 'done'
       job.endedAt = Date.now()
+      console.log(`[explore] job ${job.jobId} 写回记忆 ${memoryId} → done（总耗时 ${Date.now() - started}ms）`)
     } catch (error) {
       if (signal.aborted) {
         job.state = 'cancelled'
+        console.warn(`[explore] job ${job.jobId} 已取消（${Date.now() - started}ms）`)
       } else {
         job.state = 'error'
         job.error = (error as Error)?.message ?? String(error)
+        console.error(`[explore] job ${job.jobId} 失败: ${job.error}（${Date.now() - started}ms）`)
       }
       job.endedAt = Date.now()
     }

@@ -106,7 +106,7 @@ src-tauri/resources/sidecar/                                      # 打进安装
 
 ```
 Diver.exe
- └─ spawn: resources/sidecar/node.exe --import file:///.../harness/node_modules/tsx/dist/loader.mjs
+ └─ spawn: resources/sidecar/node.exe --import file:///.../node_modules/tsx/dist/loader.mjs
             --expose-internals resources/sidecar/plugins/companion/src/companion-bundle.ts
             --profile companion
             --bundles resources/sidecar/bundles/bundle-companion
@@ -130,7 +130,8 @@ Rust 侧（`src-tauri/src/core/sidecar/`）：
 
 Node 22 的原生 type-strip 是"纯剥离"模式，**不支持 TS 参数属性**
 （`constructor(private x: string)`），而 `@cos/*` 引擎大量使用。tsx 用 esbuild
-完整编译，支持全部 TS 语法。tsx 已作为运行时依赖装进随包 `harness/node_modules`。
+完整编译，支持全部 TS 语法。tsx 已作为运行时白名单依赖装进随包 `node_modules/`
+（共享解析根：vendor 大文件 + @cos/@diver 源码映射 + tsx/esbuild 白名单）。
 
 ### 安装包体积
 

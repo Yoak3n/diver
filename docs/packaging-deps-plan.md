@@ -161,31 +161,41 @@ yaml/zod/cosmokit 等核心已有实例的共享库）由加载器**映射进核
 
 预期收益：解压时间降一个数量级；改动集中在 `bundle-release.mjs` 与 `setup_progress.rs`。
 
-### P1a —— cos 核心 bundle（大头收益：harness/node_modules 整体消失）
+### P1 —— 依赖 vendor 化（V 案，已实施 2026-09-25；取代原 P1a/P1b 计划）
 
-1. esbuild 把 `@cos/*` 引擎 + 全部第三方依赖打成 `core/` 少数大文件（对齐 pi
-   `build-coding-agent-bundle.mjs`：`bundle: true`、minify、banner `createRequire` shim）。
-2. **零 node_modules**：白名单仅 tsx loader + esbuild 二进制（等价 pi 外挂的 jiti）。
-3. 对外暴露 `@cos/plugin-api` 入口 + seed 内垫片，插件 import 语义不变。
-4. `harness/node_modules.tar`（15,050 条目 / 100MB）从安装包中消失；启动链路从
-   「tsx 跑 harness 源码」改为「加载 core bundle」，tsx 只用于插件 TS 源码。
+> **用户拍板「V：只打第三方」**。原 P1a「cos 核心 bundle」**废弃**：入口
+> `companion-bundle.ts` 是插件源码（须保持可写），相对导入
+> `harness/packages/boot/src/index.ts`——打包引擎会破坏该相对导入或产生双实例；
+> V 案引擎保持源码加载（README 开放承诺不动），单 exe 留 P2。
 
-### P1b —— 插件依赖分桶：host-provided 映射 + 私有依赖 vendor 化（对照 pi 修订）
+as-built（`scripts/build-core-bundle.mjs`）：
 
-1. **host-provided 清单**（对齐 pi 的 jiti alias / `VIRTUAL_MODULES` 模式）：核心 bundle
-   已有实例的共享库（`@cos/plugin-api` 及 yaml/zod/cosmokit 等，清单化）由加载器
-   **映射进核心 bundle 内部副本**，插件 import 语义不变且单实例 —— 禁止垫片物理拷贝
-   这些包（pi 明确教训：物理拷贝绕过映射 → duplicate classes/registries）。
-2. **私有依赖 vendor 化**：仅对核心未提供的依赖，构建期以每包公开入口为 entry（含
-   exports 子路径）产出 `plugins/vendor/<pkg>.mjs`（`format: cjs`，兼容 require 与 tsx）
-   + `node_modules/<pkg>/` 解析垫片（package.json + index.js re-export）。
-3. **manifest 纪律**（对齐 pi packages.md）：host-provided 包只准进
-   `peerDependencies: "*"`，禁进 `dependencies`；`scripts/check-vendor-closure.mjs`
-   校验全部裸 import 可解析，并检出 host 包物理拷贝即报错（吸收现有 `sourceImportNames`
-   扫描逻辑）。
-4. 白名单 external（esbuild 二进制、wasm、`.node`）保持真实文件。
-5. `install-deps.mjs` 语义不变：用户后装真实包落共享 `plugins/node_modules`，真实目录
-   优先于垫片。
+1. **扫描**随包源码（`harness/packages/*`、`packages/dsh/*`、`plugins/*` 的
+   `src/**` 与根 `*.ts`）全部裸导入（含子路径），扫描器沉淀
+   `scripts/lib/source-imports.mjs`（闭包自检共用）。
+2. **分类**：workspace 源码（`@cos/*` / `@diver/*` / `@deepseek-ai/dsh-*`）→ **映射**；
+   其余 npm → **vendor**；tsx/esbuild → **白名单**物理目录。typescript 不随包：
+   tsx 运行时唯一依赖是 esbuild，无人 import tsc（省 21MB / 121 文件）。
+3. **映射包**：`node_modules/<pkg>` 生成 package.json exports（精确到子路径）+
+   `.shim/*.mjs` `export * from '<相对源码路径>'`（default 行按探测面补）——
+   引擎/插件仍明文源码可读写，解析经 node_modules 共享根。
+4. **vendor 包**：`node --import tsx` 探测 export 面 → 显式命名解构 re-export 包装
+   入口（规避 CJS default-only 塌缩；奇名/保留字走别名导出）→ esbuild
+   `bundle + format: esm + splitting`（共享 chunk 保单实例）+ `createRequire` banner
+   （CJS-in-ESM `require('process')` 问题）。exports 精确寻址（含
+   `@modelcontextprotocol/sdk/client/stdio.js` 类子路径）。
+5. **白名单**：tsx + esbuild + `@esbuild/*` 平台二进制（从 `.pnpm` store 解引用复制，
+   与宿主同版本，防宿主/二进制版本失配）。
+6. **三重校验**：① 构建期 export 面 probe-vs-产物 import 实测 ② 构建后
+   `check-plugin-closure.mjs` 按 Node 解析逐文件核销全部裸导入 + 打包不变量
+   （无 `*.tar*`、无嵌套 node_modules、tsx loader 在位）③ 真实启动冒烟 boot →
+   `DIVER_READY`（全部插件就绪、backend 监听）。
+
+启动契约变更：tsx loader `harness/node_modules/tsx/...` → `node_modules/tsx/...`
+（共享解析根在 sidecar 根，`command.rs` 同步）。P0 的 Rust 解压链保留但 P1 后
+无归档可解（**首启解压归零**）；P1c 播种对账复用该链路。
+`install-deps.mjs`：内置 `@cos`/`@diver`/`@deepseek-ai/dsh-*`/`file:` 无需安装，
+用户后装落 `plugins/node_modules`（解析优先级：插件本地 → plugins → 内置根）。
 
 ### P1c —— 播种对账工作区（B′，取代原「用户插件覆盖层」决策）
 
@@ -227,8 +237,15 @@ yaml/zod/cosmokit 等核心已有实例的共享库）由加载器**映射进核
   饱和（~3.5k 文件/秒，加线程无收益），归零手段在 P1（文件数 13k → 数百）。
 - P1 目标：安装包 sidecar 内 <64KB 的文件数下降 ≥90%；**核心层 node_modules = 0**；
   首启 extract 阶段 <1s 或归零。
+- **P1 实测（2026-09-25，V 案）**：随包依赖 **13,173 文件 → 132 文件**（−99%），
+  `node_modules/` 14.2MB（vendor 打包 ~0.9MB / 4 个大文件 + tsx 0.5MB +
+  `@esbuild/win32-x64` 11.2MB）；sidecar 全树 422 文件 / 36.3MB；**首启解压归零**
+  （文件即最终形态，无 tar/归档）。三项 P1 目标全部达标：小文件数下降远超 ≥90%、
+  `harness/node_modules` 不随包（核心层 = 0）、extract 归零。140 处裸导入闭包自检
+  全绿；冒烟 boot → `DIVER_READY`（memory / web-tools / basic-tools / self-prompt /
+  native-bridge 全部就绪，backend 监听）。
 - `cargo test --workspace`、`pnpm typecheck`、`cos-plugins/*/scripts/smoke.ts` 全绿；
-  `check-vendor-closure.mjs` 通过。
+  `check-plugin-closure.mjs`（Node 解析逐文件核销）通过。
 - 兼容性冒烟：改插件源码重启生效；`install-deps.mjs` 能装新依赖；`plugin-doctor.mjs`
   诊断正常；会话/记忆/工作区路径不受影响。
 - **开放性硬校验**（§3.1）：用户区 `plugins/<name>/src/*.ts` 为明文 TS（抽样校验
@@ -238,8 +255,9 @@ yaml/zod/cosmokit 等核心已有实例的共享库）由加载器**映射进核
 
 ## 8. 待决策
 
-1. ~~harness 引擎是否保持源码运行~~ —— **已拍板：P1 核心 bundle**（运行时不再源码加载，
-   仓库源码照旧可读；单 exe 留 P2 评估）。
+1. ~~harness 引擎是否保持源码运行~~ —— **已改判（2026-09-25，V 案）**：P1 引擎
+   **保持源码加载**（原「核心 bundle」方案因入口相对导入约束废弃，见 §5 P1）；
+   单 exe 仍留 P2 评估。
 2. P0 与 P1 是否分两个 PR —— 建议分（P0 可独立回滚，P1 需要冒烟周期）。
 3. ~~是否先在现装包上实测 extract 阶段耗时基线~~ —— 已实测（§1），P0 目标定为 ≤3s。
 4. ~~升级保留策略~~ —— **已拍板：B′ 播种对账工作区**（§3.2 / §5 P1c），取代早先
@@ -255,3 +273,9 @@ yaml/zod/cosmokit 等核心已有实例的共享库）由加载器**映射进核
    插件裸 Promise / timer / HTTP handler 的未捕获抛错仍会拖死整个 sidecar。
    是否补进程级守卫（记日志 + 不静默退出）待定——补则闭合「单插件失败不阻断核心」，
    不补则该保证只覆盖挂载期。
+7. **P1 V 案拍板（2026-09-25，用户选定「V：只打第三方」）**：第三方闭包 vendor 化
+   （esbuild `splitting` 共享 chunk 保单实例 + exports 精确寻址）；`@cos`/`@diver`/
+   `@deepseek-ai/dsh-*` 映射垫片指回源码（可读写承诺不变）。spike 验证过的坑已固化
+   进构建器：CJS named-export 塌缩（显式解构导出）、无 default 包的 conditional default、
+   CJS-in-ESM `require` banner、每包 `package.json type:module`、`@esbuild/*` 须与
+   宿主同版本解引用落位、扫描器须剥注释且 from 从句与左侧长度解耦。

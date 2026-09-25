@@ -77,7 +77,7 @@ COS_HOME= <repo>/harness/.cos-home
 **release（随包 Node，非 SEA）**：
 
 ```text
-resources/sidecar/node.exe --import file:///.../harness/node_modules/tsx/dist/loader.mjs
+resources/sidecar/node.exe --import file:///.../node_modules/tsx/dist/loader.mjs
   --expose-internals resources/sidecar/plugins/companion/src/companion-bundle.ts
   --profile companion
   --plugin-root resources/sidecar/plugins

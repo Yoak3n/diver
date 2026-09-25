@@ -87,6 +87,40 @@ export function migrateDottedSettings(): void {
   }
 }
 
+/**
+ * 模型改名迁移表：provider → （旧 id → 新 id）。
+ * DeepSeek 官方改短名（deepseek-flash / deepseek-pro）；第三方提供商保留全名
+ * （deepseek-v4.1-flash，commandcode 带 `deepseek/` 前缀）。按 provider 维度判别，
+ * 不误伤 volcark 仍有效的 `deepseek-v4-pro` 等条目。
+ */
+const LEGACY_MODEL_IDS: Record<string, Record<string, string>> = {
+  'deepseek-official': {
+    'deepseek-v4-flash': 'deepseek-flash',
+    'deepseek-v4-pro': 'deepseek-pro',
+  },
+  'commandcode': {
+    'deepseek/deepseek-v4-flash': 'deepseek/deepseek-v4.1-flash',
+  },
+  'volcark': {
+    'deepseek-v4-flash': 'deepseek-v4.1-flash',
+  },
+}
+
+/** 纯映射：已保存的旧模型 id → 新 id；不认识（含非字符串）返回 undefined。 */
+export function aliasLegacyModel(provider: unknown, model: unknown): string | undefined {
+  if (typeof provider !== 'string' || typeof model !== 'string' || model === '') return undefined
+  return LEGACY_MODEL_IDS[provider]?.[model]
+}
+
+/** 一次性迁移：模型改名后把已保存的旧 model id 映射为新 id 并回写，避免打到已失效 id。 */
+export function migrateLegacyModelIds(): void {
+  const settings = readDiverSettings()
+  const next = aliasLegacyModel(settings.provider, settings.model)
+  if (next === undefined) return
+  writeDiverSettings({ model: next })
+  console.log(`[diver] 迁移模型 id: ${settings.model} → ${next}（provider: ${settings.provider}）`)
+}
+
 /** 把消息文本从内容块中取出。兼容纯字符串 content（否则会被抽成空，前端丢用户消息）。 */
 export function textOf(blocks: unknown): string {
   if (typeof blocks === 'string') return blocks

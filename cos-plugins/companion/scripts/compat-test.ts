@@ -206,7 +206,7 @@ async function main() {
   const savedSettings = existsSync(settingsPath) ? readFileSync(settingsPath, 'utf8') : null
   try {
     mkdirSync(dirname(settingsPath), { recursive: true })
-    writeFileSync(settingsPath, JSON.stringify({ provider: 'deepseek-official', model: 'deepseek-v4-flash' }), 'utf8')
+    writeFileSync(settingsPath, JSON.stringify({ provider: 'deepseek-official', model: 'deepseek-flash' }), 'utf8')
   } catch { /* 忽略 */ }
   let chatGuard = false
   let chatGuardMsg = ''

@@ -36,7 +36,7 @@ import { applyModelChange, ensureAgent } from './agent.ts'
 import { healthInfo } from './health.ts'
 import { applyProviderConfigs, catalogModels, isConfigured, persistedProvider, providerDecls } from './providers.ts'
 import { mountServer } from './server.ts'
-import { migrateDottedSettings } from './session-helpers.ts'
+import { migrateDottedSettings, migrateLegacyModelIds } from './session-helpers.ts'
 import { attachEventListeners, createBroadcast, sseWrite } from './sse.ts'
 import { createWebState } from './state.ts'
 import type { WebHandlerDeps } from './types.ts'
@@ -49,6 +49,8 @@ export const inject = ['agents', 'agentLoop', 'llm', 'credentials', 'sessionPers
 export function apply(ctx: Context, config: { uiDist?: string }) {
   // provider 配置通道已迁至 cos 契约文件；先把历史误写进 diver-settings 的带点键搬过去。
   migrateDottedSettings()
+  // 模型改名（deepseek-v4-* → 新名）后，把已保存的旧 model id 一次性映射回写。
+  migrateLegacyModelIds()
   const port = Number(process.env.DIVER_PORT ?? 53620)
   const uiDist = config?.uiDist ?? process.env.DIVER_UI_DIST ?? resolve(process.cwd(), '..', 'dist')
 

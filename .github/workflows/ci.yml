@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches: [dev, main]
+  pull_request:
+
+jobs:
+  rust-test:
+    name: cargo test
+    runs-on: windows-latest
+    steps:
+      # harness 是 git 子模块，必须递归检出，否则 crates/src-tauri 的路径引用与
+      # TS 检查都缺源码。
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: cargo test --workspace
+        run: cargo test --workspace
+
+  ts-check:
+    name: typecheck + 插件闭包
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: setup node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      # 根 pnpm-workspace 覆盖 harness + cos-plugins，一次安装全量到位。
+      - name: install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: typecheck（harness + cos-plugins）
+        run: pnpm typecheck
+
+      # 插件解析闭包检查：锚定真实运行布局，防开发机 node_modules 泄漏假绿。
+      - name: plugin closure check
+        run: node scripts/check-plugin-closure.mjs

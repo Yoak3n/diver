@@ -83,6 +83,12 @@ pi（`@earendil-works/pi-coding-agent`）的发行物**几乎不含 node_modules
 4. **依赖可装**：`install-deps.mjs` 为插件追加真实依赖，`plugin-doctor.mjs` 可诊断。
 5. **升级保留**：应用升级后用户对插件源码的修改不应被静默覆盖（策略见 §8.4）。
 
+> **为什么必须如此**：插件层是 agent 的**自修改面**——agent 自己改插件源码、经
+> `restart_agent` 工具（写 `$COS_HOME/restart.requested` + 优雅退出，壳 `lifecycle.rs`
+> 检测标志自动再拉起）重载生效。由此派生一条运行时保证：**单个插件运行失败不得
+> 阻断核心插件未失败时的启动流程**（挂载期 loader 逐行隔离已满足；boot 后运行期
+> unhandled 兜底待定，见 §8.6）。
+
 对各阶段的保证：
 
 | 阶段 | 对插件源码（明文 TS）的影响 | 对插件依赖的影响 |
@@ -243,3 +249,9 @@ yaml/zod/cosmokit 等核心已有实例的共享库）由加载器**映射进核
    （peerDep `*` + 禁物理拷贝 + 校验）」两条；「每插件独立 module root」**不采纳**——
    用户后装依赖维持共享 `plugins/node_modules`（保留插件本地 `node_modules` 优先的
    覆盖能力）。
+6. **boot 后运行期 unhandled 兜底（2026-09-25 提出）**：挂载期单插件失败已被 loader
+   逐行隔离（`plugin-loader/index.js:99` 的 `create().catch(logger.error)`，单行跳过
+   不连坐）；但 companion 入口无 `unhandledRejection` / `uncaughtException` 守卫，
+   插件裸 Promise / timer / HTTP handler 的未捕获抛错仍会拖死整个 sidecar。
+   是否补进程级守卫（记日志 + 不静默退出）待定——补则闭合「单插件失败不阻断核心」，
+   不补则该保证只覆盖挂载期。

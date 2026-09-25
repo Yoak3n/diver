@@ -60,6 +60,47 @@ export function saveSettings(body: {
   return json("/settings", { method: "POST", body: JSON.stringify(body) });
 }
 
+// ---------- 自定义模型提供商（OpenAI 兼容）----------
+
+/** 自定义提供商身份（配置值走通用 provider 配置通道）。 */
+export interface CustomProviderIdentity {
+  id: string;
+  name: string;
+}
+
+export function getCustomProviders(): Promise<{ providers: CustomProviderIdentity[] }> {
+  return json("/custom-providers");
+}
+
+export function saveCustomProvider(body: {
+  action: "add" | "update";
+  id?: string;
+  name: string;
+  baseUrl?: string;
+  apiKey?: string;
+  models?: string;
+}): Promise<{ ok: boolean; provider: CustomProviderIdentity }> {
+  return json("/custom-providers", { method: "POST", body: JSON.stringify(body) });
+}
+
+export function removeCustomProvider(id: string): Promise<{ ok: boolean }> {
+  return json("/custom-providers", {
+    method: "POST",
+    body: JSON.stringify({ action: "remove", id }),
+  });
+}
+
+/** 「拉取模型」：探端点 {baseUrl}/models 目录。 */
+export function fetchCustomProviderModels(
+  baseUrl: string,
+  apiKey?: string,
+): Promise<{ models: string[] }> {
+  return json("/custom-providers/models", {
+    method: "POST",
+    body: JSON.stringify({ baseUrl, ...(apiKey ? { apiKey } : {}) }),
+  });
+}
+
 export function sendChat(
   content: string,
   images?: ChatImage[],

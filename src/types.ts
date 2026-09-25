@@ -39,6 +39,8 @@ export interface ProviderConfigDecl {
   name: string;
   description?: string;
   fields: ConfigFieldDecl[];
+  /** 自定义模型提供商（身份可编辑/删除）。 */
+  custom?: boolean;
 }
 
 export interface SettingsInfo {

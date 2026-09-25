@@ -90,10 +90,10 @@ impl SidecarManager {
                 p.to_string_lossy().trim_start_matches("\\\\?\\").to_string()
             };
 
-            // tsx loader：随包 harness 的 node_modules/tsx/dist/loader.mjs（file:// URL）。
+            // tsx loader：随包共享 node_modules/tsx/dist/loader.mjs（file:// URL）。
             let tsx_loader = format!(
                 "file:///{}/node_modules/tsx/dist/loader.mjs",
-                clean(&harness_dir).replace('\\', "/")
+                clean(&sidecar_dir).replace('\\', "/")
             );
 
             log::info!(

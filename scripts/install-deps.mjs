@@ -62,14 +62,23 @@ for (const name of dirs) {
   }
   const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'))
   const deps = pkg.dependencies ?? {}
-  const extDeps = Object.keys(deps).filter((d) => !d.startsWith('@cos/'))
+  // 引擎（@cos/*）、diver 库（@diver/*、@deepseek-ai/dsh-*）、file: 源码依赖
+  // 由内置 node_modules 映射提供，无需安装；只装真正缺失的 npm 包。
+  const extDeps = Object.keys(deps).filter((d) =>
+    !d.startsWith('@cos/') && !d.startsWith('@diver/') && !d.startsWith('@deepseek-ai/dsh-')
+    && !String(deps[d] ?? '').startsWith('file:'))
   if (extDeps.length === 0) {
     log(`跳过 ${name}（无外部依赖）`)
     skipped++
     continue
   }
-  // 已存在于 plugins/node_modules 的跳过
-  const missing = extDeps.filter((d) => !existsSync(join(PLUGINS_NM, d)))
+  // 已可解析的跳过：插件本地 node_modules → plugins/node_modules → 内置 node_modules/
+  const resolvable = (d) => [
+    join(PLUGINS, name, 'node_modules', d),
+    join(PLUGINS_NM, d),
+    join(PLUGINS, '..', 'node_modules', d),
+  ].some((p) => existsSync(p))
+  const missing = extDeps.filter((d) => !resolvable(d))
   if (missing.length === 0) {
     log(`跳过 ${name}（依赖已齐全）`)
     skipped++

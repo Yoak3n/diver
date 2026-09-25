@@ -1,115 +1,121 @@
 /**
- * 打包前闭包预检：扫描 plugins + @cos 源码裸 import，核对能否解析。
- * 用法：node scripts/check-plugin-closure.mjs
- * 退出码 0=通过，1=有缺失。
+ * 打包后闭包自检：在最终产物（sidecar/）上按 Node 解析校验随包源码的全部裸导入。
+ * 与运行时同算法：createRequire(源码文件).resolve(spec)（走 node_modules 共享解析根）。
+ * 并断言打包不变量：
+ *  - 不带 *.tar* 依赖归档（P1 后依赖是真实文件，无需首启解压）
+ *  - harness/packages 与 plugins 下无 node_modules 树（闭包集中在 node_modules/）
+ *  - tsx loader 在位（command.rs 启动契约：node_modules/tsx/dist/loader.mjs）
+ * 用法：node scripts/check-plugin-closure.mjs   退出码 0=通过，1=有缺失。
  */
-import { readdirSync, readFileSync, existsSync } from 'node:fs'
-import { join, dirname, resolve } from 'node:path'
+import { existsSync, readdirSync } from 'node:fs'
+import { join, resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { execFileSync } from 'node:child_process'
+import { createRequire } from 'node:module'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const SIDE = join(ROOT, 'src-tauri', 'resources', 'sidecar')
+const HARNESS = join(SIDE, 'harness')
 const PLUGINS = join(SIDE, 'plugins')
-const NM = join(PLUGINS, 'node_modules')
-const HARNESS_NM = join(SIDE, 'harness', 'node_modules')
+const NM = join(SIDE, 'node_modules')
 
-const BUILTIN = new Set([
-  'assert', 'async_hooks', 'buffer', 'child_process', 'cluster', 'console', 'constants',
-  'crypto', 'diagnostics_channel', 'dns', 'events', 'fs', 'http', 'http2', 'https',
-  'inspector', 'module', 'net', 'os', 'path', 'perf_hooks', 'process', 'punycode',
-  'querystring', 'readline', 'repl', 'stream', 'string_decoder', 'timers', 'tls', 'tty',
-  'url', 'util', 'v8', 'vm', 'wasi', 'worker_threads', 'zlib',
-])
+const { scanPackageDir, bareSpec } = await import('./lib/source-imports.mjs')
 
-function loadTarPackages(...tarPaths) {
-  const set = new Set()
-  // 兼容 .tar.zst（bsdtar -tf 自动识别 zstd）与旧 .tar
-  for (const tarPath of tarPaths) {
-    if (!existsSync(tarPath)) continue
-    try {
-      const listing = execFileSync('tar', ['-tf', tarPath], {
-        encoding: 'utf8',
-        maxBuffer: 64 * 1024 * 1024,
-      })
-      for (const line of listing.split(/\r?\n/)) {
-        const m = line.replace(/^\.\/?/, '').match(/^((@[^/]+\/[^/]+)|([^/@][^/]+))\//)
-        if (m) set.add(m[1])
-      }
-    } catch {
-      /* ignore */
-    }
-  }
-  return set
-}
-
-const tarPkgs = loadTarPackages(join(PLUGINS, 'node_modules.tar.zst'), join(PLUGINS, 'node_modules.tar'))
-
-function walkFiles(dir, out = []) {
-  if (!existsSync(dir)) return out
+// ── 打包不变量 ───────────────────────────────────────────────────────────
+const problems = []
+function findTar(dir, depth = 0) {
+  if (depth > 3) return
   for (const e of readdirSync(dir, { withFileTypes: true })) {
-    if (e.name === 'node_modules' || e.name.startsWith('.')) continue
-    const p = join(dir, e.name)
-    if (e.isDirectory()) walkFiles(p, out)
-    else if (/\.(ts|tsx|mts|js|mjs|cjs)$/.test(e.name)) out.push(p)
+    const full = join(dir, e.name)
+    if (e.isFile() && /\.tar(\.zst)?$/.test(e.name)) problems.push(`存在依赖归档（应已消除）: ${full.replace(ROOT + '\\', '')}`)
+    if (e.isDirectory() && e.name !== 'node_modules') findTar(full, depth + 1)
   }
-  return out
+}
+findTar(SIDE)
+
+function findNestedNm(dir) {
+  for (const e of readdirSync(dir, { withFileTypes: true })) {
+    if (!e.isDirectory()) continue
+    const full = join(dir, e.name)
+    if (e.name === 'node_modules') {
+      problems.push(`随包源码树带 node_modules（应集中在 node_modules/）: ${full.replace(ROOT + '\\', '')}`)
+      continue
+    }
+    findNestedNm(full)
+  }
+}
+for (const root of [join(HARNESS, 'packages'), PLUGINS]) {
+  if (existsSync(root)) findNestedNm(root)
 }
 
-function bareName(spec) {
-  if (!spec || spec.startsWith('.') || spec.startsWith('node:') || spec.startsWith('file:')) return null
-  if (spec.startsWith('@')) return spec.split('/').slice(0, 2).join('/')
-  return spec.split('/')[0]
+if (!existsSync(join(NM, 'tsx', 'dist', 'loader.mjs'))) {
+  problems.push('tsx loader 不在位: node_modules/tsx/dist/loader.mjs（command.rs 启动契约）')
 }
 
-function canResolve(name) {
-  if (!name) return true
-  const baseName = name.split('/')[0]
-  if (BUILTIN.has(name) || BUILTIN.has(baseName)) return true
-  for (const root of [NM, HARNESS_NM, join(SIDE, 'node_modules')]) {
-    const p = join(root, ...name.split('/'))
-    if (existsSync(join(p, 'package.json')) || existsSync(join(p, 'index.ts')) || existsSync(join(p, 'index.js'))) {
-      return true
+// ── 裸导入解析校验（与运行时同一解析算法）────────────────────────────────
+function shippedPackageDirs() {
+  const dirs = []
+  const pkgs = join(HARNESS, 'packages')
+  if (existsSync(pkgs)) {
+    for (const e of readdirSync(pkgs, { withFileTypes: true })) {
+      if (!e.isDirectory() || e.name.startsWith('.')) continue
+      if (e.name === 'dsh') {
+        for (const d of readdirSync(join(pkgs, 'dsh'), { withFileTypes: true })) {
+          if (d.isDirectory()) dirs.push(join(pkgs, 'dsh', d.name))
+        }
+        continue
+      }
+      dirs.push(join(pkgs, e.name))
     }
   }
-  if (name.startsWith('@cos/')) {
-    const leaf = name.slice('@cos/'.length)
-    if (existsSync(join(SIDE, 'harness', 'packages', leaf, 'package.json'))) return true
-    if (existsSync(join(NM, '@cos', leaf, 'package.json'))) return true
+  for (const e of readdirSync(PLUGINS, { withFileTypes: true })) {
+    if (e.isDirectory() && !e.name.startsWith('.') && e.name !== 'node_modules') {
+      dirs.push(join(PLUGINS, e.name))
+    }
   }
-  return tarPkgs.has(name)
+  return dirs
 }
 
-const roots = [PLUGINS, join(NM, '@cos'), join(NM, '@diver')]
-const files = roots.flatMap((r) => walkFiles(r))
+let refCount = 0
 const missing = new Map()
-
-for (const f of files) {
-  let text
-  try {
-    text = readFileSync(f, 'utf8')
-  } catch {
-    continue
-  }
-  const re =
-    /(?:^|\n)\s*(?:import|export)[\s\S]{0,200}?from\s*['"]([^'"]+)['"]|(?:^|\n)\s*import\s*['"]([^'"]+)['"]|require\s*\(\s*['"]([^'"]+)['"]\s*\)/g
-  for (const m of text.matchAll(re)) {
-    const name = bareName(m[1] || m[2] || m[3])
-    if (!name || canResolve(name)) continue
-    if (!missing.has(name)) missing.set(name, new Set())
-    missing.get(name).add(f.replace(ROOT + '\\', '').replace(ROOT + '/', ''))
+for (const dir of shippedPackageDirs()) {
+  const found = scanPackageDir(dir)
+  for (const [spec, froms] of found) {
+    if (!bareSpec(spec) || spec.startsWith('node:')) continue
+    for (const f of froms) {
+      refCount++
+      try {
+        createRequire(f).resolve(spec)
+      } catch {
+        if (!missing.has(spec)) missing.set(spec, new Set())
+        missing.get(spec).add(f.replace(ROOT + '\\', '').replace(ROOT + '/', ''))
+      }
+    }
   }
 }
 
-if (missing.size === 0) {
-  console.log(`OK: ${files.length} files, all bare imports resolvable`)
-  process.exit(0)
+if (missing.size > 0) {
+  console.error(`FAIL: ${missing.size} 个裸说明符无法解析`)
+  for (const [spec, froms] of [...missing.entries()].sort()) {
+    console.error(`  - ${spec}`)
+    for (const f of [...froms].slice(0, 6)) console.error(`      from ${f}`)
+    if (froms.size > 6) console.error(`      ... +${froms.size - 6} more`)
+  }
 }
+if (problems.length > 0) {
+  console.error(`FAIL: ${problems.length} 个打包不变量违反`)
+  for (const p of problems) console.error(`  - ${p}`)
+}
+if (missing.size || problems.length) process.exit(1)
 
-console.error(`FAIL: ${missing.size} unresolved package(s) in ${files.length} files`)
-for (const [name, froms] of [...missing.entries()].sort()) {
-  console.error(`  - ${name}`)
-  for (const f of [...froms].slice(0, 6)) console.error(`      from ${f}`)
-  if (froms.size > 6) console.error(`      ... +${froms.size - 6} more`)
-}
-process.exit(1)
+const nmFiles = (() => {
+  let n = 0
+  const walk = (d) => {
+    for (const e of readdirSync(d, { withFileTypes: true })) {
+      if (e.isDirectory()) walk(join(d, e.name))
+      else n++
+    }
+  }
+  walk(NM)
+  return n
+})()
+console.log(`OK: ${refCount} 处裸导入全部可解析；无归档/嵌套依赖树；node_modules/ 共 ${nmFiles} 个文件`)

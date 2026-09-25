@@ -55,10 +55,15 @@ if (existsSync(PLUGINS)) {
     const entry = join(PLUGINS, dir.name, pkg.main ?? 'index.js')
     if (!existsSync(entry)) issue(`plugins/${dir.name} 入口不存在: ${pkg.main ?? 'index.js'}`)
     else ok(`${dir.name}: 入口 OK`)
-    // 外部依赖检查
-    for (const dep of Object.keys(pkg.dependencies ?? {})) {
-      if (dep.startsWith('@cos/')) continue // 引擎核心由 harness 提供
-      const resolvable = existsSync(join(pluginsNm, dep)) || existsSync(join(PLUGINS, dir.name, 'node_modules', dep))
+    // 外部依赖检查（引擎 @cos、diver 库 @diver/@deepseek-ai/dsh-*、file: 源码依赖由内置映射提供）
+    for (const [dep, range] of Object.entries(pkg.dependencies ?? {})) {
+      if (dep.startsWith('@cos/') || dep.startsWith('@diver/') || dep.startsWith('@deepseek-ai/dsh-')) continue
+      if (String(range ?? '').startsWith('file:')) continue
+      const resolvable = [
+        join(PLUGINS, dir.name, 'node_modules', dep),
+        join(pluginsNm, dep),
+        join(PLUGINS, '..', 'node_modules', dep),
+      ].some((p) => existsSync(p))
       if (!resolvable) issue(`${dir.name} 依赖 ${dep} 未安装（运行 node install-deps.mjs）`)
     }
   }

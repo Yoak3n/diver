@@ -15,7 +15,12 @@ import { pipeline } from 'node:stream/promises'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
 const TARGET_DIR = join(ROOT, 'public', 'pet', 'models', 'Hiyori')
-const DEFAULT_URL = process.env.PET_HIYORI_URL ?? 'https://cubism.live2d.com/sample-data/Hiyori/Hiyori.zip'
+// 旧官方示例地址 cubism.live2d.com/sample-data/Hiyori/Hiyori.zip 已下线（HTTP 404）。
+// 改用 Live2D 官方 CubismWebSamples 仓库定格 zipball（Hiyori 在 Samples/Resources/Hiyori/，
+// findModelDir 可在 4 层内找到）；定格 commit 保证可复现，PET_HIYORI_URL 可覆盖。
+const DEFAULT_URL =
+  process.env.PET_HIYORI_URL ??
+  'https://codeload.github.com/Live2D/CubismWebSamples/zip/b1de66b0b1f1cb881d95fb6158622aeb6a2827bd'
 
 function hasModel(dir) {
   return existsSync(join(dir, 'Hiyori.model3.json'))

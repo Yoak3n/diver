@@ -18,7 +18,7 @@ pnpm install     # pnpm workspace：前端 + harness（安装 @deepseek-ai/dsh�
 pnpm tauri dev   # 自动拉起 sidecar + Vite(1420) + 窗口
 ```
 
-首次启动：在设置（⚙）里填入 DeepSeek API Key（或 opencode-go Key，可选）即可开始对话。
+首次启动：在设置（⚙）里填入 DeepSeek API Key 即可开始对话。
 
 - Key 存入本地凭据库 `harness/.cos-home/.credentials.yaml`
 - 模型默认 `deepseek-flash`（可在设置中切换，下次对话生效）
@@ -113,7 +113,6 @@ node scripts/smoke2.mjs       # 工具调用闭环 + 历史
 node scripts/presence.mjs     # 观察主动问候
 node scripts/readlog.mjs      # 查看会话日志
 node scripts/memory-test.mjs  # 记忆插件：喂事实 → recall 验证
-node scripts/opencode-test.mjs # opencode-go provider 直测
 ```
 
 ## 日志

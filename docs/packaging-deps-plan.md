@@ -227,6 +227,10 @@ as-built（`scripts/build-core-bundle.mjs`）：
 实测（组装产物冒烟）：全新工作区首启播种 9 + DIVER_READY 全插件装载（零 import failed）；
 二次启动版本标记相同零对账；升级轮 8 静默更新 + 1 改过保留入 `.incoming/<ver>/memory`
 （用户版继续装载），doctor 报改动状态与合并提示。
+另修 NSIS 遗物：`NSIS_HOOK_POSTINSTALL` 的 P0「清运行时解压残留」会把 P1 起**随包的**
+`sidecar\node_modules` 整树删掉（装完即坏）——清理已挪到 `NSIS_HOOK_PREINSTALL`
+（装前清旧布局，装时铺新文件）。卸载「删除应用程序数据」勾选是 Tauri 自带（installer.nsi
+`RmDir /r "$APPDATA\com.diver.companion"`），勾上才清用户区，默认保留。
 
 预期收益：随包小文件 2 万 → 数百（下降 ~99%）；harness/node_modules 整体消失；
 首启 extract 阶段从数十秒 → <1s 或归零。

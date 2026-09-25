@@ -1,8 +1,9 @@
 # Diver NSIS installer hooks (ASCII only)
 #
-# Extracted node_modules trees are runtime-generated and not in the NSIS file
-# list. Clear them on upgrade install and on uninstall so the next launch
-# re-extracts from the shipped tar.
+# Legacy-layout cleanup only. Since P1 the dependency closure is shipped as real
+# files under resources\sidecar\node_modules — it must NOT be deleted after
+# install (the old POSTINSTALL cleanup did exactly that and broke the app).
+# Cleanup therefore runs in PREINSTALL, before the new files are written.
 
 !macro DiverKillLockingProcesses
   nsExec::ExecToLog 'taskkill /F /IM diver.exe /T'
@@ -10,31 +11,33 @@
   Sleep 800
 !macroend
 
-!macro DiverClearExtractedDeps
+# P0/P1 旧布局遗留（运行时解压树 / 依赖归档）清理。升级安装前执行，避免与新包
+# 文件混杂；全新安装时路径不存在，无副作用。
+!macro DiverClearLegacyLayouts
   RMDir /r "$INSTDIR\resources\sidecar\harness\node_modules"
   RMDir /r "$INSTDIR\resources\sidecar\plugins\node_modules"
   RMDir /r "$INSTDIR\resources\sidecar\node_modules"
-!macroend
-
-!macro NSIS_HOOK_POSTINSTALL
-  !insertmacro DiverClearExtractedDeps
-!macroend
-
-!macro NSIS_HOOK_PREUNINSTALL
-  !insertmacro DiverKillLockingProcesses
-  !insertmacro DiverClearExtractedDeps
   Delete "$INSTDIR\resources\sidecar\harness\node_modules.tar"
   Delete "$INSTDIR\resources\sidecar\harness\node_modules.tar.zst"
   Delete "$INSTDIR\resources\sidecar\plugins\node_modules.tar"
   Delete "$INSTDIR\resources\sidecar\plugins\node_modules.tar.zst"
   Delete "$INSTDIR\resources\sidecar\node_modules.tar"
   Delete "$INSTDIR\resources\sidecar\node_modules.tar.zst"
+!macroend
+
+!macro NSIS_HOOK_PREINSTALL
+  !insertmacro DiverClearLegacyLayouts
+!macroend
+
+!macro NSIS_HOOK_PREUNINSTALL
+  !insertmacro DiverKillLockingProcesses
+  !insertmacro DiverClearLegacyLayouts
   RMDir /r "$INSTDIR\resources\sidecar"
   RMDir /r "$INSTDIR\resources"
 !macroend
 
 !macro NSIS_HOOK_POSTUNINSTALL
-  !insertmacro DiverClearExtractedDeps
+  !insertmacro DiverClearLegacyLayouts
   RMDir /r "$INSTDIR\resources\sidecar"
   RMDir /r "$INSTDIR\resources"
   RMDir /r "$INSTDIR"

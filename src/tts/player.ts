@@ -70,7 +70,10 @@ async function playAudioBlob(base64: string, mime: string): Promise<void> {
 }
 
 function reportEnd(requestId: string) {
-  void invoke("tts_report_end", { requestId }).catch(() => {});
+  // 失败不能静默：report_end 丢了会让后端 wait_playback 干等 90s（嘴型空摆）。
+  void invoke("tts_report_end", { requestId }).catch((e) => {
+    console.warn("[tts] tts_report_end 失败:", e);
+  });
 }
 
 async function onPlayerEvent(ev: TtsPlayerEvent) {

@@ -3,8 +3,12 @@
 use serde::Serialize;
 
 /// 后端播放队列推给窗口的事件。`requestId` 对齐一次朗读。
+///
+/// 字段名必须与前端 `TtsPlayerEvent`（src/tts/player.ts）一致：
+/// `rename_all` 只改变体名，字段靠 `rename_all_fields` 转 camelCase，
+/// 否则前端读 `ev.requestId` 恒为 undefined，`tts_report_end` 会静默失败。
 #[derive(Debug, Clone, Serialize)]
-#[serde(tag = "type", rename_all = "camelCase")]
+#[serde(tag = "type", rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum TtsPlayerEvent {
     /// 开始合成/播放（口型可提前开）。
     Start { request_id: String },
@@ -38,5 +42,37 @@ impl PlayerKind {
             "main" => Some(Self::Main),
             _ => None,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 序列化形状必须与前端 TS 类型对齐（requestId 为 camelCase）。
+    #[test]
+    fn serializes_camel_case_fields() {
+        let done = serde_json::to_value(TtsPlayerEvent::SynthDone {
+            request_id: "tts-x".into(),
+        })
+        .unwrap();
+        assert_eq!(done["type"], "synthDone");
+        assert_eq!(done["requestId"], "tts-x");
+        assert!(done.get("request_id").is_none());
+
+        let pcm = serde_json::to_value(TtsPlayerEvent::Pcm {
+            request_id: "tts-x".into(),
+            base64: "AA==".into(),
+        })
+        .unwrap();
+        assert_eq!(pcm["type"], "pcm");
+        assert_eq!(pcm["requestId"], "tts-x");
+
+        let speaking = serde_json::to_value(TtsPlayerEvent::Speaking { value: true }).unwrap();
+        assert_eq!(speaking["type"], "speaking");
+        assert_eq!(speaking["value"], true);
+
+        let stopped = serde_json::to_value(TtsPlayerEvent::Stopped {}).unwrap();
+        assert_eq!(stopped["type"], "stopped");
     }
 }

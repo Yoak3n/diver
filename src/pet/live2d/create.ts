@@ -4,6 +4,7 @@
 import { Live2DModel } from "pixi-live2d-display/cubism4";
 import * as PIXI from "pixi.js";
 import { assertMocSupported, enrichLoadError } from "./moc";
+import { resolveModelUrl } from "../models";
 import { ensureLive2dCore } from "./core";
 import { computeCharBounds } from "./bounds";
 import { createHitboxEl, readHitbox } from "./hitbox";
@@ -39,7 +40,7 @@ export async function createPetModel(
 ): Promise<PetModelHandle> {
   const heightRatio = options.heightRatio ?? 0.7;
   const initAnchorX = options.anchorXRatio ?? 0.5;
-  const modelUrl = options.modelUrl ?? DEFAULT_MODEL_URL;
+  const modelUrl = await resolveModelUrl(options.modelUrl ?? DEFAULT_MODEL_URL);
   const modelBase = modelUrl.replace(/[^/]*$/, "");
   const groupAliases = options.groupAliases ?? {};
 

@@ -3,6 +3,8 @@
 // model-catalog.json 描述可用模型（Hiyori / YUI…）；emotion-map 的逻辑动作组
 // （Happy/Sad/…）经各模型 groupAliases 解析到 model3.json 的真实组名。
 
+import { convertFileSrc } from "@tauri-apps/api/core";
+import { getPetModelsDir } from "../ipc/petModels";
 import catalogJson from "./model-catalog.json";
 
 export interface PetModelProfile {
@@ -29,6 +31,17 @@ const STORAGE_KEY = "diver.pet.modelId";
 export const PET_MODEL_CHANGED_EVENT = "pet://model-changed";
 
 const catalog = catalogJson as PetModelCatalog;
+
+/**
+ * 模型文件 URL 解析：dev 由 vite 从 public/pet/models 提供；release 模型外置为
+ * bundle resources（不进 diver.exe），经 asset 协议读安装目录明文文件。
+ */
+export async function resolveModelUrl(model3: string): Promise<string> {
+  if (import.meta.env.DEV) return model3;
+  const root = await getPetModelsDir();
+  const rel = model3.replace(/^\/?pet\/models\//, "");
+  return convertFileSrc(`${root}/${rel}`);
+}
 
 export async function loadModelCatalog(): Promise<PetModelCatalog> {
   return catalog;

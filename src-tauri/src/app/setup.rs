@@ -59,6 +59,7 @@ pub fn generate_handlers() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + 
         tts_stop,
         tts_report_end,
         is_pet_window_open,
+        pet_models_dir,
         notify,
         presence_phase,
         presence_snapshot,

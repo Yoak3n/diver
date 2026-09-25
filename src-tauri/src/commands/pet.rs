@@ -110,3 +110,15 @@ pub fn start_pet_mouse_stream(
 ) {
     state.pet_mouse.start(window);
 }
+
+/// 桌宠模型外置目录（release：安装目录 resources/pet/models，模型不进 diver.exe；
+/// 前端经 asset 协议读明文文件）。
+#[tauri::command]
+pub fn pet_models_dir(app: AppHandle) -> Result<String, String> {
+    use tauri::Manager as _;
+    let res = app
+        .path()
+        .resource_dir()
+        .map_err(|e| format!("无法解析资源目录: {e}"))?;
+    Ok(crate::core::pet_models::models_dir(&res).to_string_lossy().into_owned())
+}

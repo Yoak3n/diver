@@ -1,6 +1,7 @@
 pub mod explore_policy;
 pub mod node_runtime;
 pub mod pet_interaction;
+pub mod pet_models;
 pub mod presence;
 pub mod presence_schedule;
 pub mod setup_extract;

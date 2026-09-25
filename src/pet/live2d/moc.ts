@@ -4,7 +4,11 @@
 async function readMocVersion(modelUrl: string): Promise<number> {
   const res = await fetch(modelUrl);
   if (!res.ok) throw new Error(`模型描述加载失败：HTTP ${res.status}（${modelUrl}）`);
-  const meta = (await res.json()) as { FileReferences?: { Moc?: string } };
+  const text = await res.text();
+  if (text.trimStart().startsWith("<")) {
+    throw new Error(`模型描述不是 JSON（收到 HTML 兜底页）：模型文件缺失/未随包（${modelUrl}）`);
+  }
+  const meta = JSON.parse(text) as { FileReferences?: { Moc?: string } };
   const mocRel = meta.FileReferences?.Moc;
   if (!mocRel) throw new Error("model3.json 缺少 FileReferences.Moc");
   const base = modelUrl.replace(/[^/]*$/, "");

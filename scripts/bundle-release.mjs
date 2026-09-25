@@ -90,6 +90,10 @@ if (!NODE_BIN || !existsSync(NODE_BIN)) {
 }
 console.log(`[bundle] 构建机 Node（不随包，仅构建用）: ${NODE_BIN} (${(execFileSync(NODE_BIN, ['--version'], { encoding: 'utf8' }) ?? '').trim()})`)
 
+// 出厂链路（非 --assemble-only）必须带齐桌宠模型：缺则拉取、装不齐不出厂。
+// --assemble-only（CI 装配/类型检查上下文）不触发下载，模型全缺只告警跳过。
+if (!assembleOnly) process.env.DIVER_REQUIRE_MODELS = '1'
+
 // ── 1. 前端构建（Vite → dist/）──────────────────────────────────────────
 if (!assembleOnly && !skipFrontend) {
   step('前端构建 (vite build)')
@@ -101,6 +105,45 @@ step('组装 sidecar 运行时目录')
 rmSync(SIDECAR_RES, { recursive: true, force: true })
 mkdirSync(join(SIDECAR_RES, 'bundles', 'bundle-companion'), { recursive: true })
 mkdirSync(join(SIDECAR_RES, 'plugins'), { recursive: true })
+
+// 2.0 桌宠 Live2D 模型外置：模型**不进 diver.exe**（frontendDist=dist 会被
+// generate_context! 编译进二进制资产），而是作为 bundle resources 明文落在
+// 安装目录 resources/pet/models/（与 sidecar 同构，用户可自行增删换）。
+// vite 会把 public/pet/models 整个拷进 dist —— 必须剔除防嵌入；缺模型先拉取
+// （pet-models 幂等），装不齐不出厂。beforeBuildCommand 也会走到这里掐掉
+// 二次 pnpm build 重新拷入的嵌入路径。
+step('桌宠模型外置 (resources/pet/models)')
+{
+  const REQUIRED = ['Hiyori/Hiyori.model3.json', 'yui-lolita/yui-lolita.model3.json', 'yui-origin/yui-origin.model3.json']
+  const modelsSrc = join(ROOT, 'public', 'pet', 'models')
+  const modelsDst = join(SRC_TAURI, 'resources', 'pet', 'models')
+  const missingAt = (root) => REQUIRED.filter((m) => !existsSync(join(root, ...m.split('/'))))
+  const distModels = join(ROOT, 'dist', 'pet', 'models')
+  if (existsSync(distModels)) {
+    rmSync(distModels, { recursive: true, force: true })
+    console.log('  ✓ dist/pet/models 已剔除（模型不进 diver.exe）')
+  }
+  let missing = missingAt(modelsSrc)
+  if (missing.length && process.env.DIVER_REQUIRE_MODELS === '1') {
+    console.log(`  …缺 ${missing.length} 个模型文件，执行 pet-models 拉取`)
+    run(`node "${join(ROOT, 'scripts', 'pet-models.mjs')}"`, ROOT, 'pet-models')
+    missing = missingAt(modelsSrc)
+  }
+  if (missing.length) {
+    // 部分缺失 = 损坏状态必失败；出厂上下文（DIVER_REQUIRE_MODELS=1）也必失败；
+    // 全缺 + 非出厂（CI 装配/类型检查）才告警跳过。
+    const strict = process.env.DIVER_REQUIRE_MODELS === '1' || missing.length < REQUIRED.length
+    if (strict) {
+      console.error(`  ✗ 桌宠模型不完整: ${missing.join(', ')}（缺模型不出厂；先 pnpm pet:models）`)
+      process.exit(1)
+    }
+    console.log('  ⚠ 桌宠模型全部缺失（CI 装配/类型检查上下文），跳过外置')
+  } else {
+    rmSync(modelsDst, { recursive: true, force: true })
+    cpSync(modelsSrc, modelsDst, { recursive: true })
+    console.log('  ✓ resources/pet/models 三套模型就位（外置明文，可增删换）')
+  }
+}
 
 // 2.1 不随包 Node：运行时由壳探测本机 / 按需下载（见 src-tauri/src/base/node_runtime.rs）。
 step('Node 运行时（不随包）')

@@ -21,12 +21,12 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
-      # tauri.conf.json 的 resources/sidecar 是 bundle-release 的组装产物，
-      # 干净 checkout 里不存在会让 tauri 构建脚本报错；单测只需要路径存在。
+      # tauri.conf.json 的 resources/sidecar、resources/pet/models 是 bundle-release
+      # 的组装产物，干净 checkout 里不存在会让 tauri 构建脚本报错；单测只需路径存在。
       - name: prepare generated paths
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force src-tauri/resources/sidecar, dist | Out-Null
+          New-Item -ItemType Directory -Force src-tauri/resources/sidecar, src-tauri/resources/pet/models, dist | Out-Null
 
       - name: cargo test --workspace
         run: cargo test --workspace

@@ -35,7 +35,7 @@ diver/
 │  ├─ src/commands/        # Tauri IPC 薄适配（system/plugins/shortcuts/tts/tts_player/presence/pet/config）
 │  ├─ src/app/             # 组装与生命周期（setup / events / handle / state / tray / shortcut）
 │  ├─ src/shell/           # 窗口与桌面集成（window/{manager,pet} / lightweight / pet_mouse / notify）
-│  ├─ src/core/            # 可单测业务（sidecar/{process,lifecycle,shutdown,reclaim} / tts/{synth,player} / node_runtime / pet_interaction / presence…）
+│  ├─ src/core/            # 可单测业务（sidecar/{process,lifecycle,shutdown,reclaim} / tts/{synth,player} / node_runtime / pet_interaction / pet_models / presence…）
 │  ├─ src/plugins/         # 插件 catalog/profile/preflight/{registry,package,install,uninstall}
 │  ├─ src/config/          # 持久化配置（window_startup / tts / mcp / shortcuts…）
 │  ├─ src/services/        # 本地服务：axum /rpc + memory RPC handler（notify 经注入闭包）

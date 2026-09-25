@@ -38,5 +38,6 @@ harness/*.bundle.mjs
 # Diver release 打包产物（SEA sidecar 运行时目录，体积大，不入库）
 src-tauri/resources/sidecar/
 
-# Live2D 模型文件（体积大，不入库）
+# Live2D 模型文件（体积大，不入库；打包时外置到 resources/pet/models）
 public/pet/models/
+src-tauri/resources/pet/models/

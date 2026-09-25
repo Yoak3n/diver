@@ -164,12 +164,15 @@ writeFileSync(join(harnessDst, 'package.json'), JSON.stringify(hp, null, 2) + '\
 copyFileSync(join(HARNESS, 'cordis.yml'), join(SIDECAR_RES, 'cordis.yml'))
 copyFileSync(join(HARNESS, 'secrets.example.yml'), join(SIDECAR_RES, 'secrets.example.yml'))
 
-// 2.4 随包 harness 依赖：pnpm install（离线用 lockfile，生成自洽 node_modules）
+// 2.4 随包 harness 依赖：pnpm install（离线用 lockfile，生成自洽 node_modules）。
+// --no-frozen-lockfile：上面裁剪过 package.json（删 @diver/*、@deepseek-ai/cordis、
+// devDeps），与原 lockfile 必然不同步；CI 环境 pnpm 默认 frozen 会直接拒绝，
+// 装配语义本就要重算 lockfile，故显式关闭 frozen。
 step('harness 依赖安装 (pnpm install)')
 if (existsSync(join(ROOT, 'node_modules', 'pnpm'))) {
-  run('node "' + join(ROOT, 'node_modules', 'pnpm', 'bin', 'pnpm.cjs') + '" install --offline', harnessDst, 'pnpm-install')
+  run('node "' + join(ROOT, 'node_modules', 'pnpm', 'bin', 'pnpm.cjs') + '" install --offline --no-frozen-lockfile', harnessDst, 'pnpm-install')
 } else {
-  run('pnpm install --offline', harnessDst, 'pnpm-install')
+  run('pnpm install --offline --no-frozen-lockfile', harnessDst, 'pnpm-install')
 }
 
 // 2.4b 依赖 vendor 化：第三方闭包打进 sidecar/node_modules 少数大文件，

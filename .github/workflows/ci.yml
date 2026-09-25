@@ -12,7 +12,7 @@ jobs:
     steps:
       # harness 是 git 子模块，必须递归检出，否则 crates/src-tauri 的路径引用与
       # TS 检查都缺源码。
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           submodules: recursive
 
@@ -21,6 +21,13 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
+      # tauri.conf.json 的 resources/sidecar 是 bundle-release 的组装产物，
+      # 干净 checkout 里不存在会让 tauri 构建脚本报错；单测只需要路径存在。
+      - name: prepare generated paths
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force src-tauri/resources/sidecar, dist | Out-Null
+
       - name: cargo test --workspace
         run: cargo test --workspace
 
@@ -28,7 +35,7 @@ jobs:
     name: typecheck + 插件闭包
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           submodules: recursive
 
@@ -50,6 +57,15 @@ jobs:
       - name: typecheck（harness + cos-plugins）
         run: pnpm typecheck
 
-      # 插件解析闭包检查：锚定真实运行布局，防开发机 node_modules 泄漏假绿。
+      # 闭包检查是打包后自检：先按 harness 自身 lockfile 暖 store（组装内部的
+      # pnpm install --offline 依赖它），再 --assemble-only 组装 sidecar 产物。
+      - name: warm harness dependency store
+        working-directory: harness
+        run: pnpm install --frozen-lockfile
+
+      - name: assemble sidecar
+        run: node scripts/bundle-release.mjs --assemble-only --skip-frontend
+
+      # 插件解析闭包检查：锚定组装产物的真实运行布局，防 node_modules 泄漏假绿。
       - name: plugin closure check
         run: node scripts/check-plugin-closure.mjs

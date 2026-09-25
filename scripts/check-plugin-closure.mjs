@@ -58,6 +58,13 @@ for (const root of [join(HARNESS, 'packages'), PLUGINS, SEED]) {
 if (!existsSync(join(NM, 'tsx', 'dist', 'loader.mjs'))) {
   problems.push('tsx loader 不在位: node_modules/tsx/dist/loader.mjs（command.rs 启动契约）')
 }
+{
+  const platName = `${process.platform}-${process.arch}`
+  const binName = process.platform === 'win32' ? 'esbuild.exe' : join('bin', 'esbuild')
+  if (!existsSync(join(NM, '@esbuild', platName, binName))) {
+    problems.push(`esbuild 平台二进制不在位: node_modules/@esbuild/${platName}/${binName}（tsx 转译必需，缺失则助手启动失败）`)
+  }
+}
 if (!existsSync(join(PLUGINS, 'companion', 'src', 'companion-bundle.ts'))) {
   problems.push('进程入口不在位: plugins/companion/src/companion-bundle.ts（paths.rs RELEASE_ENTRY）')
 }

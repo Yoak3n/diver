@@ -339,6 +339,19 @@ for (const name of ['tsx', 'esbuild']) copyPhysical(name) // typescript 不随�
       console.log(`  ✓ @esbuild/${plat.name} (${e.name.split('@').pop()})`)
     }
   }
+  // 兜底 + 硬校验：store 扫描落空（hoisted 布局等）按正常解析复制当前平台包；
+  // 仍缺失就直接失败——没有平台二进制 tsx 转译必崩（助手启动失败），
+  // 以前这里静默跳过，坏包一路打到用户手里。
+  const platName = `${process.platform}-${process.arch}`
+  const binName = process.platform === 'win32' ? 'esbuild.exe' : join('bin', 'esbuild')
+  if (!existsSync(join(NM, '@esbuild', platName, binName))) {
+    try { copyPhysical(`@esbuild/${platName}`) } catch { /* 统一在下面报错 */ }
+  }
+  if (!existsSync(join(NM, '@esbuild', platName, binName))) {
+    console.error(`  ✗ 缺平台二进制 @esbuild/${platName}/${binName}（tsx 转译必需；检查 harness 安装是否装了 optionalDependencies）`)
+    process.exit(1)
+  }
+  console.log(`  ✓ @esbuild/${platName} 平台二进制在位`)
 }
 
 // ── 8. 产物自校验：按 Node 解析逐 spec import，与探测面对比 ───────────────

@@ -10,7 +10,7 @@ use super::paths::{shutdown_token, LAST_COS_HOME};
 use super::process::SidecarManager;
 #[cfg(not(debug_assertions))]
 use super::paths::{
-    RELEASE_BUNDLE_DIR, RELEASE_ENTRY, RELEASE_HARNESS_DIR, RELEASE_PLUGINS_DIR, RELEASE_SIDECAR_DIR,
+    RELEASE_BUNDLE_DIR, RELEASE_ENTRY, RELEASE_HARNESS_DIR, RELEASE_SIDECAR_DIR,
 };
 
 impl SidecarManager {
@@ -72,7 +72,6 @@ impl SidecarManager {
                 ));
             }
             let harness_dir = sidecar_dir.join(RELEASE_HARNESS_DIR);
-            let plugins_dir = sidecar_dir.join(RELEASE_PLUGINS_DIR);
 
             // 用户数据目录：与安装目录隔离（升级安装不丢会话/记忆）。
             // 与 config::mcp 共享同一路径（cos_home 即 sidecar 注入的 COS_HOME）。
@@ -81,6 +80,11 @@ impl SidecarManager {
             if let Err(e) = std::fs::create_dir_all(&cos_home) {
                 log::warn!("创建 COS_HOME 失败: {e}");
             }
+
+            // P1c/B′：运行时唯一插件区 = 用户工作区 cos_home/plugins（首启由
+            // sidecar 种子对账播种：plugins.seed/ + seed-manifest.json）。
+            // 安装目录不再承载运行时插件（只留进程入口 plugins/companion）。
+            let plugins_dir = cos_home.join("plugins");
 
             let ui_dist = sidecar_dir.join("dist");
 

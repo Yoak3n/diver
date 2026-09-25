@@ -33,5 +33,3 @@ pub(super) const RELEASE_ENTRY: &str = "plugins/companion/src/companion-bundle.t
 pub(super) const RELEASE_BUNDLE_DIR: &str = "bundles/bundle-companion";
 #[cfg(not(debug_assertions))]
 pub(super) const RELEASE_HARNESS_DIR: &str = "harness";
-#[cfg(not(debug_assertions))]
-pub(super) const RELEASE_PLUGINS_DIR: &str = "plugins";

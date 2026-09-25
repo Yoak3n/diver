@@ -69,6 +69,11 @@ export interface CompanionPaths {
   harnessDir: string
   /** Open plugin root for `@diver/*` (unscoped package name). */
   pluginsRoot: string
+  /**
+   * 出厂种子镜像目录（安装目录 `plugins.seed/`，P1c/B′）。存在时 boot 按
+   * seedVersion 把种子对账到 pluginsRoot 用户工作区；dev 布局缺省。
+   */
+  seedDir?: string
   /** Companion bundle dir holding `cordis.patch.yml` / `bundle.yml`. */
   bundleDir: string
   /** Base composition file (`cordis.yml`). */
@@ -101,13 +106,16 @@ export function resolveCompanionPaths(cli: CliOptions, base: {
       ? join(root, 'harness')
       : join(process.cwd(), 'harness')
 
+  const cosHome = process.env.COS_HOME || join(homedir(), '.cos')
   const defaultPlugins = prefer
     ? (existsSync(join(root, 'cos-plugins')) ? join(root, 'cos-plugins') : join(root, 'plugins'))
-    : (existsSync(join(root, 'plugins')) ? join(root, 'plugins') : join(root, 'cos-plugins'))
+    : (existsSync(join(root, 'plugins')) ? join(root, 'plugins') : join(cosHome, 'plugins'))
 
   const pluginsRoot = cli.pluginRoot !== undefined
     ? resolve(process.cwd(), cli.pluginRoot)
     : defaultPlugins
+
+  const seedDir = existsSync(join(root, 'plugins.seed')) ? join(root, 'plugins.seed') : undefined
 
   const defaultBundle = existsSync(join(pluginsRoot, 'bundle-companion'))
     ? join(pluginsRoot, 'bundle-companion')
@@ -123,7 +131,7 @@ export function resolveCompanionPaths(cli: CliOptions, base: {
       ? join(process.cwd(), 'cordis.yml')
       : join(harnessDir, 'cordis.yml')
 
-  return { harnessDir, pluginsRoot, bundleDir, configPath }
+  return { harnessDir, pluginsRoot, ...(seedDir === undefined ? {} : { seedDir }), bundleDir, configPath }
 }
 
 /**
@@ -156,6 +164,7 @@ export function companionBootOptions(cli: CliOptions, paths: CompanionPaths): Pa
       bundles: [],
       pluginPaths: corePluginPaths(paths.harnessDir),
       pluginRoot: paths.pluginsRoot,
+      ...(paths.seedDir === undefined ? {} : { seedDir: paths.seedDir }),
       profile: SAFE_PROFILE,
       required: [...REQUIRED_SERVICES],
       extraPatches: [safeInsert] as BootOptions['extraPatches'],
@@ -177,6 +186,7 @@ export function companionBootOptions(cli: CliOptions, paths: CompanionPaths): Pa
     bundles: bundleOk ? [paths.bundleDir] : [],
     pluginPaths: corePluginPaths(paths.harnessDir),
     pluginRoot: paths.pluginsRoot,
+    ...(paths.seedDir === undefined ? {} : { seedDir: paths.seedDir }),
     profile,
     required: [...REQUIRED_SERVICES],
     ...(profileInserts.length === 0

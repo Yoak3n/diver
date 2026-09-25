@@ -289,7 +289,6 @@ class VolcArkLlmAdapter extends LlmAdapter {
       'doubao-seed-2-0-lite',
       'doubao-seed-2-0-mini',
       'deepseek-v4.1-flash',
-      'deepseek-v4-flash',
       'deepseek-v4-pro',
       'glm-5.3',
       'glm-5.3-flash',

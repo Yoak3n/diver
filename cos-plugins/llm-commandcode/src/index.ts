@@ -15,7 +15,7 @@
 //
 // GOAT 套餐要点（见 https://commandcode.ai/docs/plans/goat）：
 //   - $10/月，$14/5 小时 + $35/周 + $70/月 用量上限；
-//   - 模型 id 形如 "deepseek/deepseek-v4-flash"、"Qwen/Qwen3.8-Max"（带 provider 前缀，
+//   - 模型 id 形如 "deepseek/deepseek-v4.1-flash"、"Qwen/Qwen3.8-Max"（带 provider 前缀，
 //     必须原样传给 API，不能去掉）；
 //   - 流式请求带 stream_options.include_usage 可在末尾收到 usage 块。
 // @module @diver/llm-commandcode
@@ -55,7 +55,7 @@ const API_KEY_ENV = 'COMMANDCODE_API_KEY'
 export interface CommandCodeConfig {
   /** Provider API 端点（默认 https://api.commandcode.ai/provider/v1）。 */
   baseUrl?: string
-  /** 默认模型（无显式 model 时使用；默认 deepseek/deepseek-v4-flash）。 */
+  /** 默认模型（无显式 model 时使用；默认 deepseek/deepseek-v4.1-flash）。 */
   defaultModel?: string
   /** 静态模型目录覆盖（不设置时用内置兜底目录；advisory）。 */
   models?: readonly string[]
@@ -171,7 +171,7 @@ class CommandCodeLlmAdapter extends LlmAdapter {
     super()
     this.credentials = credentials
     this.baseUrl = (config.baseUrl ?? DEFAULT_BASE_URL).replace(/\/+$/, '')
-    this.defaultModel = config.defaultModel ?? 'deepseek/deepseek-v4-flash'
+    this.defaultModel = config.defaultModel ?? 'deepseek/deepseek-v4.1-flash'
     this.staticModels = config.models ?? []
     this.apiKeyRef = config.apiKeyKey ?? API_KEY_REF
     this.apiKeyEnv = config.apiKeyEnv ?? API_KEY_ENV
@@ -268,7 +268,7 @@ class CommandCodeLlmAdapter extends LlmAdapter {
   /** 目录拉取失败时的兜底模型（GOAT 套餐高频模型，advisory）。 */
   private fallbackModels(): readonly string[] {
     return [
-      'deepseek/deepseek-v4-flash',
+      'deepseek/deepseek-v4.1-flash',
       'deepseek/deepseek-v4-pro',
       'Qwen/Qwen3.8-Max',
       'Qwen/Qwen3.7-Plus',

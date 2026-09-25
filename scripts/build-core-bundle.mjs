@@ -27,7 +27,8 @@ const arg = (name, dflt) => {
 const SIDE = resolve(arg('--sidecar', join(ROOT, 'src-tauri', 'resources', 'sidecar')))
 const NM = join(SIDE, 'node_modules')
 const HARNESS = join(SIDE, 'harness')
-const PLUGINS = join(SIDE, 'plugins')
+const PLUGINS = join(SIDE, 'plugins') // 进程入口（companion）
+const SEED = join(SIDE, 'plugins.seed') // 出厂插件镜像（B′ 播种源，随包源码的一部分）
 const WORK_NM = join(HARNESS, 'node_modules') // pnpm install 产物（解析源，构建后由调用方删除）
 
 const BUILTIN = new Set([
@@ -61,9 +62,12 @@ function shippedPackageDirs() {
     }
     dirs.push(join(pkgs, e.name))
   }
-  for (const e of readdirSync(PLUGINS, { withFileTypes: true })) {
-    if (e.isDirectory() && !e.name.startsWith('.') && e.name !== 'node_modules') {
-      dirs.push(join(PLUGINS, e.name))
+  for (const root of [PLUGINS, SEED]) {
+    if (!existsSync(root)) continue
+    for (const e of readdirSync(root, { withFileTypes: true })) {
+      if (e.isDirectory() && !e.name.startsWith('.') && e.name !== 'node_modules') {
+        dirs.push(join(root, e.name))
+      }
     }
   }
   return dirs
@@ -103,7 +107,7 @@ function workspaceFallback(spec) {
   const pkgName = pkgNameOf(spec)
   const sub = spec.slice(pkgName.length).replace(/^\//, '')
   const cands = pkgName.startsWith('@diver/')
-    ? [join(PLUGINS, pkgName.slice('@diver/'.length))]
+    ? [join(PLUGINS, pkgName.slice('@diver/'.length)), join(SEED, pkgName.slice('@diver/'.length))]
     : pkgName.startsWith('@cos/')
       ? [join(HARNESS, 'packages', pkgName.slice('@cos/'.length))]
       : pkgName.startsWith('@deepseek-ai/dsh-')
@@ -146,7 +150,9 @@ for (const spec of specFiles.keys()) {
   // 注意：harness/node_modules（.pnpm 真路径）在 HARNESS 前缀下但**不是**源码，
   // 误判会生成指向构建期 .pnpm 的 shim（删树后失效）。
   const inWorkspace = fb !== null
-    || ((realN.startsWith(HARNESS + '\\') || realN.startsWith(HARNESS + '/') || realN.startsWith(PLUGINS + '\\') || realN.startsWith(PLUGINS + '/'))
+    || (((realN.startsWith(HARNESS + '\\') || realN.startsWith(HARNESS + '/'))
+      || (realN.startsWith(PLUGINS + '\\') || realN.startsWith(PLUGINS + '/'))
+      || (realN.startsWith(SEED + '\\') || realN.startsWith(SEED + '/')))
       && !/[\\/]node_modules[\\/]/.test(realN))
   if (inWorkspace) mapping.set(spec, realN)
   else vendor.set(spec, realN)

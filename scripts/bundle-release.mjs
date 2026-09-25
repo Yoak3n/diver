@@ -25,8 +25,9 @@
 
 import { execFileSync } from 'node:child_process'
 import { copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
+import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { buildSeedManifest, ignoredName } from './lib/seed-manifest.mjs'
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)))
 const HARNESS = join(ROOT, 'harness')
@@ -48,6 +49,10 @@ const OPEN_PLUGINS = [
   'native-bridge',
   'web-tools',
 ]
+// 进程入口插件（paths.rs RELEASE_ENTRY 指向 plugins/companion/…）：留在安装
+// 目录作 entry，不进种子（用户工作区不承载进程入口）。
+const ENTRY_PLUGIN = 'companion'
+const SEED_PLUGINS = OPEN_PLUGINS.filter((n) => n !== ENTRY_PLUGIN)
 
 // 随包 Node 运行时来源（开发机 nvm 安装目录）。
 const NODE_BIN = process.env.DIVER_NODE_BIN ?? (() => {
@@ -174,18 +179,40 @@ if (existsSync(join(ROOT, 'node_modules', 'pnpm'))) {
 
 
 
-// 2.5 开放插件目录：源码 + 依赖
-step('开放插件目录 (plugins/)')
-const pluginsDst = join(SIDECAR_RES, 'plugins')
-for (const name of OPEN_PLUGINS) {
+// 2.5 出厂种子镜像：plugins.seed/ 明文镜像 + seed-manifest.json（逐文件 hash）。
+// 运行时唯一插件区 = 用户工作区 %APPDATA%\...\cos\plugins（B′ 播种对账：
+// boot 按 seedVersion 标记播种/升级，未改静默更新、改过保留 + .incoming 并存）。
+// 安装目录不再展开运行时插件目录——plugins.seed/ 只作播种源，运行时不加载。
+step('进程入口 (plugins/companion/) + 出厂种子镜像 (plugins.seed/)')
+// 入口插件 companion：node 启动的 entry（paths.rs RELEASE_ENTRY），不播种。
+rmSync(join(SIDECAR_RES, 'plugins'), { recursive: true, force: true })
+cpSync(join(COS_PLUGINS, ENTRY_PLUGIN), join(SIDECAR_RES, 'plugins', ENTRY_PLUGIN), {
+  recursive: true,
+  filter: (p) => !ignoredName(basename(p)),
+})
+console.log(`  ✓ ${ENTRY_PLUGIN}（进程入口）`)
+// 种子镜像：运行时唯一插件区 = 用户工作区 %APPDATA%\...\cos\plugins（B′ 播种
+// 对账：boot 按 seedVersion 标记播种/升级，未改静默更新、改过保留 + .incoming
+// 并存）。plugins.seed/ 只作播种源，运行时不加载。
+const seedDst = join(SIDECAR_RES, 'plugins.seed')
+rmSync(seedDst, { recursive: true, force: true })
+const seedPluginNames = []
+for (const name of SEED_PLUGINS) {
   const src = join(COS_PLUGINS, name)
   if (!existsSync(join(src, 'package.json'))) {
     console.error(`[bundle] 插件 ${name} 缺少 package.json: ${src}`)
     process.exit(1)
   }
-  cpSync(src, join(pluginsDst, name), { recursive: true, filter: notNodeModules })
+  cpSync(src, join(seedDst, name), {
+    recursive: true,
+    filter: (p) => !ignoredName(basename(p)),
+  })
+  seedPluginNames.push(name)
   console.log(`  ✓ ${name}`)
 }
+const seedManifest = buildSeedManifest(seedDst, seedPluginNames)
+writeFileSync(join(seedDst, 'seed-manifest.json'), `${JSON.stringify(seedManifest, null, 2)}\n`)
+console.log(`  ✓ seed-manifest.json（seedVersion=${seedManifest.seedVersion}）`)
 
 
 
@@ -260,17 +287,19 @@ writeFileSync(
   [
     'Diver sidecar 运行时目录（自动生成）。',
     'Node 运行时不随包：应用首次启动会使用本机 Node ≥ 22，或自动下载到应用缓存。',
-    'harness/ 为引擎源码（@cos/*），plugins/ 为第三方插件源码（@diver/*）—— 全部开放。',
+    'harness/ 为引擎源码（@cos/*）；plugins/companion/ 为进程入口；plugins.seed/ 为出厂插件镜像（@diver/* 明文 TS，只作播种源）。',
     'node_modules/ 为构建期固化的第三方依赖（vendor 大文件 + @cos/@diver 源码映射 + tsx/esbuild 白名单）。',
     '',
-    '【插件开放】plugins/ 下的插件以 TS 源码分发：',
-    '  - 修改：改 plugins/<name>/src/*.ts，重启应用生效',
-    '  - 删除：删 plugins/<name>/ + bundles/bundle-companion/cordis.patch.yml 对应行',
-    '  - 新增：放 plugins/<name>/（package.json main → src/index.ts，相对导入带 .ts）',
+    '【插件工作区】运行时唯一插件区 = %APPDATA%\\com.diver.companion\\cos\\plugins（首启自动播种，改 src/*.ts 重启生效）：',
+    '  - 修改：改 cos\\plugins\\<name>\\src/*.ts，重启应用生效',
+    '  - 删除：删 cos\\plugins\\<name>\\ + bundles/bundle-companion/cordis.patch.yml 对应行',
+    '  - 新增：放 cos\\plugins\\<name>/（package.json main → src/index.ts，相对导入带 .ts）',
     '            + cordis.patch.yml 加一行（- id: <name> / name: "@diver/<name>"）',
-    '  - 装依赖：node install-deps.mjs （为 plugins/ 下所有插件安装 package.json 声明的依赖，',
-    '            落 plugins/node_modules，优先于内置依赖；引擎与 @diver 库无需安装）',
-    '  - 诊断：  node plugin-doctor.mjs （检查插件目录与 patch 行是否匹配、依赖是否齐全）',
+    '  - 升级对账：你没改过的插件随新版静默更新；改过的保留你的版本，',
+    '            官方新版放 cos\\plugins\\.incoming\\<版本>\\<name>，自行合并',
+    '  - 装依赖：node install-deps.mjs （为 cos\\plugins 下所有插件安装 package.json 声明的依赖，',
+    '            落 cos\\plugins\\node_modules，优先于内置依赖；引擎与 @diver 库无需安装）',
+    '  - 诊断：  node plugin-doctor.mjs （检查插件目录与 patch 行是否匹配、依赖与改动状态、.incoming 提示）',
     '',
     '用户数据（会话/记忆/工作区）保存在 %APPDATA%\\com.diver.companion\\cos。',
   ].join('\n'),

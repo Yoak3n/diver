@@ -1,25 +1,35 @@
 // Diver 插件依赖一键安装脚本（在 sidecar 运行时目录使用）。
 //
 // 用法（在 sidecar 运行时目录下）：
-//   node install-deps.mjs              # 为 plugins/ 下所有插件安装依赖
+//   node install-deps.mjs              # 为用户插件工作区下所有插件安装依赖
 //   node install-deps.mjs --plugin <name>   # 只装指定插件
 //   node install-deps.mjs --all        # 等价默认（全部）
+//   node install-deps.mjs --plugins <dir>   # 覆盖插件工作区目录
+//
+// 目标目录（P1c）：运行时唯一插件区 = 用户工作区
+//   %APPDATA%\com.diver.companion\cos\plugins（COS_HOME 可覆盖）。
 //
 // 原理：用当前 Node（process.execPath / DIVER_NODE_BIN）+ 其自带 npm，为每个
 // 插件的 package.json 声明的依赖执行 `npm install`。Node 不随包，由应用缓存
 // 或系统 Node 提供。
 //
 // 依赖解析说明：
-//   - 插件声明了依赖，但 plugins/node_modules 里已有 → 跳过（预置）
-//   - 插件声明了新依赖（用户新增插件引入）→ 在 plugins/node_modules 安装
+//   - 插件声明了依赖，但 <工作区>/node_modules 里已有 → 跳过（预置）
+//   - 插件声明了新依赖（用户新增插件引入）→ 在 <工作区>/node_modules 安装
 //   - @cos/* 引擎核心由 harness 提供，不需要安装
 
 import { execFileSync } from 'node:child_process'
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from 'node:fs'
+import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 
 const HERE = resolve(import.meta.dirname ?? '.')
-const PLUGINS = join(HERE, 'plugins')
+const PLUGINS = (() => {
+  const i = process.argv.indexOf('--plugins')
+  if (i >= 0 && process.argv[i + 1]) return resolve(process.argv[i + 1])
+  const cosHome = process.env.COS_HOME || join(process.env.APPDATA ?? homedir(), 'com.diver.companion', 'cos')
+  return join(cosHome, 'plugins')
+})()
 const PLUGINS_NM = join(PLUGINS, 'node_modules')
 const NODE = process.env.DIVER_NODE_BIN || process.execPath
 const NPM_CLI = (() => {
@@ -49,7 +59,7 @@ if (!existsSync(PLUGINS)) {
 const dirs = only
   ? [only]
   : readdirSync(PLUGINS, { withFileTypes: true })
-      .filter((e) => e.isDirectory() && e.name !== 'node_modules')
+      .filter((e) => e.isDirectory() && e.name !== 'node_modules' && !e.name.startsWith('.'))
       .map((e) => e.name)
 
 let installed = 0

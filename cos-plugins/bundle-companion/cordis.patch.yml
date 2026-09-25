@@ -43,6 +43,10 @@
     - id: llm-volcark
       name: '@diver/llm-volcark'
 
+    # 自定义模型提供商（OpenAI 兼容）：按 custom-providers.json 身份热注册适配器
+    - id: llm-custom
+      name: '@diver/llm-custom'
+
     # 自改提示词入口：prompts/*.md 热加载 + revise-prompt skill（restart_agent 可选）
     - id: self-prompt
       name: '@diver/self-prompt'

@@ -13,6 +13,8 @@ export type { PluginInfo } from './plugins.ts'
 /** provider 声明 + 每个字段的当前状态（secret 字段只回传布尔，settings 非 secret 字段附当前值）。 */
 export interface ProviderDeclView extends Omit<ProviderConfigDecl, 'fields'> {
   fields: Array<AdapterConfigField & { configured: boolean; value?: string }>
+  /** 自定义模型提供商（身份来自 custom-providers.json，可编辑/删除）。 */
+  custom?: boolean
 }
 
 export interface WebHandlerDeps {

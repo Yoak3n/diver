@@ -11,6 +11,7 @@ packages:
   - cos-plugins/mcp
   - cos-plugins/llm-commandcode
   - cos-plugins/llm-volcark
+  - cos-plugins/llm-custom
   - cos-plugins/native-bridge
   - cos-plugins/bundle-companion
 

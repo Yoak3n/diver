@@ -14,6 +14,7 @@ import type { Context } from 'cordis'
 import type { AdapterConfigField } from '@cos/plugin-api'
 
 import { readDiverSettings, writeDiverSettings } from './session-helpers.ts'
+import { listCustomProviders } from './custom-providers.ts'
 import { secretsFileOf, writeSecret } from './secrets.ts'
 import type { ProviderDeclView } from './types.ts'
 
@@ -46,6 +47,7 @@ export function persistedProvider(ctx: Context): string {
 /** 全部可配置 provider 声明（合并注册表 + 适配器声明），并解析每个字段的当前状态。 */
 export async function providerDecls(ctx: Context): Promise<ProviderDeclView[]> {
   const out: ProviderDeclView[] = []
+  const customIds = new Set(listCustomProviders().map((p) => p.id))
   for (const live of ctx.llm.listProviders()) {
     const decl = ctx.llm.adapterConfig(live.id) ?? {
       provider: live.id,
@@ -63,7 +65,7 @@ export async function providerDecls(ctx: Context): Promise<ProviderDeclView[]> {
         fields.push({ ...field, configured })
       }
     }
-    out.push({ ...decl, fields })
+    out.push({ ...decl, fields, ...(customIds.has(live.id) ? { custom: true } : {}) })
   }
   return out
 }

@@ -59,6 +59,14 @@
       "defaultEnabled": true
     },
     {
+      "id": "llm-custom",
+      "packageName": "@diver/llm-custom",
+      "displayName": "自定义模型提供商",
+      "description": "自定义 OpenAI 兼容端点适配器宿主（custom-providers.json 热注册）",
+      "toggleable": true,
+      "defaultEnabled": true
+    },
+    {
       "id": "self-prompt",
       "packageName": "@diver/self-prompt",
       "displayName": "自改提示词",

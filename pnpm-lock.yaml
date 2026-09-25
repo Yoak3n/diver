@@ -160,6 +160,22 @@ importers:
         specifier: ~5.6.2
         version: 5.6.3
 
+  cos-plugins/llm-custom:
+    dependencies:
+      '@cos/plugin-api':
+        specifier: file:../../harness/packages/plugin-api
+        version: file:harness/packages/plugin-api(@cordisjs/plugin-include@1.0.4)(@cordisjs/plugin-loader@1.0.0-rc.5)
+      cordis:
+        specifier: 4.0.0-rc.7
+        version: 4.0.0-rc.7(@cordisjs/plugin-include@1.0.4)(@cordisjs/plugin-loader@1.0.0-rc.5)
+    devDependencies:
+      '@types/node':
+        specifier: ^26.2.0
+        version: 26.2.0
+      typescript:
+        specifier: ~5.6.2
+        version: 5.6.3
+
   cos-plugins/llm-volcark:
     dependencies:
       '@cos/plugin-api':

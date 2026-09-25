@@ -46,6 +46,7 @@ const OPEN_PLUGINS = [
   'mcp',
   'llm-commandcode',
   'llm-volcark',
+  'llm-custom',
   'native-bridge',
   'web-tools',
 ]
@@ -221,7 +222,7 @@ console.log(`  ✓ seed-manifest.json（seedVersion=${seedManifest.seedVersion}�
 // 2.6 companion bundle 层（patch 配置）
 const bundleSrc = join(COS_PLUGINS, 'bundle-companion')
 const bundleDst = join(SIDECAR_RES, 'bundles', 'bundle-companion')
-for (const f of ['cordis.patch.yml', 'bundle.yml', 'package.json']) {
+for (const f of ['cordis.patch.yml', 'bundle.yml', 'package.json', 'plugins.json']) {
   copyFileSync(join(bundleSrc, f), join(bundleDst, f))
 }
 

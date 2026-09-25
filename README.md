@@ -1,163 +1,75 @@
 # Diver · 桌面陪伴 Agent
 
-基于 **Tauri 2 + Vue 3 + DeepSeek Harness 框架**的桌面陪伴 agent。
+基于 **Tauri 2 + Vue 3 + Node sidecar（自研 cos 引擎）** 的桌面陪伴 agent。
 借鉴 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 的架构理念（append-only 会话日志、turn/step agent 循环、工具注册表、persona 组装、事件驱动），**只取其框架、不搬其交互层**：UI 为自研 Vue 单会话陪伴聊天，传输层为自研 HTTP/SSE，agent 常驻于 Node sidecar，Rust 负责壳与原生扩展。
 
-## 文档导航
+## 项目介绍
 
-| 文档 | 内容 |
+产品形态是「一个常驻桌面的陪伴者」：**主窗口**做单会话连续聊天（流式渲染、图片附件、助手头像、TTS 朗读）；**Live2D 桌宠**常驻屏幕右下角（透明/置顶/无边框），与主窗口共用同一会话与记忆；**Node sidecar** 是 agent 大脑，常驻后台。
+
+三层结构：
+
+| 层 | 职责 |
 |---|---|
-| [docs/index.md](docs/index.md) | 文档中心（分类导航） |
-| [docs/architecture.md](docs/architecture.md) | 三层架构、进程拓扑、启动时序、窗口管理、本地服务 |
-| [docs/plugins.md](docs/plugins.md) | **插件体系与生命周期**（loader 契约、profile 启停、壳端管理、深水区分期） |
-| [docs/sidecar.md](docs/sidecar.md) | Node sidecar 与 cos harness 接入、会话持久化与压缩 |
-| [docs/live2d-pet.md](docs/live2d-pet.md) | Live2D 桌宠渲染/交互/口型同步/窗口技术 |
-| [docs/providers.md](docs/providers.md) | 模型提供商插件体系、端点路由 |
-| [docs/memory.md](docs/memory.md) | 关系层记忆（Node 提取插件 + Rust SQLite 后端 + JSON-RPC） |
-| [docs/development.md](docs/development.md) | 开发指南：环境、运行、调试、冒烟测试 |
-| [docs/roadmap.md](docs/roadmap.md) | 打包分发与后续方向 |
+| Tauri 壳（Rust） | sidecar 生命周期、窗口/托盘/轻量模式、全局快捷键、在线 TTS、axum 本地服务（记忆 / grep / 截图 JSON-RPC） |
+| WebView（Vue 3） | 陪伴聊天 UI、设置面板、Live2D 桌宠窗口 |
+| Node sidecar | agent 循环 + `@diver/*` 插件（backend / memory / voice / mcp / 提供商…），单会话 JSONL 持久化 |
 
-## 架构
+### 核心能力
 
-```
-┌──────────────────────────────────────────────────┐
-│ Tauri 壳（Rust）                                  │
-│  · sidecar 生命周期管理（spawn/就绪检测/日志/重启） │
-│  · 托盘 / 窗口管理 / 轻量模式 / 开机自启 / 单实例   │
-│  · 在线 TTS（MiMo / MiniMax / 火山，壳层合成）     │
-│  · 本地服务（axum）：SQLite 记忆后端 JSON-RPC      │
-├──────────────────────────────────────────────────┤
-│ WebView：Vue 3 陪伴 UI（单会话连续聊天）            │
-│  · 流式渲染 / 主动问候横幅 / 设置面板 / 桌宠窗口    │
-│  · dev: Vite (localhost:1420) 代理 /api           │
-│  · release: sidecar 同源服务静态 UI               │
-├──────────────────────────────────────────────────┤
-│ Node sidecar（agent 大脑，常驻进程）               │
-│  · @deepseek-ai/dsh-base（仅框架：agent loop、    │
-│    会话、LLM 适配器、工具、persona、持久化）        │
-│  · cos-plugins/bundle-companion（自研，路径直连）：  │
-│    - backend：自有 node:http 传输层 + 日程提醒      │
-│      （静态 UI + JSON/SSE API；presence 调度并入，  │
-│       到点主动问候 + 原生通知，配置在 schedule）     │
-│    - memory：关系层记忆（提取/注入/工具）            │
-│    - voice / mcp / llm-commandcode / native-bridge │
-│  · 单会话「diver-companion」JSONL 持久化            │
-│    （跨重启陪伴记忆）                              │
-└──────────────────────────────────────────────────┘
-```
+- **陪伴聊天**：流式对话、工具调用闭环、会话 JSONL 持久化（跨重启）、压缩摘要内化
+- **Live2D 桌宠**：点按随机动作、情绪驱动动作、TTS 口型同步（按真实音频时长驱动）、模型切换（官方 Hiyori / N.E.K.O YUI）、气泡轻聊
+- **关系层记忆**：`remember` / `entity` / `identity` 工具 + 会话末 digest + 实体图谱，Rust SQLite 后端做衰减/激活/遗忘（不做逐轮提取）
+- **模型提供商（一切皆插件）**：`deepseek-official` / `commandcode` / `volcark` / `mock`，自定义 baseUrl 保存即生效；设置面板配置区由插件声明驱动
+- **在线 TTS**：MiMo / MiniMax / 火山，朗读队列 + 口型同步
+- **主动陪伴**：presence 存在感状态机（HSM）、日程提醒（设置页配置、30s tick 热生效，到点主动问候 + 原生通知）
+- **桌面集成**：全局快捷键唤起、托盘、轻量模式、开机自启、单实例、图片附件、助手头像
+- **插件开放**：引擎与插件均为磁盘 TS 源码，改文件重启 sidecar 即生效；设置页可启停
 
-**关键设计**（对应 DSH 理念）：
-
-| 理念 | Diver 实现 |
-|---|---|
-| append-only 会话日志 | dsh 的 SessionEvent 日志 + JSONL 持久化，UI/模型历史都从日志派生 |
-| turn/step agent 循环 | dsh agent-loop：流式 chunk、工具调用闭环、max-tokens 粘性等 |
-| 工具注册表 + 执行管线 | dsh-base 的 tools 服务（web_search 等），工具 schema 进请求 |
-| persona 组装 | bundle patch 覆盖 `system-prompt` 行 |
-| 一切皆可 patch | profile = dsh-base + companion 两个 bundle 层 + 用户 cordis.patch.yml |
-| 事件驱动 UI | session/event + agent/* 事件 → 自有 SSE 协议 → Vue |
-
-## 目录结构
+### 目录结构
 
 ```
-diver/
-├─ src/                    # Vue 3 陪伴 UI（聊天、设置含插件页、TTS）
-│  └─ pet/                 # Live2D 桌宠（PetApp/live2d/pet.html）
-├─ src-tauri/              # Rust 壳（sidecar 管理、插件启停、托盘、在线 TTS、本地服务）
-│  ├─ src/plugins/         # 壳端插件管理（profile 启停）
-│  ├─ src/base/            # sidecar / tts / tray / window / lightweight 等
-│  ├─ src/services/        # 本地服务：axum /rpc（SQLite 记忆后端）
-│  └─ config/tts.json     # 在线 TTS 配置
-├─ crates/diver-memory/    # Rust 记忆后端 crate（SQLite 存储 + 确定性逻辑）
-├─ crates/diver-search/    # Rust grep 搜索后端 crate（ripgrep 引擎库）
-├─ harness/                # cos 引擎 submodule（https://github.com/Yoak3n/cos）
-│  ├─ packages/            # @cos/* 引擎（boot/sidecar/profile/…）
-│  └─ .cos-home/           # 仓库本地 cos home（含 profiles/companion；gitignore）
-├─ cos-plugins/            # @diver/* 插件源码 + bundle-companion
-├─ docs/                   # 文档中心（插件契约见 docs/plugins.md）
-└─ scripts/                # 冒烟测试脚本
+src/         Vue 3 陪伴 UI + Live2D 桌宠（src/pet/）
+src-tauri/   Rust 壳：app / shell / core / commands / config / services / plugins 分层
+crates/      diver-geom / diver-memory / diver-presence / diver-search / diver-shot
+harness/     自研 cos 引擎（Node sidecar workspace，submodule）
+cos-plugins/ @diver/* 插件源码 + bundle-companion
+scripts/     冒烟测试与打包脚本
 ```
 
-## 运行
+代码分层与硬性规范见 [AGENTS.md](AGENTS.md)，完整目录说明见 [docs/development.md](docs/development.md)。
 
-```bash
-# 1. 安装依赖（pnpm workspace：前端 + harness）
-pnpm install
+## 开发指引
 
-# 2. 拉取 Live2D 桌宠模型（模型文件不入库，首次运行前执行一次）
-pnpm pet:fetch
-# 可选：安装 N.E.K.O 的 YUI 模型（学习评估；表现力更强，支持模型切换）
-pnpm pet:models
-
-# 3. 开发运行（自动拉起 sidecar + Vite + 窗口）
-pnpm tauri dev
-```
-
-首次启动后：在设置（⚙）里填入 DeepSeek API Key（或 opencode-go Key，可选）即可开始对话。
-Key 存入本地凭据库（`harness/.cos-home/.credentials.yaml`），模型默认 `deepseek-v4-flash`（可切换）。
-
-### 独立调试 sidecar
-
-```bash
-cd harness
-$env:COS_HOME = "$PWD\.cos-home"; $env:DIVER_PORT = "53620"
-node --import tsx --expose-internals cos-plugins/companion/src/companion.ts
-# 然后访问 http://127.0.0.1:53620/api/health
-```
-
-### 修改第三方插件（cos-plugins）
-
-`@diver/*` 源码在仓库根 `cos-plugins/`，经 `pluginRoot` + companion bundle 组装。
-改文件后**重启 sidecar 即生效**。启停用设置面板「插件」页（写 profile 补丁）。
-契约见 [docs/plugins.md](docs/plugins.md)。
-
-### 冒烟测试
-
-```bash
-node scripts/smoke.mjs    # 基础对话 + 流式
-node scripts/smoke2.mjs   # 工具调用闭环 + 历史
-node scripts/presence.mjs # 观察主动问候
-node scripts/readlog.mjs  # 查看会话日志
-node scripts/memory-test.mjs  # 记忆插件：喂事实 → recall 验证
-node scripts/opencode-test.mjs # opencode-go provider 直测
-```
-
-## 功能速览
-
-### Live2D 桌宠
-
-屏幕右下角常驻 **Live2D 桌宠**（透明/置顶/无边框，`src/pet/`）：pixi-live2d-display +
-Cubism 4 Core。默认官方示例「Hiyori」；可选 N.E.K.O 的 YUI（`pnpm pet:models`）
-获得更多情绪变体与表情。点按随机动作、底部气泡面板轻量聊天；在
-**设置 → 系统 → 桌宠形象** 或桌宠 `⋯` → **切换模型** 可换装。
-（最近 8 条）、回复自动 TTS 朗读 + **口型同步**（ParamMouthOpenY，按真实音频时长驱动）。
-主窗口关闭（隐藏到托盘）不影响桌宠；与主窗口共用同一会话/记忆。
-详见 [docs/live2d-pet.md](docs/live2d-pet.md)。
-
-### 模型提供商（一切皆插件）
-
-设置面板配置区由插件声明驱动（`lib/settings-registry.ts`），无硬编码输入框。
-已注册：`deepseek-official`（DeepSeek 官方 API）与 `opencode-go`
-（opencode.ai Zen Go 网关，26 个模型，按模型表自动路由
-chat/completions / responses / anthropic 三端点）。
-详见 [docs/providers.md](docs/providers.md)。
-
-### 关系层记忆
-
-长期记忆系统，双端架构：Node 插件提供**主动 `remember` 工具、会话末 digest 归纳、
-压缩摘要内化与常驻注入**；**Rust SQLite 后端**（`crates/diver-memory` + 本地 JSON-RPC 服务）
-做确定性存储/衰减/激活/遗忘。数据文件 `diver-memory.sqlite3` 位于 app data 目录。
-记忆来源：① agent 主动 `remember` 工具；② digest（节流 10 分钟，把最近轮次归纳进关系卡）；
-③ compaction 摘要内化。**不再做逐轮 LLM 提取。**
-详见 [docs/memory.md](docs/memory.md)。
-
-## 环境要求
+### 环境要求
 
 - Node.js ≥ 22、pnpm ≥ 10
 - Rust 工具链（Tauri 2 依赖）
 - Windows 10/11（在线 TTS 需可访问服务商 API）
 
-## 已知限制 / 后续方向
+### 快速开始
 
-打包分发（Node 运行时随包）、原生通知、全局快捷键、语音输入、日程提醒持久化配置、
-模型供应商扩展。详见 [docs/roadmap.md](docs/roadmap.md)。
+```bash
+pnpm install       # pnpm workspace：前端 + harness
+pnpm pet:fetch     # 首次：拉取 Live2D 桌宠模型（可选 pnpm pet:models 安装 YUI）
+pnpm tauri dev     # 自动拉起 sidecar + Vite(1420) + 窗口
+```
+
+首次启动后在设置（⚙）里填入 DeepSeek API Key 即可对话：Key 存本地凭据库
+`harness/.cos-home/.credentials.yaml`，模型默认 `deepseek-v4-flash`（可切换）。
+
+### 日常开发
+
+- **改插件**：`@diver/*` 源码在 `cos-plugins/`，重启 sidecar 即生效；启停走设置页「插件」
+  （写 profile patch）。契约见 [docs/plugins.md](docs/plugins.md)。
+- **独立调试 sidecar / 类型检查 / 日志 / 常见问题**：见 [docs/development.md](docs/development.md)。
+- **冒烟测试**：`node scripts/smoke.mjs`（对话 + 流式）、`smoke2.mjs`（工具调用闭环）、
+  `memory-test.mjs`（记忆）、`presence.mjs`（主动问候）等。
+- **打包分发**：`pnpm bundle:release` 产出 NSIS 安装包（随包 Node + 开放插件，升级按
+  seed manifest 对账），见 [docs/distribution.md](docs/distribution.md)。
+
+改 Rust 代码前请先读 [AGENTS.md](AGENTS.md)：文件长度、分层依赖、command 薄适配、可单测等硬性规范。
+
+## 后续方向
+
+语音输入（STT）、代码签名、自动更新。详见 [docs/roadmap.md](docs/roadmap.md)。

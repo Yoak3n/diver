@@ -19,7 +19,7 @@
 //
 // 产物：
 //   src-tauri/resources/sidecar/   # 打包进安装包的 sidecar 运行时目录
-//   src-tauri/target/release/bundle/nsis/Diver_*_x64-setup.exe   # NSIS 安装包
+//   target/release/bundle/nsis/Diver_*_x64-setup.exe   # NSIS 安装包（Cargo workspace 在仓库根）
 //
 // 依赖：pnpm ≥ 9、Node ≥ 22。
 
@@ -330,5 +330,5 @@ if (assembleOnly) {
 } else {
   step('NSIS 安装包构建 (tauri build)')
   run('pnpm tauri build', ROOT, 'tauri-build')
-  console.log('\n[bundle] 完成。安装包位于 src-tauri/target/release/bundle/nsis/')
+  console.log('\n[bundle] 完成。安装包位于 target/release/bundle/nsis/')
 }

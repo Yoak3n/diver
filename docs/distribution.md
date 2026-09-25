@@ -15,7 +15,7 @@ pnpm bundle:release   # 一键产出 NSIS 安装包
 产物：
 
 ```
-src-tauri/target/release/bundle/nsis/Diver_0.1.0_x64-setup.exe   # NSIS 安装器
+target/release/bundle/nsis/Diver_0.1.0_x64-setup.exe   # NSIS 安装器（Cargo workspace 在仓库根）
 src-tauri/resources/sidecar/                                      # 打进安装包的 sidecar 运行时
 ```
 

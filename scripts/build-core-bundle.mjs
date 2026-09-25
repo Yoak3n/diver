@@ -339,15 +339,26 @@ for (const name of ['tsx', 'esbuild']) copyPhysical(name) // typescript 不随�
       console.log(`  ✓ @esbuild/${plat.name} (${e.name.split('@').pop()})`)
     }
   }
-  // 兜底 + 硬校验：store 扫描落空（hoisted 布局等）按正常解析复制当前平台包；
+  // 兜底 + 硬校验：store 扫描落空（hoisted 布局等）先按正常解析复制当前平台包；
+  // 再落空就从仓库根 node_modules（workspace 提升布局）物理复制同版本平台包。
   // 仍缺失就直接失败——没有平台二进制 tsx 转译必崩（助手启动失败），
   // 以前这里静默跳过，坏包一路打到用户手里。
   const platName = `${process.platform}-${process.arch}`
   const binName = process.platform === 'win32' ? 'esbuild.exe' : join('bin', 'esbuild')
-  if (!existsSync(join(NM, '@esbuild', platName, binName))) {
+  const platDst = join(NM, '@esbuild', platName)
+  if (!existsSync(join(platDst, binName))) {
     try { copyPhysical(`@esbuild/${platName}`) } catch { /* 统一在下面报错 */ }
   }
-  if (!existsSync(join(NM, '@esbuild', platName, binName))) {
+  if (!existsSync(join(platDst, binName))) {
+    const rootPlat = join(ROOT, 'node_modules', '@esbuild', platName)
+    const verOf = (p) => { try { return JSON.parse(readFileSync(join(p, 'package.json'), 'utf8')).version } catch { return '' } }
+    if (existsSync(join(rootPlat, binName)) && verOf(rootPlat) === verOf(join(NM, 'esbuild'))) {
+      mkdirSync(join(NM, '@esbuild'), { recursive: true })
+      cpSync(rootPlat, platDst, { recursive: true })
+      console.log(`  ✓ @esbuild/${platName}（根 node_modules 兜底复制 ${verOf(rootPlat)}）`)
+    }
+  }
+  if (!existsSync(join(platDst, binName))) {
     console.error(`  ✗ 缺平台二进制 @esbuild/${platName}/${binName}（tsx 转译必需；检查 harness 安装是否装了 optionalDependencies）`)
     process.exit(1)
   }

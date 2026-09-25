@@ -56,7 +56,9 @@ jobs:
         shell: pwsh
         run: |
           $env:DIVER_NODE_BIN = (Get-Command node).Source
-          pnpm bundle:release
+          # 裸 node 直调（与 ci.yml 装配一致）：经 `pnpm run` 包装会把 npm_config_*/NODE_ENV
+          # 注入子进程，嵌套 pnpm install 曾据此静默丢 devDeps/optional 依赖（缺 @esbuild 二进制）。
+          node scripts/bundle-release.mjs
 
       - name: upload artifact
         uses: actions/upload-artifact@v7

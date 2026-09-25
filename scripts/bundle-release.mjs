@@ -166,6 +166,30 @@ if (existsSync(join(ROOT, 'node_modules', 'pnpm'))) {
 } else {
   run('pnpm install --offline --frozen-lockfile', harnessDst, 'pnpm-install')
 }
+// 2.4b 安装后门禁：CI 上 pnpm 曾静默丢 registry/dev/optional 依赖，直到用户
+// 启动失败才暴露。这里把安装现场（manifest 依赖数、环境变量、关键探针）钉进
+// 日志并立即失败，坏产物不再出厂。
+{
+  const nm = join(harnessDst, 'node_modules')
+  const depCount = Object.keys(JSON.parse(readFileSync(join(harnessDst, 'package.json'), 'utf8')).dependencies ?? {}).length
+  console.log(`  [诊断] package.json 依赖 ${depCount} 项`)
+  const envBits = Object.keys(process.env)
+    .filter((k) => /^(npm_config_.*|NODE_ENV)$/i.test(k))
+    .sort()
+    .map((k) => `${k}=${process.env[k]}`)
+  console.log(`  [诊断] env ${envBits.length ? envBits.join(' ') : '(干净: 无 npm_config_*/NODE_ENV)'}`)
+  const platBin = `@esbuild/${process.platform}-${process.arch}/${process.platform === 'win32' ? 'esbuild.exe' : 'bin/esbuild'}`
+  const probes = ['tsx/dist/loader.mjs', 'esbuild/package.json', '@cordisjs/plugin-loader/package.json', 'typescript/package.json', 'postject/package.json', platBin]
+  const missing = probes.filter((p) => !existsSync(join(nm, p)))
+  for (const p of probes) console.log(`  [诊断] ${missing.includes(p) ? '✗' : '✓'} node_modules/${p}`)
+  // 门禁只卡运行时硬依赖（tsx/esbuild/@cordisjs）；typescript/postject 是 devDeps
+  // 仅作现场证据；平台二进制由 build-core-bundle 兜底复制 + 硬校验负责。
+  const fatal = missing.filter((p) => !['typescript/package.json', 'postject/package.json', platBin].includes(p))
+  if (fatal.length) {
+    console.error(`  ✗ harness 依赖安装不完整: ${fatal.join(', ')}（见上方诊断；终止打包）`)
+    process.exit(1)
+  }
+}
 // 裁剪 package.json（随包元数据）：去 @diver/*（插件独立）、devDeps（tsx 是运行时依赖，保留）、别名
 const hp = JSON.parse(readFileSync(join(HARNESS, 'package.json'), 'utf8'))
 for (const k of Object.keys(hp.dependencies ?? {})) {

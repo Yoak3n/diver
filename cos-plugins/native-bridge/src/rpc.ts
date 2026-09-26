@@ -117,6 +117,9 @@ export async function nativeRpc<T>(
   }
   // P1-2 记忆路由身份头：壳按 X-Diver-Instance 把记忆读写路由到本实例私有库。
   const headers: Record<string, string> = { 'content-type': 'application/json' }
+  // P2-1 / BUG-002：本地服务鉴权令牌（shell 经 DIVER_TOKEN 注入）。
+  const token = process.env.DIVER_TOKEN ?? ''
+  if (token !== '') headers['authorization'] = `Bearer ${token}`
   const instance = process.env.DIVER_INSTANCE_ID
   if (instance && instance.trim() !== '') headers['x-diver-instance'] = instance
   const res = await fetch(url, {

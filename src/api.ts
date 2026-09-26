@@ -7,12 +7,14 @@ import type { ChatImage, ChatMessage, HealthInfo, PetInteractionSettings, Settin
 // - release（Tauri 托管 UI）：页面 origin 不是 sidecar，必须用
 //   get_sidecar_url() 拿 `http://127.0.0.1:<port>` 绝对地址
 let apiBase = "/api";
+let apiToken = "";
 
 async function initApiBase(): Promise<string> {
   if (apiBase !== "/api") return apiBase;
   try {
-    const { getSidecarApiBase } = await import("./tauri");
-    const base = await getSidecarApiBase();
+    const { getSidecarApiBase, getServiceToken } = await import("./tauri");
+    const [base, token] = await Promise.all([getSidecarApiBase(), getServiceToken()]);
+    apiToken = token;
     if (base) apiBase = `${base}/api`;
   } catch {
     /* 保持相对路径（非 Tauri / dev） */
@@ -23,7 +25,11 @@ async function initApiBase(): Promise<string> {
 async function json<T>(url: string, init?: RequestInit): Promise<T> {
   const base = await initApiBase();
   const res = await fetch(`${base}${url}`, {
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      // P2-1 / BUG-002：本地服务鉴权令牌（非 Tauri 环境留空，由 Vite proxy 注入）。
+      ...(apiToken ? { Authorization: `Bearer ${apiToken}` } : {}),
+    },
     ...init,
   });
   if (!res.ok) {
@@ -290,7 +296,12 @@ export function streamEvents(
   let closed = false;
   void initApiBase().then((base) => {
     if (closed) return;
-    es = new EventSource(`${base}/stream`);
+    // EventSource 无法带请求头：令牌走 ?token= 查询参数（P2-1 / BUG-002）。
+    const sep = base.includes("?") ? "&" : "?";
+    const url = apiToken
+      ? `${base}/stream${sep}token=${encodeURIComponent(apiToken)}`
+      : `${base}/stream`;
+    es = new EventSource(url);
     es.addEventListener("event", (raw) => {
       try {
         const e = JSON.parse((raw as MessageEvent).data) as StreamEvent;

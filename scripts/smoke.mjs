@@ -1,4 +1,6 @@
 // Diver E2E 冒烟测试：连接 SSE 流 → 发消息 → 打印事件序列（60s 超时）。
+import { authHeaders, authUrl } from './service-auth.mjs'
+
 const BASE = process.env.DIVER_PORT
   ? `http://127.0.0.1:${process.env.DIVER_PORT}`
   : 'http://127.0.0.1:53620'
@@ -6,7 +8,7 @@ const BASE = process.env.DIVER_PORT
 async function post(path, body) {
   const res = await fetch(BASE + path, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: authHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify(body ?? {}),
   })
   const text = await res.text()
@@ -18,7 +20,7 @@ function main() {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), 60000)
 
-  fetch(`${BASE}/api/stream`, { signal: controller.signal }).then(async (res) => {
+  fetch(authUrl(`${BASE}/api/stream`), { signal: controller.signal }).then(async (res) => {
     const reader = res.body.getReader()
     const decoder = new TextDecoder()
     let buf = ''

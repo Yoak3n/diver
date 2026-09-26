@@ -1,4 +1,6 @@
 // Diver E2E 第二轮：工具调用闭环 + 历史验证
+import { authHeaders, authUrl } from './service-auth.mjs'
+
 const BASE = process.env.DIVER_PORT
   ? `http://127.0.0.1:${process.env.DIVER_PORT}`
   : 'http://127.0.0.1:53620'
@@ -6,7 +8,7 @@ const BASE = process.env.DIVER_PORT
 async function post(path, body) {
   const res = await fetch(BASE + path, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: authHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify(body ?? {}),
   })
   return { status: res.status, text: await res.text() }
@@ -20,7 +22,7 @@ async function run() {
   // 2) 监听事件直到 turn/end
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), 90000)
-  const res = await fetch(`${BASE}/api/stream`, { signal: controller.signal })
+  const res = await fetch(authUrl(`${BASE}/api/stream`), { signal: controller.signal })
   const reader = res.body.getReader()
   const decoder = new TextDecoder()
   let buf = ''
@@ -56,7 +58,7 @@ async function run() {
   console.log(`[final] ${finalText.slice(0, 300)}`)
 
   // 3) 历史接口
-  const h = await fetch(`${BASE}/api/history`)
+  const h = await fetch(`${BASE}/api/history`, { headers: authHeaders() })
   const hist = await h.json()
   console.log(`[history] ${hist.messages.length} 条消息，最后一条: ${hist.messages.at(-1)?.content.slice(0, 60)}`)
   process.exit(0)

@@ -1,11 +1,13 @@
 // 观察 presence 主动问候：连接 SSE 流 30 秒，打印 presence 相关事件
+import { authUrl } from './service-auth.mjs'
+
 const BASE = process.env.DIVER_PORT
   ? `http://127.0.0.1:${process.env.DIVER_PORT}`
   : 'http://127.0.0.1:53620'
 const controller = new AbortController()
 setTimeout(() => controller.abort(), 30000)
 
-const res = await fetch(`${BASE}/api/stream`, { signal: controller.signal })
+const res = await fetch(authUrl(`${BASE}/api/stream`), { signal: controller.signal })
 const reader = res.body.getReader()
 const decoder = new TextDecoder()
 let buf = ''

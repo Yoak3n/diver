@@ -1,5 +1,6 @@
 // @diver/backend — HTTP 路由处理（backend/ 子模块）。
 
+import { timingSafeEqual } from 'node:crypto'
 import { readFile, stat } from 'node:fs/promises'
 import { extname, join, normalize, resolve } from 'node:path'
 import type { IncomingMessage, ServerResponse } from 'node:http'
@@ -48,14 +49,58 @@ const MIME: Record<string, string> = {
   '.map': 'application/json',
 }
 
-function cors(res: ServerResponse) {
-  res.setHeader('Access-Control-Allow-Origin', '*')
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
+// ── P2-1 / BUG-002 鉴权面 ──────────────────────────────────────────────
+// CORS 白名单（不再通配 *）：受信 webview origin 为 dev Vite（127.0.0.1 /
+// localhost:1420）与 release Tauri 托管 UI（tauri://localhost /
+// http://tauri.localhost）。其它 origin 不发 CORS 头 → 浏览器拦截跨源读取。
+const ALLOWED_ORIGINS = new Set([
+  'tauri://localhost',
+  'http://tauri.localhost',
+  'http://127.0.0.1:1420',
+  'http://localhost:1420',
+])
+
+function corsOriginAllowed(origin: string | undefined): boolean {
+  return origin !== undefined && ALLOWED_ORIGINS.has(origin)
+}
+
+function applyCors(req: IncomingMessage, res: ServerResponse) {
+  const origin = req.headers.origin
+  if (origin && corsOriginAllowed(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin)
+    res.setHeader('Vary', 'Origin')
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization')
+  }
+}
+
+/** Host 必须是回环名（任意端口），防 DNS rebinding（全路由适用）。 */
+function hostAllowed(host: string | undefined): boolean {
+  if (!host) return false
+  const h = host.trim().toLowerCase()
+  // 去端口：括号 IPv6（[::1]:12331）先按 ] 断，其余按 : 断。
+  const bracket = h.indexOf(']')
+  const name = bracket >= 0 ? h.slice(0, bracket + 1) : (h.split(':')[0] ?? '')
+  return name === '127.0.0.1' || name === 'localhost' || name === '[::1]'
+}
+
+function tokenEquals(a: string, b: string): boolean {
+  const ab = Buffer.from(a)
+  const bb = Buffer.from(b)
+  return ab.length === bb.length && timingSafeEqual(ab, bb)
+}
+
+/** Bearer 头 / x-diver-token 头 / ?token=（EventSource 无法带请求头）。 */
+function tokenOk(req: IncomingMessage, url: URL, expected: string): boolean {
+  if (!expected) return false
+  const auth = req.headers.authorization ?? ''
+  const bearer = auth.startsWith('Bearer ') ? auth.slice(7) : ''
+  const headerToken = typeof req.headers['x-diver-token'] === 'string' ? req.headers['x-diver-token'] : ''
+  const got = bearer || headerToken || (url.searchParams.get('token') ?? '')
+  return tokenEquals(got, expected)
 }
 
 function sendJson(res: ServerResponse, code: number, body: unknown) {
-  cors(res)
   res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8' })
   res.end(JSON.stringify(body))
 }
@@ -86,11 +131,9 @@ async function serveStatic(req: IncomingMessage, res: ServerResponse, pathname: 
     const info = await stat(filePath)
     if (info.isDirectory()) filePath = join(filePath, 'index.html')
     const body = await readFile(filePath)
-    cors(res)
     res.writeHead(200, { 'Content-Type': MIME[extname(filePath).toLowerCase()] ?? 'application/octet-stream' })
     res.end(body)
   } catch {
-    cors(res)
     res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' })
     res.end('not found')
   }
@@ -104,17 +147,35 @@ export async function handleRequest(
 ) {
   const pathname = url.pathname
 
+  // P2-1 / BUG-002：Host 必须回环名（防 DNS rebinding），全路由适用。
+  if (!hostAllowed(req.headers.host)) {
+    sendJson(res, 403, { error: 'forbidden' })
+    return
+  }
+  applyCors(req, res)
+
   if (req.method === 'OPTIONS') {
-    cors(res)
-    res.writeHead(204)
+    // 预检：仅受信 origin 放行；未授权 origin 无 CORS 头，浏览器自会拦截。
+    res.writeHead(corsOriginAllowed(req.headers.origin) ? 204 : 403)
     res.end()
     return
+  }
+
+  // P2-1 / BUG-002：/api 一律要求 Bearer 令牌 —— GET /api/health（只读探测）与
+  // /api/shutdown（自带 DIVER_SHUTDOWN_TOKEN 校验）除外；SSE 可用 ?token=。
+  if (pathname.startsWith('/api/')) {
+    const exempt =
+      (req.method === 'GET' && pathname === '/api/health') ||
+      (req.method === 'POST' && pathname === '/api/shutdown')
+    if (!exempt && !tokenOk(req, url, process.env.DIVER_TOKEN ?? '')) {
+      sendJson(res, 401, { error: 'unauthorized' })
+      return
+    }
   }
 
   try {
     // /api/stream —— SSE 事件流
     if (pathname === '/api/stream' && req.method === 'GET') {
-      cors(res)
       res.writeHead(200, {
         'Content-Type': 'text/event-stream; charset=utf-8',
         'Cache-Control': 'no-cache',

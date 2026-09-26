@@ -2,7 +2,7 @@ import { defineConfig, type Plugin } from "vite";
 import vue from "@vitejs/plugin-vue";
 
 // @ts-expect-error node builtin; 本工作区无 @types/node
-import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 // @ts-expect-error node builtin; 本工作区无 @types/node
 import { dirname, join } from "node:path";
 // @ts-expect-error node builtin; 本工作区无 @types/node
@@ -11,6 +11,15 @@ import { monitorEventLoopDelay } from "node:perf_hooks";
 // @ts-expect-error process is a nodejs global
 const host = process.env.TAURI_DEV_HOST;
 const sidecarPort = Number(process.env.DIVER_PORT ?? 53620);
+
+/** P2-1 / BUG-002：debug 形态壳端落盘的鉴权令牌（<app_data>/service-token）。 */
+function serviceTokenPath(): string {
+  return join(
+    process.env.APPDATA ?? join(process.env.HOME ?? "", ".config"),
+    "com.diver.companion",
+    "service-token",
+  );
+}
 
 /**
  * dev 诊断：逐请求服务记账（到达时刻 + 服务耗时 + endGap → node_modules/.vite/request.log）。
@@ -92,9 +101,22 @@ export default defineConfig(async () => ({
     },
     proxy: {
       // dev 模式下 /api 转发到 sidecar（与 release 同源行为保持一致）
+      // P2-1 / BUG-002：转发时注入鉴权令牌（debug 形态壳端落盘 service-token），
+      // 纯浏览器 dev 无需前端持有令牌。
       "/api": {
         target: `http://127.0.0.1:${sidecarPort}`,
         changeOrigin: true,
+        configure: (proxy) => {
+          proxy.on("proxyReq", (proxyReq) => {
+            if (proxyReq.getHeader("authorization")) return;
+            try {
+              const token = readFileSync(serviceTokenPath(), "utf8").trim();
+              if (token) proxyReq.setHeader("authorization", `Bearer ${token}`);
+            } catch {
+              /* 壳端未就绪或非 debug：不注入，后端按 401 拒绝 */
+            }
+          });
+        },
       },
     },
     hmr: host

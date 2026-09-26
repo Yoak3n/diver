@@ -26,6 +26,20 @@ export async function getSidecarApiBase(): Promise<string> {
 }
 
 /**
+ * 本地服务鉴权令牌（P2-1 / BUG-002）：`/api` 请求必须携带
+ * （`GET /api/health` 与静态 UI 除外）。非 Tauri 环境返回空串，
+ * 由 Vite proxy 注入令牌转发（vite.config.ts）。
+ */
+export async function getServiceToken(): Promise<string> {
+  if (!tauriAvailable()) return "";
+  try {
+    return await invoke<string>("get_service_token");
+  } catch {
+    return "";
+  }
+}
+
+/**
  * 等待 sidecar 后端就绪（可安全发起 /api 请求）。
  *
  * 信号来源：Rust 侧在 sidecar 打印 DIVER_READY 时发出 `backend://ready` 事件。

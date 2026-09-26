@@ -150,15 +150,15 @@ const nameOf = computed<Record<string, string>>(() => {
   return map;
 });
 
-// 群聊合并流（P2-3）：只收群广播（group 标）与实例往来（peer）及其回复；
-// 纯私聊流量不进群视图。群广播同内容 3s 内多实例各一份 → 去重只留一条。
+// 群聊合并流（P2-3）：只收挂 group 标的流量（用户群广播、实例群发言及其回复）；
+// 纯私聊流量（含实例间私聊）不进群视图。同一消息的多实例副本按内容+来源+3s 去重。
 const mergedMessages = computed<ChatMessage[]>(() => {
   const items: ChatMessage[] = [];
   for (const m of instancesState.instances.value) {
     const c = getChat(m.id);
     if (!c) continue;
     for (const msg of c.messages.value) {
-      if (!(msg.group === true || msg.origin === "peer")) continue;
+      if (msg.group !== true) continue;
       if (msg.origin === "peer" && msg.from) {
         items.push({ ...msg, from: nameOf.value[msg.from] ?? msg.from });
       } else if (msg.kind === "assistant") {
@@ -171,11 +171,11 @@ const mergedMessages = computed<ChatMessage[]>(() => {
   items.sort((a, b) => a.time - b.time);
   const out: ChatMessage[] = [];
   for (const m of items) {
-    if (m.group === true && m.origin === "user") {
+    if (m.origin === "user" || m.origin === "peer") {
       const dup = out.some(
         (k) =>
-          k.group === true &&
-          k.origin === "user" &&
+          k.origin === m.origin &&
+          k.from === m.from &&
           k.content === m.content &&
           Math.abs(k.time - m.time) <= 3000,
       );

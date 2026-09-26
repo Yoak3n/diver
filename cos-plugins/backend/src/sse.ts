@@ -3,7 +3,7 @@
 import type { ServerResponse } from 'node:http'
 import type { Context } from 'cordis'
 import { nativeRpc } from '@diver/native-bridge/rpc'
-import { injectOrigin, injectUiLabel, isGroupMessage, peerSourceId, stripGroupMarker, stripPeerMarker } from './interaction.ts'
+import { injectOrigin, injectUiLabel, isGroupMessage, peerSource, stripGroupMarker, stripPeerMarker } from './interaction.ts'
 import { textOf, imagesOf } from './session-helpers.ts'
 import { SESSION_ID } from './agent.ts'
 import type { WebState } from './state.ts'
@@ -50,13 +50,15 @@ export function attachEventListeners(
         const injectFrom = injectOrigin(ev.data.source)
         if (!isHuman && injectLabel === null) break
         const text = textOf(ev.data.content)
-        const peerFrom = peerSourceId(ev.data.source)
-        if (peerFrom !== null) {
-          // P2-3 来源标记渲染：peer 消息正文保留（剥壳盖章首行），from 结构化给 UI 徽标。
-          state.groupPending = true
+        const peer = peerSource(ev.data.source)
+        if (peer !== null) {
+          // P2-3 来源标记渲染：正文保留（剥壳盖章首行），from 结构化给 UI 徽标；
+          // 群发言（kind group）进群合并流并挂回复归属，实例间私聊不进。
+          if (peer.kind === 'group') state.groupPending = true
           broadcast({
             type: 'message', kind: 'user', sessionId: String(session.id),
-            messageId: ev.data.id, content: stripPeerMarker(text), origin: 'peer', from: peerFrom, time,
+            messageId: ev.data.id, content: stripPeerMarker(text), origin: 'peer', from: peer.id, time,
+            ...(peer.kind === 'group' ? { group: true } : {}),
           })
           break
         }

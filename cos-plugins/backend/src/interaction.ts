@@ -76,17 +76,19 @@ export function injectOrigin(source: unknown): 'interaction' | 'presence' | 'pro
   return 'proactive'
 }
 
-/** peer 消息来源实例 id（source.kind 'plugin' + detail 'peer:<id>'）；非 peer 返回 null。 */
-export function peerSourceId(source: unknown): string | null {
+/** peer 消息来源（source.kind 'plugin' + detail 'peer:<id>'｜'group:<id>'）；非 peer 返回 null。 */
+export function peerSource(source: unknown): { id: string; kind: 'peer' | 'group' } | null {
   const s = source as { kind?: string; detail?: string } | null | undefined
   if (s?.kind !== 'plugin') return null
   const d = s.detail ?? ''
-  return d.startsWith('peer:') && d.length > 5 ? d.slice(5) : null
+  if (d.startsWith('peer:') && d.length > 5) return { id: d.slice(5), kind: 'peer' }
+  if (d.startsWith('group:') && d.length > 6) return { id: d.slice(6), kind: 'group' }
+  return null
 }
 
-/** 剥掉壳盖章的首行「【消息来自实例 …】」，保留正文原文（UI 显示用；空正文回退原文）。 */
+/** 剥掉壳盖章首行（「【消息来自实例 …】」/「【群聊消息｜来自实例 …】」），保留正文（空正文回退原文）。 */
 export function stripPeerMarker(text: string): string {
-  const stripped = text.replace(/^【消息来自实例 [^\n]*?】\r?\n?/, '')
+  const stripped = text.replace(/^【[^】\n]*来自实例 [^\n]*?】\r?\n?/, '')
   return stripped.trim() !== '' ? stripped : text
 }
 
@@ -101,7 +103,7 @@ export function stripGroupMarker(text: string): string {
   return stripped.trim() !== '' ? stripped : text
 }
 
-/** 是否群聊广播消息（标记首行判定）。 */
+/** 是否用户群聊广播消息（标记首行判定；区别于实例群发言「【群聊消息｜…】」）。 */
 export function isGroupMessage(text: string): boolean {
-  return text.startsWith('【群聊')
+  return text.startsWith('【群聊｜')
 }

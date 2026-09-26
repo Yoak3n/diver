@@ -13,7 +13,7 @@ import {
   injectOrigin,
   injectUiLabel,
   isGroupMessage,
-  peerSourceId,
+  peerSource,
   readPetInteractionSettings,
   stripGroupMarker,
   stripPeerMarker,
@@ -371,15 +371,21 @@ export async function handleRequest(
         return
       }
       const fromName = String(from.name ?? '').trim() || fromId
+      // 来源区分（用户拍板）：群发言与私聊分章——收方一眼分出「群里说的」还是「私下说的」。
+      const kind = body.kind === 'group' ? 'group' : 'peer'
+      const marker =
+        kind === 'group'
+          ? `【群聊消息｜来自实例 ${fromName}（${fromId}）】`
+          : `【消息来自实例 ${fromName}（${fromId}）】`
       const target =
         body.target === 'inject'
           ? 'inject'
           : body.target === 'next-step'
             ? 'next-step'
             : 'next-turn'
-      const msg = createUserMessage(`【消息来自实例 ${fromName}（${fromId}）】\n${text}`, {
+      const msg = createUserMessage(`${marker}\n${text}`, {
         kind: 'plugin',
-        detail: `peer:${fromId}`,
+        detail: `${kind}:${fromId}`,
       })
       const agent = await deps.ensureAgent()
       // InboxTarget 三档：followup = next-turn 唤醒；steer = next-step 插话；inject = next-step 不唤醒（群聊收听）。
@@ -480,14 +486,16 @@ export async function handleRequest(
           if (ev.type === 'user/message') {
             const text = textOf(ev.data.content)
             // P2-3 来源标记渲染：peer 消息正文保留（剥壳盖章首行），from 结构化给 UI 徽标。
-            const peerFrom = peerSourceId(ev.data.source)
-            if (peerFrom !== null) {
+            const peer = peerSource(ev.data.source)
+            if (peer !== null) {
               messages.push({
                 id: ev.data.id, kind: 'user',
                 content: stripPeerMarker(text),
-                origin: 'peer', from: peerFrom, time,
+                origin: 'peer', from: peer.id, time,
+                // 群发言才进群合并流；实例间私聊留在各自私聊视图。
+                ...(peer.kind === 'group' ? { group: true } : {}),
               })
-              groupPending = true
+              if (peer.kind === 'group') groupPending = true
               continue
             }
             // 过滤运行时上下文快照；放行真人消息与已裁决注入

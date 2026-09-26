@@ -66,12 +66,14 @@ pub fn resolve_route(
     Ok((sender_name, target))
 }
 
-/// `/api/inbox` 请求体（纯函数）：`from` 由壳盖章（来源可信）。
-pub fn inbox_body(text: &str, sender_name: &str, sender: &str, target: &str) -> Value {
+/// `/api/inbox` 请求体（纯函数）：`from` 由壳盖章（来源可信）；
+/// `kind`：'peer' 私聊 / 'group' 群发言（收方分章渲染）。
+pub fn inbox_body(text: &str, sender_name: &str, sender: &str, target: &str, kind: &str) -> Value {
     json!({
         "text": text,
         "from": { "id": sender, "name": sender_name },
         "target": target,
+        "kind": kind,
     })
 }
 
@@ -161,7 +163,7 @@ async fn send(
         .unwrap_or_else(|| state.memory.fallback());
     let rows = registry_rows(&(state.registry_list)()?);
     let (sender_name, target_row) = resolve_route(&rows, sender, &to)?;
-    let body = inbox_body(&text, &sender_name, sender, target);
+    let body = inbox_body(&text, &sender_name, sender, target, "peer");
     let payload = deliver(state, &target_row, &body).await?;
     Ok(json!({
         "to": target_row.id,
@@ -201,7 +203,7 @@ async fn broadcast(
     if targets.is_empty() {
         return Err("没有其它在线实例可广播".to_string());
     }
-    let body = inbox_body(&text, &display_name(&rows, sender), sender, target);
+    let body = inbox_body(&text, &display_name(&rows, sender), sender, target, "group");
     let mut delivered = Vec::new();
     let mut failed = Vec::new();
     for row in &targets {
@@ -258,11 +260,12 @@ mod tests {
 
     #[test]
     fn inbox_body_stamps_sender() {
-        let body = inbox_body("你好", "小贝", "beta", "next-step");
+        let body = inbox_body("你好", "小贝", "beta", "next-step", "group");
         assert_eq!(body["from"]["id"], "beta");
         assert_eq!(body["from"]["name"], "小贝");
         assert_eq!(body["text"], "你好");
         assert_eq!(body["target"], "next-step");
+        assert_eq!(body["kind"], "group");
     }
 
     #[test]

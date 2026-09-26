@@ -115,9 +115,13 @@ export async function nativeRpc<T>(
   if (url === null) {
     throw new Error(`${label}: Rust 本地服务未启动（DIVER_MEMORY_PORT 未配置）`)
   }
+  // P1-2 记忆路由身份头：壳按 X-Diver-Instance 把记忆读写路由到本实例私有库。
+  const headers: Record<string, string> = { 'content-type': 'application/json' }
+  const instance = process.env.DIVER_INSTANCE_ID
+  if (instance && instance.trim() !== '') headers['x-diver-instance'] = instance
   const res = await fetch(url, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers,
     body: JSON.stringify({ method, params }),
   })
   let body: NativeRpcEnvelope<T>

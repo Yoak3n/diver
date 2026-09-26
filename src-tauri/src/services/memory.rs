@@ -48,8 +48,15 @@ fn parse_relations(v: Option<&Value>) -> Vec<RelationSpec> {
         .collect()
 }
 
-pub fn dispatch(state: &ServiceState, method: &str, params: &Value) -> Result<Value, String> {
-    let db = state.memory_db.lock().map_err(|_| "db lock poisoned".to_string())?;
+/// `instance_id`：`X-Diver-Instance` 身份头（P1-2 路由）；无头/未知回退 active 实例。
+pub fn dispatch(
+    state: &ServiceState,
+    instance_id: Option<&str>,
+    method: &str,
+    params: &Value,
+) -> Result<Value, String> {
+    let memory = state.memory.resolve(instance_id)?;
+    let db = memory.lock().map_err(|_| "db lock poisoned".to_string())?;
 
     let str_opt = |key: &str| params.get(key).and_then(|v| v.as_str()).map(str::to_string);
     let i64_opt = |key: &str| params.get(key).and_then(|v| v.as_i64());

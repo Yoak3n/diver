@@ -37,16 +37,20 @@ pub fn config_dir(app: &AppHandle) -> PathBuf {
 /// - release 构建：`<app_data_dir>/cos-<id>`（与安装目录隔离，升级不丢数据）。
 ///
 /// 当前单实例运行形态解析到「清单里第一个 enabled 实例」（见
-/// [`instances::active_instance_id`]）；P1-2 多实例拉起后改为逐实例派生。
+/// [`instances::active_instance_id`]）；多实例按 [`cos_home_for`] 逐实例派生。
 ///
 /// `mcp-servers.json` 等由 sidecar 插件读取的配置必须放在这里
 /// （与 `diver-settings.json` 同目录），否则插件按 `$COS_HOME/...` 找不到文件。
 pub fn cos_home(app: &AppHandle) -> PathBuf {
-    let id = instances::active_instance_id(app);
+    cos_home_for(app, &instances::active_instance_id(app))
+}
+
+/// 指定实例的 cos 数据家园（P1-2 多实例：逐实例派生，debug/release 形态同 `cos_home`）。
+pub fn cos_home_for(app: &AppHandle, instance_id: &str) -> PathBuf {
     #[cfg(debug_assertions)]
     {
         let _ = app;
-        instances::dev_cos_home_for(&harness_dir(), &id)
+        instances::dev_cos_home_for(&harness_dir(), instance_id)
     }
     #[cfg(not(debug_assertions))]
     {
@@ -54,7 +58,7 @@ pub fn cos_home(app: &AppHandle) -> PathBuf {
             .path()
             .app_data_dir()
             .unwrap_or_else(|_| config_dir(app));
-        cos_home_at(&data, &id)
+        cos_home_at(&data, instance_id)
     }
 }
 

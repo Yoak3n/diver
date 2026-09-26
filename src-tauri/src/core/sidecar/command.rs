@@ -6,7 +6,7 @@ use tauri::AppHandle;
 use tauri::Manager;
 
 use super::launch::LaunchContext;
-use super::paths::{shutdown_token, LAST_COS_HOME};
+use super::paths::shutdown_token;
 use super::process::SidecarManager;
 #[cfg(not(debug_assertions))]
 use super::paths::{
@@ -75,8 +75,10 @@ impl SidecarManager {
 
             // 用户数据目录：与安装目录隔离（升级安装不丢会话/记忆）。
             // 与 config::mcp 共享同一路径（cos_home 即 sidecar 注入的 COS_HOME）。
-            let cos_home = crate::config::cos_home(app);
-            let _ = LAST_COS_HOME.set(cos_home.clone());
+            // P1-2 多实例：COS_HOME 由 manager 按实例注入；未注入回退 active 实例。
+            let cos_home = self
+                .cos_home()
+                .unwrap_or_else(|| crate::config::cos_home(app));
             if let Err(e) = std::fs::create_dir_all(&cos_home) {
                 log::warn!("创建 COS_HOME 失败: {e}");
             }
@@ -129,6 +131,10 @@ impl SidecarManager {
                 .env("DIVER_BUNDLE_DIR", clean(&bundle_dir))
                 .env("DIVER_PLUGINS_ROOT", clean(&plugins_dir))
                 .env(
+                    "DIVER_INSTANCE_ID",
+                    self.instance_id().unwrap_or_default(),
+                )
+                .env(
                     "DIVER_MCP_CONFIG_FILE",
                     crate::config::mcp::config_path(app).to_string_lossy().to_string(),
                 )
@@ -152,8 +158,10 @@ impl SidecarManager {
                 .parent()
                 .unwrap_or(&self.harness_dir)
                 .join("cos-plugins/companion/src/companion.ts");
-            let cos_home = crate::config::cos_home(app);
-            let _ = LAST_COS_HOME.set(cos_home.clone());
+            // P1-2 多实例：COS_HOME 由 manager 按实例注入；未注入回退 active 实例。
+            let cos_home = self
+                .cos_home()
+                .unwrap_or_else(|| crate::config::cos_home(app));
             if !entry.exists() {
                 return Err(format!(
                     "sidecar 入口不存在: {}（请先在根目录执行 pnpm install）",
@@ -212,6 +220,10 @@ impl SidecarManager {
                 .env("DIVER_SHUTDOWN_TOKEN", shutdown_token())
                 .env("DIVER_BUNDLE_DIR", ctx.bundle_dir.display().to_string())
                 .env("DIVER_PLUGINS_ROOT", ctx.plugins_root.display().to_string())
+                .env(
+                    "DIVER_INSTANCE_ID",
+                    self.instance_id().unwrap_or_default(),
+                )
                 .env(
                     "DIVER_MCP_CONFIG_FILE",
                     crate::config::mcp::config_path(app).to_string_lossy().to_string(),

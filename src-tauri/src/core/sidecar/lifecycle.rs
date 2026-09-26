@@ -16,7 +16,7 @@ use super::SidecarJob;
 /// 监控线程进程退出轮询间隔（不持有 Child，保证 stop() 能拿到句柄）。
 const MONITOR_POLL_INTERVAL: Duration = Duration::from_millis(200);
 
-pub(super) fn start_impl(mgr: &SidecarManager, app: &AppHandle) -> bool {
+pub(super) fn start_impl(mgr: &'static SidecarManager, app: &AppHandle) -> bool {
     {
         let status = mgr.status.lock();
         if status.state == SidecarState::Running || status.state == SidecarState::Starting {
@@ -138,8 +138,6 @@ pub(super) fn start_impl(mgr: &SidecarManager, app: &AppHandle) -> bool {
     }
 
     let app_clone = app.clone();
-    // 线程需要 'static 引用：单例实例经 global() 获取。
-    let mgr: &'static SidecarManager = SidecarManager::global();
     let stop_flag = Arc::new(AtomicBool::new(false));
 
     // stdout 读取线程：日志 + 就绪检测
@@ -173,7 +171,10 @@ pub(super) fn start_impl(mgr: &SidecarManager, app: &AppHandle) -> bool {
                     mgr.emit_status(&app_clone);
                     // 后端就绪通知：前端 waitForSidecarReady() 收到该事件后
                     // 即可发起 /api 请求（修复 WebView 先于 sidecar 挂载的启动竞态）。
-                    let _ = app_clone.emit("backend://ready", mgr.status());
+                    // P1-2 多实例：UI 事件只转发 active，附加实例保持静默。
+                    if super::runtimes::Runtimes::global().is_active(mgr) {
+                        let _ = app_clone.emit("backend://ready", mgr.status());
+                    }
                 }
             }
         }
@@ -220,7 +221,10 @@ pub(super) fn start_impl(mgr: &SidecarManager, app: &AppHandle) -> bool {
         }
         if !mgr.stopping.load(Ordering::SeqCst) {
             // backend 请求的业务重启：见 $COS_HOME/restart.requested 则自动再拉起。
-            let cos_home = crate::config::cos_home(&app_clone);
+            // P1-2 多实例：重启标志按本实例 COS_HOME 查（不共用 active 的）。
+            let cos_home = mgr
+                .cos_home()
+                .unwrap_or_else(|| crate::config::cos_home(&app_clone));
             let flag = cos_home.join("restart.requested");
             if flag.exists() {
                 let _ = std::fs::remove_file(&flag);
@@ -248,9 +252,9 @@ pub(super) fn stop_impl(mgr: &SidecarManager) {
     mgr.stopping.store(true, Ordering::SeqCst);
     log::info!("停止 sidecar …");
 
-    // 用户/壳主动停止：清掉 backend 留下的重启标志（stop 无 AppHandle，
-    // 用进程内缓存的 cos_home；缺失则跳过——start 也会再清一次）。
-    if let Some(home) = super::paths::LAST_COS_HOME.get() {
+    // 用户/壳主动停止：清掉 backend 留下的重启标志（按本实例 COS_HOME；
+    // 缺失则跳过——start 也会再清一次）。
+    if let Some(home) = mgr.cos_home() {
         let _ = std::fs::remove_file(home.join("restart.requested"));
     }
 

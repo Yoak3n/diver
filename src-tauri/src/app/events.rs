@@ -7,8 +7,8 @@ pub fn app_event_handle(app_handle: &AppHandle, event: RunEvent) {
     match event {
         tauri::RunEvent::Ready | tauri::RunEvent::Resumed => {}
         tauri::RunEvent::Exit => {
-            // 应用退出时停止 sidecar（agent 随之结束，记忆保留在磁盘）。
-            crate::core::sidecar::SidecarManager::global().stop();
+            // 应用退出时停止全部实例 sidecar（agent 随之结束，记忆保留在磁盘）。
+            crate::core::sidecar::Runtimes::global().stop_all();
         }
         tauri::RunEvent::ExitRequested { api, code, .. } => {
             if code.is_none() {

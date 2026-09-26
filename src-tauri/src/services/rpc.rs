@@ -18,8 +18,17 @@ pub struct RpcRequest {
     pub params: Value,
 }
 
-pub async fn dispatch(State(state): State<ServiceState>, Json(request): Json<RpcRequest>) -> Json<Value> {
-    match route(&state, &request.method, &request.params).await {
+pub async fn dispatch(
+    State(state): State<ServiceState>,
+    headers: axum::http::HeaderMap,
+    Json(request): Json<RpcRequest>,
+) -> Json<Value> {
+    // P1-2 记忆路由身份头：无头/未知 id 在 MemoryPool 内回退 active 实例。
+    let instance = headers
+        .get("x-diver-instance")
+        .and_then(|v| v.to_str().ok())
+        .map(str::to_string);
+    match route(&state, instance.as_deref(), &request.method, &request.params).await {
         Ok(data) => Json(json!({ "ok": true, "data": data })),
         Err(failure) => {
             let mut body = json!({ "ok": false, "error": failure.message });
@@ -31,7 +40,12 @@ pub async fn dispatch(State(state): State<ServiceState>, Json(request): Json<Rpc
     }
 }
 
-async fn route(state: &ServiceState, method: &str, params: &Value) -> Result<Value, grep::RpcFailure> {
+async fn route(
+    state: &ServiceState,
+    instance_id: Option<&str>,
+    method: &str,
+    params: &Value,
+) -> Result<Value, grep::RpcFailure> {
     if method.starts_with("grep::") {
         // grep 搜索是阻塞 IO/CPU：跑在 blocking 线程池，避免卡 async 线程。
         // workdir 用 COS_HOME/workspace（与 Node 侧 basic-tools 的默认一致）。
@@ -68,5 +82,5 @@ async fn route(state: &ServiceState, method: &str, params: &Value) -> Result<Val
         return registry::dispatch(state, method).map_err(grep::RpcFailure::new);
     }
     // memory 方法保持无前缀（零迁移）；错误无 code。
-    memory::dispatch(state, method, params).map_err(grep::RpcFailure::new)
+    memory::dispatch(state, instance_id, method, params).map_err(grep::RpcFailure::new)
 }

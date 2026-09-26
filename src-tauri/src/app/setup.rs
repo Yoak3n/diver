@@ -189,14 +189,30 @@ pub fn configure(builder: Builder<tauri::Wry>) -> Builder<tauri::Wry> {
                 std::sync::Arc::new(|method, params| {
                     crate::core::presence::dispatch_rpc(method, params)
                 });
-            // 记忆双库路径按实例 id 派生（P1-1）：私有 diver-memory-<id> + 共享 shared。
+            // 记忆双库路径按实例 id 派生（P1-1 双库 + P1-2 身份头路由）：
+            // enabled 实例各一份私有库，无身份/未知回退 active 实例。
             let data_dir = app
                 .path()
                 .app_data_dir()
                 .unwrap_or_else(|_| crate::config::config_dir(app.handle()));
             let instance_id = instance_id.clone();
-            let memory_paths =
-                crate::config::instances::memory_paths_for(&data_dir, &instance_id);
+            let mut memory_ids: Vec<String> = crate::config::instances::list_instances(app.handle())
+                .into_iter()
+                .filter(|i| i.enabled)
+                .map(|i| i.id)
+                .collect();
+            if !memory_ids.contains(&instance_id) {
+                memory_ids.push(instance_id.clone());
+            }
+            let memory_dbs: Vec<(String, crate::config::instances::MemoryPaths)> = memory_ids
+                .iter()
+                .map(|id| {
+                    (
+                        id.clone(),
+                        crate::config::instances::memory_paths_for(&data_dir, id),
+                    )
+                })
+                .collect();
             // 写回式回填：人格卡片名字 → 实例清单 name（权威源 = 卡片）。
             let on_card_name: crate::services::CardNameFn = {
                 let app_handle = app.handle().clone();
@@ -229,8 +245,8 @@ pub fn configure(builder: Builder<tauri::Wry>) -> Builder<tauri::Wry> {
                 app.handle(),
                 notify,
                 presence_dispatch,
-                memory_paths.private,
-                memory_paths.shared,
+                memory_dbs,
+                instance_id.clone(),
                 on_card_name,
                 registry_list,
             ) {
@@ -356,6 +372,12 @@ pub fn configure(builder: Builder<tauri::Wry>) -> Builder<tauri::Wry> {
                         85.0,
                         false,
                     );
+                    // P1-2 多实例拉起：active 之外的 enabled 实例顺序拉起
+                    // （独立线程，不阻塞遮罩收起；顺序 = preflight 不竞态）。
+                    let handle3 = handle.clone();
+                    std::thread::spawn(move || {
+                        crate::core::sidecar::Runtimes::global().start_enabled_extras(&handle3);
+                    });
                     // 轮询 health：backend 就绪后主动收起遮罩（不单靠 stdout 里的 DIVER_READY）
                     let handle2 = handle.clone();
                     std::thread::spawn(move || {

@@ -24,6 +24,7 @@ mod paths;
 mod ports;
 mod process;
 mod reclaim;
+mod runtimes;
 mod shutdown;
 mod status;
 
@@ -38,4 +39,5 @@ pub use job_object::SidecarJob;
 pub use launch::{LaunchContext, LaunchHooks, PreflightStatus};
 pub use paths::DEFAULT_PORT;
 pub use process::SidecarManager;
+pub use runtimes::Runtimes;
 pub use status::{SidecarState, SidecarStatus};

@@ -3,7 +3,9 @@
 // send_to_peer：把消息发给同一壳下的另一个实例。走 native-bridge → 壳
 // services/peer 消息路由（发送方由壳按 X-Diver-Instance 身份头盖章，不可伪）
 // → POST 对端 /api/inbox 注入其 session inbox，对端 agent 下一轮把消息当输入。
-import type { Context } from '@cos/plugin-api'
+import type { Context } from 'cordis'
+// 空类型导入：加载 @cos/plugin-api 对 cordis Context 的服务增强（tools 等）。
+import type {} from '@cos/plugin-api'
 import { nativeRpc } from '@diver/native-bridge/rpc'
 
 /** cordis 注入声明：工具注册台（裸函数插件会丢注入，必须显式声明）。 */
@@ -16,7 +18,7 @@ interface PeerSendResult {
 }
 
 export function apply(ctx: Context) {
-  ctx.tools.register('send_to_peer', async (args) => {
+  ctx.tools.register('send_to_peer', async (args: unknown) => {
     const a = (args ?? {}) as { to?: unknown; text?: unknown; target?: unknown }
     const to = String(a.to ?? '').trim()
     const text = String(a.text ?? '').trim()

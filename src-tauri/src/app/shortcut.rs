@@ -8,9 +8,10 @@
 //! - 持久化绑定在 `config/shortcuts.rs`（`shortcuts.json`）；**热插拔** =
 //!   写配置 + 调用插件运行时 `register` / `unregister`，不重启应用。
 //!
-//! 快捷键作用域占位（P1-3）：动作只作用于 active 实例的窗口/桌宠；注册冲突
-//! （外部程序或另一壳先占）时**后启动者跳过并提示**（先注册者得，OS 仲裁），
-//! 不阻断其余绑定注册。per-instance 显式选占随 P2-3 多桌宠配置化。
+//! 快捷键作用域占位（P1-3）：**桌宠窗口不注册全局快捷键**（交互走窗口本身，
+//! 多桌宠唤起策略随 P2-3 另行设计）；主窗口只占一个绑定（`is_main` 单槽校验）。
+//! 注册冲突（外部程序先占）时**跳过并提示**（先注册者得，OS 仲裁），
+//! 不阻断其余绑定注册。
 //!
 //! 触发动作只在 `Pressed`（按下）时执行一次，`Released` 忽略。
 
@@ -22,7 +23,6 @@ use tauri::AppHandle;
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutEvent, ShortcutState};
 
 use crate::shell::window::manager::Manager as WM;
-use crate::shell::window::pet as pet_win;
 use crate::shell::window::schema::WindowType;
 use crate::config::shortcuts::{
     ShortcutAction, ShortcutBinding, ShortcutsConfig, load_config, save_config,
@@ -55,7 +55,7 @@ impl ShortcutManager {
     /// 全局快捷键 handler（`Builder::with_handler` 注入）。
     ///
     /// 所有已注册快捷键触发时回调；只处理按下事件，按 `shortcut.id()` 分发动作。
-    pub fn handle(&self, app: &AppHandle, shortcut: &Shortcut, event: ShortcutEvent) {
+    pub fn handle(&self, _app: &AppHandle, shortcut: &Shortcut, event: ShortcutEvent) {
         if event.state != ShortcutState::Pressed {
             return;
         }
@@ -67,7 +67,7 @@ impl ShortcutManager {
             guard.get(&shortcut.id()).map(|b| b.action)
         };
         if let Some(action) = action {
-            dispatch_action(app, action);
+            dispatch_action(action);
         } else {
             log::warn!("[shortcut] 未注册的快捷键触发: {}", shortcut);
         }
@@ -182,6 +182,17 @@ impl ShortcutManager {
             ));
         }
 
+        // 主窗口只占一个绑定（P1-3 收敛）：已有别的启用主窗口绑定时拒绝再注册。
+        if binding.enabled
+            && binding.action.is_main()
+            && config
+                .bindings
+                .iter()
+                .any(|b| b.enabled && b.id != binding.id && b.action.is_main())
+        {
+            return Err("主窗口快捷键只需注册一个，请先停用或移除现有主窗口绑定".into());
+        }
+
         let old = config.bindings.iter().find(|b| b.id == binding.id).cloned();
 
         // 3) 运行时切换：先注销旧，再注册新；失败则回滚到旧绑定。
@@ -278,29 +289,14 @@ fn notify_skipped(app: &AppHandle, skipped: &[String]) {
     );
 }
 
-/// 按动作分发到窗口/桌宠（快捷键 handler 同步调用，使用壳内全局管理器）。
-fn dispatch_action(app: &AppHandle, action: ShortcutAction) {
+/// 按动作分发到窗口（快捷键 handler 同步调用，使用壳内全局管理器）。
+fn dispatch_action(action: ShortcutAction) {
     match action {
         ShortcutAction::ShowMain => {
             let _ = WM::global().show_window(WindowType::Main, None);
         }
         ShortcutAction::ToggleMain => {
             let _ = WM::global().toggle_window(WindowType::Main);
-        }
-        ShortcutAction::TogglePet => {
-            if let Err(e) = pet_win::toggle(app) {
-                log::error!("[shortcut] toggle pet 失败: {e}");
-            }
-        }
-        ShortcutAction::ShowPet => {
-            if let Err(e) = pet_win::set_visible(app, true) {
-                log::error!("[shortcut] show pet 失败: {e}");
-            }
-        }
-        ShortcutAction::HidePet => {
-            if let Err(e) = pet_win::set_visible(app, false) {
-                log::error!("[shortcut] hide pet 失败: {e}");
-            }
         }
     }
 }

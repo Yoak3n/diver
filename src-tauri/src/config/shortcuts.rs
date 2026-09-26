@@ -15,8 +15,11 @@ pub const FILE_NAME: &str = "shortcuts.json";
 
 /// 快捷键可触发的动作。
 ///
-/// 新增动作时：在此枚举加变体 → `base/shortcut.rs` 的 `dispatch_action`
+/// 新增动作时：在此枚举加变体 → `app/shortcut.rs` 的 `dispatch_action`
 /// 补一个匹配分支（含 UI 展示名）。
+///
+/// P1-3 收敛：桌宠窗口**不注册**全局快捷键（桌宠交互走窗口本身，多桌宠
+/// 按实例的唤起策略随 P2-3 另行设计）；主窗口只占一个绑定（见 `is_main`）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum ShortcutAction {
@@ -24,12 +27,6 @@ pub enum ShortcutAction {
     ShowMain,
     /// 切换主窗口显隐
     ToggleMain,
-    /// 切换桌宠显隐
-    TogglePet,
-    /// 显示桌宠
-    ShowPet,
-    /// 收起桌宠
-    HidePet,
 }
 
 impl ShortcutAction {
@@ -38,10 +35,12 @@ impl ShortcutAction {
         match self {
             Self::ShowMain => "唤起主窗口",
             Self::ToggleMain => "切换主窗口",
-            Self::TogglePet => "切换桌宠",
-            Self::ShowPet => "显示桌宠",
-            Self::HidePet => "收起桌宠",
         }
+    }
+
+    /// 是否主窗口动作（主窗口只注册一个绑定，P1-3 收敛）。
+    pub fn is_main(self) -> bool {
+        matches!(self, Self::ShowMain | Self::ToggleMain)
     }
 }
 
@@ -87,22 +86,14 @@ impl Default for ShortcutsConfig {
     }
 }
 
-/// 默认绑定：主窗口唤起 + 桌宠切换。
+/// 默认绑定：主窗口唤起（仅此一个，P1-3 收敛——桌宠不注册全局快捷键）。
 fn default_bindings() -> Vec<ShortcutBinding> {
-    vec![
-        ShortcutBinding {
-            id: "show-main".into(),
-            accelerator: "ctrl+shift+m".into(),
-            action: ShortcutAction::ShowMain,
-            enabled: true,
-        },
-        ShortcutBinding {
-            id: "toggle-pet".into(),
-            accelerator: "ctrl+shift+p".into(),
-            action: ShortcutAction::TogglePet,
-            enabled: true,
-        },
-    ]
+    vec![ShortcutBinding {
+        id: "show-main".into(),
+        accelerator: "ctrl+shift+m".into(),
+        action: ShortcutAction::ShowMain,
+        enabled: true,
+    }]
 }
 
 /// 纯路径读取快捷键配置（文件不存在或损坏时返回默认值）。
@@ -137,7 +128,7 @@ mod tests {
             bindings: vec![ShortcutBinding {
                 id: "x".into(),
                 accelerator: "ctrl+alt+x".into(),
-                action: ShortcutAction::TogglePet,
+                action: ShortcutAction::ToggleMain,
                 enabled: false,
             }],
         };
@@ -154,6 +145,7 @@ mod tests {
     fn load_at_missing_returns_default_bindings() {
         let dir = std::env::temp_dir().join(format!("diver-sc-miss-{}", std::process::id()));
         let cfg = load_config_at(&dir);
-        assert_eq!(cfg.bindings.len(), 2);
+        assert_eq!(cfg.bindings.len(), 1);
+        assert!(cfg.bindings[0].action.is_main());
     }
 }

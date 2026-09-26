@@ -2,8 +2,9 @@
 
 import { invoke } from "./core";
 
-/** 全局快捷键绑定（壳端配置，热插拔：运行时注册/注销）。 */
-export type ShortcutAction = "show-main" | "toggle-main" | "toggle-pet" | "show-pet" | "hide-pet";
+/** 全局快捷键绑定（壳端配置，热插拔：运行时注册/注销）。
+ * P1-3 收敛：桌宠窗口不注册全局快捷键；主窗口只占一个绑定。 */
+export type ShortcutAction = "show-main" | "toggle-main";
 
 export interface ShortcutBinding {
   id: string;
@@ -16,9 +17,6 @@ export interface ShortcutBinding {
 export const SHORTCUT_ACTION_LABELS: Record<ShortcutAction, string> = {
   "show-main": "唤起主窗口",
   "toggle-main": "切换主窗口",
-  "toggle-pet": "切换桌宠",
-  "show-pet": "显示桌宠",
-  "hide-pet": "收起桌宠",
 };
 
 /** 列出全局快捷键绑定。 */

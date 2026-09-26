@@ -17,6 +17,16 @@ impl MemoryDb {
         )
     }
 
+    /// 清空名字（回到未命名）。**仅限壳层「清空名字」手动入口**（设置面板）；
+    /// 工具/写回路径结构上没有清空能力（[`MemoryDb::update_card`] 的 name 空串/缺省 = 不修改）。
+    pub fn clear_card_name(&self) -> rusqlite::Result<()> {
+        self.conn.execute(
+            "UPDATE relation_card SET name = NULL, updated_at = ?1 WHERE id = 1 AND name IS NOT NULL",
+            params![now_ms()],
+        )?;
+        Ok(())
+    }
+
     pub fn update_card(&self, facts: &Value) -> rusqlite::Result<()> {
         let mut card = self.get_card()?;
         let mut changed = false;

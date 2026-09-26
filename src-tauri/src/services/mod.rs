@@ -1,4 +1,4 @@
-﻿//! Tauri 侧本地服务：仅监听 127.0.0.1，供 Node sidecar（dsh）调用。
+//! Tauri 侧本地服务：仅监听 127.0.0.1，供 Node sidecar（dsh）调用。
 //!
 //! 使用 axum 承载 HTTP；服务通过 [ServiceState] 注册共享状态，
 //! 在 [start] 中把各服务的路由 merge 进同一个 Router 即可扩展新服务。
@@ -15,6 +15,6 @@ mod screenshot;
 mod server;
 mod state;
 
-pub use memory::set_card_name_at;
+pub use memory::{clear_card_name_at, set_card_name_at};
 pub use server::start;
 pub use state::{CardNameFn, NotifyFn, PresenceDispatchFn, ServiceState};

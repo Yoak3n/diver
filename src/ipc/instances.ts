@@ -28,7 +28,7 @@ export function createInstance(name?: string): Promise<InstanceMeta> {
   return invoke<InstanceMeta>("create_instance", { name: name?.trim() || null });
 }
 
-/** 改名 / 启用开关（id 不可变；name 传空串 = 清空回未命名）。 */
+/** 改名 / 启用开关（id 不可变；name 空串/缺省 = 不修改；清空走 clearInstanceName）。 */
 export function updateInstance(
   id: string,
   patch: { name?: string; enabled?: boolean },
@@ -38,6 +38,11 @@ export function updateInstance(
     name: patch.name ?? null,
     enabled: patch.enabled ?? null,
   });
+}
+
+/** 清空名字（仅设置面板手动）：双写清空人格卡片 + 清单，真回到未命名。 */
+export function clearInstanceName(id: string): Promise<InstanceMeta> {
+  return invoke<InstanceMeta>("clear_instance_name", { id });
 }
 
 /** 删除实例（default 不可删；数据目录清理随 P1 落地）。 */

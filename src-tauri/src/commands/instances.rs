@@ -31,10 +31,10 @@ pub fn create_instance(app: AppHandle, name: Option<String>) -> Result<InstanceM
     Ok(meta)
 }
 
-/// 改名 / 启用开关（id 与登记时间不可变；`name` 空串 = 清空回未命名）。
+/// 改名 / 启用开关（id 与登记时间不可变；`name` 空串/缺省 = 不修改）。
 ///
-/// 改名（非空）双写：人格卡片是名字权威源 → 先写卡片，再写实例清单（回显）；
-/// 空串只清清单（卡片 name 空串/缺省为「不修改」语义，没有清空通道）。
+/// 改名（非空）双写：先校验归一，再写人格卡片（名字权威源），最后写实例清单（回显）。
+/// 「清空回未命名」不走这里——只能经 [`clear_instance_name`]（仅设置面板手动）。
 #[tauri::command]
 pub fn update_instance(
     app: AppHandle,
@@ -42,12 +42,28 @@ pub fn update_instance(
     name: Option<String>,
     enabled: Option<bool>,
 ) -> Result<InstanceMeta, String> {
-    if let Some(new_name) = name.as_deref() {
+    // 空串/缺省 = 不修改；非空先过归一校验（>32 字等直接拒绝，卡片不落脏名字）。
+    let rename = match name.as_deref() {
+        Some(raw) if !raw.trim().is_empty() => instances::normalize_name(raw).map_err(err_text)?,
+        _ => None,
+    };
+    if let Some(new_name) = rename.as_deref() {
         let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
         let paths = crate::config::instances::memory_paths_for(&dir, &id);
         crate::services::set_card_name_at(&paths.private, new_name)?;
     }
-    instances::update_instance(&app, &id, name.as_deref(), enabled).map_err(err_text)
+    instances::update_instance(&app, &id, rename.as_deref(), enabled).map_err(err_text)
+}
+
+/// 「清空名字」专用入口（仅设置面板手动调用）：双写清空人格卡片 + 实例清单，
+/// 真回到未命名，命名流程可重来（`set_name` 下次启动重新挂）。
+/// 其余路径（工具 / digest / 写回 / 改名接口）结构上没有清空能力。
+#[tauri::command]
+pub fn clear_instance_name(app: AppHandle, id: String) -> Result<InstanceMeta, String> {
+    let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    let paths = crate::config::instances::memory_paths_for(&dir, &id);
+    crate::services::clear_card_name_at(&paths.private)?;
+    instances::update_instance(&app, &id, Some(""), None).map_err(err_text)
 }
 
 /// 删除实例（`default` 双保险不可删；数据目录清理随 P1 落地）。

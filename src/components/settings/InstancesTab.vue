@@ -5,7 +5,7 @@ import { onMounted, ref } from "vue";
 import { tauriAvailable, type InstanceMeta } from "../../tauri";
 import { useInstances } from "../../composables/useInstances";
 
-const { instances, loading, error, notice, refresh, create, rename, toggle, remove } =
+const { instances, loading, error, notice, refresh, create, rename, clearName, toggle, remove } =
   useInstances();
 
 const newName = ref("");
@@ -36,11 +36,19 @@ function cancelRename(): void {
 
 async function confirmRename(inst: InstanceMeta): Promise<void> {
   const name = editingName.value.trim();
-  if (name === (inst.name ?? "")) {
+  // 留空 = 不修改（清空是独立入口「清空名字」，会同步清人格卡片）
+  if (!name || name === (inst.name ?? "")) {
     cancelRename();
     return;
   }
   if (await rename(inst.id, name)) cancelRename();
+}
+
+function onClearName(inst: InstanceMeta): void {
+  const label = inst.name ? `「${inst.name}」` : ` ${inst.id} `;
+  if (!window.confirm(`清空${label}的名字，回到未命名？人格卡片里的名字一并清空，之后可重新命名。`))
+    return;
+  void clearName(inst.id);
 }
 
 function onDelete(inst: InstanceMeta): void {
@@ -121,6 +129,14 @@ function formatDate(unix: number): string {
       <template v-else>
         <button class="btn small" :disabled="!tauriAvailable()" @click="startRename(inst)">改名</button>
         <button
+          v-if="inst.name"
+          class="btn small"
+          :disabled="!tauriAvailable()"
+          @click="onClearName(inst)"
+        >
+          清空名字
+        </button>
+        <button
           class="btn small danger"
           :disabled="!tauriAvailable() || inst.id === 'default'"
           @click="onDelete(inst)"
@@ -133,7 +149,8 @@ function formatDate(unix: number): string {
   </div>
 
   <p class="hint">
-    「启用」控制是否随应用启动（P1 起生效）；改名保存空值 = 清空回未命名；
+    「启用」控制是否随应用启动（P1 起生效）；改名留空 = 不修改，
+    「清空名字」才回到未命名（同步清人格卡片，命名流程可重来）；
     默认实例不可删除（旧数据零迁移保留）。
   </p>
 </template>

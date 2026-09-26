@@ -242,6 +242,15 @@ pub fn set_card_name_at(db_path: &std::path::Path, name: &str) -> Result<(), Str
     db.update_card(&json!({ "name": name })).map_err(err)
 }
 
+/// 清空某实例私有库的人格卡片名字（「清空名字」手动入口专用，见 [`clear_card_name_at`]）。
+///
+/// 与 [`set_card_name_at`] 同属壳层编排入口：不经 RPC 分发、不触发 `on_card_name`
+/// 写回，实例清单由调用方同步清空（双写清空）。
+pub fn clear_card_name_at(db_path: &std::path::Path) -> Result<(), String> {
+    let db = MemoryDb::open(db_path).map_err(err)?;
+    db.clear_card_name().map_err(err)
+}
+
 fn req_str(params: &Value, key: &str) -> Result<String, String> {
     params
         .get(key)

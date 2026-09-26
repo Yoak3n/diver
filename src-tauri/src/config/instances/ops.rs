@@ -1,4 +1,4 @@
-//! 实例清单纯逻辑：id 生成 / 校验，登记、改名、删除（无 IO，可单测）。
+﻿//! 实例清单纯逻辑：id 生成 / 校验，登记、改名、删除（无 IO，可单测）。
 
 use super::types::{InstanceError, InstanceMeta, InstancesFile, DEFAULT_ID};
 
@@ -54,7 +54,7 @@ pub fn generate_id(name: &str, taken: &[String]) -> String {
 
 /// 归一化展示名：去首尾空白；空 = 不命名（`None`，之后由人格卡片回填）；
 /// 非空时校验 1–32 字符。
-fn normalize_name(name: &str) -> Result<Option<String>, InstanceError> {
+pub fn normalize_name(name: &str) -> Result<Option<String>, InstanceError> {
     let name = name.trim();
     if name.is_empty() {
         return Ok(None);

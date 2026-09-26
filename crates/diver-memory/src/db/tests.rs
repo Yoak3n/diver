@@ -83,8 +83,13 @@ fn card_name_is_scalar_and_overwrite() {
     // 新名字覆盖旧名字（回填实例清单的权威源）
     db.update_card(&serde_json::json!({ "name": "Echo" })).unwrap();
     assert_eq!(db.get_card().unwrap().name.as_deref(), Some("Echo"));
-    // 空串/缺省 = 不修改（可选字段语义，清空只发生在实例清单侧）
+    // 空串/缺省 = 不修改（可选字段语义；update_card 无清空能力）
     db.update_card(&serde_json::json!({ "name": "  " })).unwrap();
     db.update_card(&serde_json::json!({ "profile": "- 忙项目" })).unwrap();
     assert_eq!(db.get_card().unwrap().name.as_deref(), Some("Echo"));
+    // clear_card_name = 唯一清空通道（仅壳层手动入口）；重复清空幂等
+    db.clear_card_name().unwrap();
+    assert_eq!(db.get_card().unwrap().name, None);
+    db.clear_card_name().unwrap();
+    assert_eq!(db.get_card().unwrap().name, None);
 }

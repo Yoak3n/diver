@@ -5,6 +5,7 @@
 
 import { ref } from "vue";
 import {
+  clearInstanceName,
   createInstance,
   deleteInstance,
   listInstances,
@@ -54,7 +55,7 @@ async function create(name?: string): Promise<boolean> {
   }
 }
 
-/** 改名（id 不可变；空名 = 清空回未命名）。 */
+/** 改名（id 不可变；空名 = 不修改，清空走 clearName）。 */
 async function rename(id: string, name: string): Promise<boolean> {
   notice.value = "";
   error.value = "";
@@ -64,6 +65,21 @@ async function rename(id: string, name: string): Promise<boolean> {
     return true;
   } catch (err) {
     fail(err, "改名失败");
+    return false;
+  }
+}
+
+/** 清空名字（仅此入口）：双写清空人格卡片 + 清单，真回到未命名、命名流程可重来。 */
+async function clearName(id: string): Promise<boolean> {
+  notice.value = "";
+  error.value = "";
+  try {
+    await clearInstanceName(id);
+    instances.value = await listInstances();
+    notice.value = "已清空名字，回到未命名；下次与它聊天时可重新命名";
+    return true;
+  } catch (err) {
+    fail(err, "清空名字失败");
     return false;
   }
 }
@@ -96,5 +112,5 @@ async function remove(id: string): Promise<boolean> {
 }
 
 export function useInstances() {
-  return { instances, loading, error, notice, refresh, create, rename, toggle, remove };
+  return { instances, loading, error, notice, refresh, create, rename, clearName, toggle, remove };
 }

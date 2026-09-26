@@ -81,6 +81,7 @@ pub fn generate_handlers() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + 
         list_instances,
         create_instance,
         update_instance,
+        clear_instance_name,
         delete_instance,
         get_pet_window_config,
         set_pet_size_percent,

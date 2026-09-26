@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS events (
 
 CREATE TABLE IF NOT EXISTS relation_card (
     id INTEGER PRIMARY KEY CHECK (id = 1),
+    name TEXT,
     profile TEXT NOT NULL DEFAULT '',
     agent_model TEXT NOT NULL DEFAULT '',
     relationship TEXT NOT NULL DEFAULT '',

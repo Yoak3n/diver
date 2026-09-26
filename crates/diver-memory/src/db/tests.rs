@@ -67,3 +67,20 @@ fn entity_candidates_match_name_in_text() {
     let empty = db.entity_candidates("完全无关的话题", Some(5)).unwrap();
     assert!(empty.is_empty());
 }
+
+#[test]
+fn card_name_is_scalar_and_overwrite() {
+    let db = mem_db();
+    // 初始未命名
+    assert_eq!(db.get_card().unwrap().name, None);
+    // 非空 name 覆盖写入（标量语义，区别于 profile 的追加式）
+    db.update_card(&serde_json::json!({ "name": "小潜" })).unwrap();
+    assert_eq!(db.get_card().unwrap().name.as_deref(), Some("小潜"));
+    // 同名不动、空名不改不改
+    db.update_card(&serde_json::json!({ "name": "小潜" })).unwrap();
+    db.update_card(&serde_json::json!({ "name": "  " })).unwrap();
+    assert_eq!(db.get_card().unwrap().name.as_deref(), Some("小潜"));
+    // 新名字覆盖旧名字（回填实例清单的权威源）
+    db.update_card(&serde_json::json!({ "name": "Echo" })).unwrap();
+    assert_eq!(db.get_card().unwrap().name.as_deref(), Some("Echo"));
+}

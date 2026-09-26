@@ -35,6 +35,8 @@ pub struct MemoryEvent {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RelationCard {
+    /// 名字（`None` = 未命名）：人格卡片是名字权威源，壳层 update_card 后写回实例清单。
+    pub name: Option<String>,
     pub profile: String,
     #[serde(rename = "agent_model")]
     pub agent_model: String,

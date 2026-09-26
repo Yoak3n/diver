@@ -6,8 +6,10 @@
 //! - 衰减 / 激活 / 遗忘均为确定性逻辑，不调用任何 LLM
 //!
 //! 本文件只做模块声明与稳定 re-export；实现见子模块。
+//! 私有 + 共享双库门面见 `dual::DualDb`（共享层第一版只放 events）。
 
 mod card;
+mod dual;
 mod entities;
 mod events;
 mod mappers;
@@ -22,6 +24,7 @@ mod util;
 #[cfg(test)]
 mod tests;
 
+pub use dual::DualDb;
 pub use store::MemoryDb;
 pub use types::*;
 pub use util::SNAPSHOT_DEFAULT_LIMIT;

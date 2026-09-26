@@ -38,6 +38,7 @@ pub(super) fn event_from_row(row: &Row) -> rusqlite::Result<MemoryEvent> {
 
 pub(super) fn card_from_row(row: &Row) -> rusqlite::Result<RelationCard> {
     Ok(RelationCard {
+        name: row.get("name")?,
         profile: row.get("profile")?,
         agent_model: row.get("agent_model")?,
         relationship: row.get("relationship")?,

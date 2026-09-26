@@ -9,7 +9,7 @@ use axum::{extract::State, Json};
 use serde::Deserialize;
 use serde_json::{json, Value};
 
-use super::{grep, memory, notify, presence, registry, screenshot, ServiceState};
+use super::{grep, memory, notify, peer, presence, registry, screenshot, ServiceState};
 
 #[derive(Deserialize)]
 pub struct RpcRequest {
@@ -80,6 +80,10 @@ async fn route(
     if method.starts_with("registry::") {
         // 实例注册中心查询（P1-2）：读注册表文件；闭包由 app 注入。
         return registry::dispatch(state, method).map_err(grep::RpcFailure::new);
+    }
+    if method.starts_with("peer::") {
+        // 互实例消息（P2-2）：壳 = 消息路由，按身份头盖章来源后投递对端 /api/inbox。
+        return peer::dispatch(state, instance_id, method, params).await;
     }
     // memory 方法保持无前缀（零迁移）；错误无 code。
     memory::dispatch(state, instance_id, method, params).map_err(grep::RpcFailure::new)

@@ -40,6 +40,11 @@ impl MemoryPool {
         self.dbs.insert(id.into(), Arc::new(Mutex::new(db)));
     }
 
+    /// active 实例 id（无身份头调用方的回退目标，P2-2 发送方缺省同此）。
+    pub fn fallback(&self) -> &str {
+        &self.fallback
+    }
+
     pub fn contains(&self, id: &str) -> bool {
         self.dbs.contains_key(id)
     }
@@ -68,6 +73,8 @@ impl MemoryPool {
 pub struct ServiceState {
     /// 记忆双库路由（P1-2）：身份头 → 实例私有 DualDb，无头回退 active。
     pub memory: MemoryPool,
+    /// 本地服务鉴权令牌（P2-1）：出站对端投递（P2-2 `peer::send`）同样携带。
+    pub auth_token: String,
     pub notify: NotifyFn,
     pub presence_dispatch: PresenceDispatchFn,
     /// 人格卡片更新后把名字写回实例清单（写回式回填）。

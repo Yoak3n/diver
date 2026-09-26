@@ -67,6 +67,7 @@ pub fn start(
     }
     let state = ServiceState {
         memory,
+        auth_token: auth_token.clone(),
         notify,
         presence_dispatch,
         on_card_name,

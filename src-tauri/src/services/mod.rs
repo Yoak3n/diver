@@ -10,6 +10,7 @@ mod auth;
 mod grep;
 mod memory;
 mod notify;
+mod peer;
 mod presence;
 mod registry;
 mod rpc;

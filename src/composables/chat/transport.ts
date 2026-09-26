@@ -4,7 +4,7 @@
 
 import { answerQuestion, getHistory, getSettings, health, sendChat, streamEvents } from "../../api";
 import { onTauriEvent, tauriAvailable, waitForSidecarReady } from "../../tauri";
-import type { SidecarStatus, UserQuestionAnswerItem } from "../../types";
+import type { ChatImage, SidecarStatus, UserQuestionAnswerItem } from "../../types";
 import type { createChatState } from "./state";
 
 export type ChatState = ReturnType<typeof createChatState>;
@@ -123,7 +123,24 @@ export function createChatTransport(state: ChatState, instanceId: string) {
     openStream();
   }
 
-  async function send() {
+  async function send(opts?: {
+    content?: string;
+    images?: ChatImage[];
+    queue?: boolean;
+    group?: boolean;
+  }) {
+    // 显式参数 = 群聊广播外发（P2-3）：纯投递，不动本地 composer/busy；
+    // SSE 回声带 group 标，由合并流去重只渲染一条。
+    if (opts?.content !== undefined) {
+      const text = opts.content.trim();
+      const images = opts.images ?? [];
+      if (!text && images.length === 0) return;
+      await sendChat(text, images, instanceId, {
+        queue: opts.queue === true,
+        group: opts.group === true,
+      });
+      return;
+    }
     const content = state.composer.value.trim();
     const images = state.attachments.value.map((a) => ({
       mime: a.mime,

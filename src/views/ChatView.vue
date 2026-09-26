@@ -20,8 +20,11 @@ const settings = useSettings();
 const { state, doRestartSidecar } = settings;
 const instancesState = useInstances();
 
+const GROUP_ID = "@group";
 const currentId = ref("default");
-const chat = computed(() => useChat(currentId.value));
+const isGroup = computed(() => currentId.value === GROUP_ID);
+// 群聊模式借 default 会话当「输入框载体」（不新建 @group 会话）；群发走 fan-out。
+const chat = computed(() => useChat(isGroup.value ? "default" : currentId.value));
 
 // 会话池喂 API 寻址 + 清单/注册表轮询（侧栏在线点 / 端口映射）。
 const runtimes = ref<Record<string, { online: boolean; busy: boolean }>>({});
@@ -69,7 +72,25 @@ const composer = computed({
 
 // 事件/动作委托
 function send() {
+  if (isGroup.value) {
+    sendGroup();
+    return;
+  }
   void chat.value.send();
+}
+
+// 群聊广播（P2-3）：发给全部在线实例（queue 忙不插话 + group 标记）；不强制回复。
+function sendGroup() {
+  const text = composer.value.trim();
+  if (!text) return;
+  const targets = instancesState.instances.value
+    .map((m) => m.id)
+    .filter((id) => runtimes.value[id]?.online === true);
+  if (targets.length === 0) return;
+  composer.value = "";
+  for (const id of targets) {
+    void getChat(id)?.send({ content: text, queue: true, group: true });
+  }
 }
 function reconnect() {
   void chat.value.reconnect();
@@ -129,6 +150,42 @@ const nameOf = computed<Record<string, string>>(() => {
   return map;
 });
 
+// 群聊合并流（P2-3）：只收群广播（group 标）与实例往来（peer）及其回复；
+// 纯私聊流量不进群视图。群广播同内容 3s 内多实例各一份 → 去重只留一条。
+const mergedMessages = computed<ChatMessage[]>(() => {
+  const items: ChatMessage[] = [];
+  for (const m of instancesState.instances.value) {
+    const c = getChat(m.id);
+    if (!c) continue;
+    for (const msg of c.messages.value) {
+      if (!(msg.group === true || msg.origin === "peer")) continue;
+      if (msg.origin === "peer" && msg.from) {
+        items.push({ ...msg, from: nameOf.value[msg.from] ?? msg.from });
+      } else if (msg.kind === "assistant") {
+        items.push({ ...msg, from: nameOf.value[m.id] ?? m.id });
+      } else {
+        items.push({ ...msg });
+      }
+    }
+  }
+  items.sort((a, b) => a.time - b.time);
+  const out: ChatMessage[] = [];
+  for (const m of items) {
+    if (m.group === true && m.origin === "user") {
+      const dup = out.some(
+        (k) =>
+          k.group === true &&
+          k.origin === "user" &&
+          k.content === m.content &&
+          Math.abs(k.time - m.time) <= 3000,
+      );
+      if (dup) continue;
+    }
+    out.push(m);
+  }
+  return out;
+});
+
 const railRows = computed<RailRow[]>(() => {
   const list = instancesState.instances.value;
   const rows: RailRow[] = list.map((m) => {
@@ -145,6 +202,20 @@ const railRows = computed<RailRow[]>(() => {
       busy: c?.busy.value ?? false,
     };
   });
+  // 首位固定「群聊」虚拟行（P2-3）。
+  const merged = mergedMessages.value;
+  const lastMerged = merged.length > 0 ? merged[merged.length - 1] : undefined;
+  rows.unshift({
+    id: GROUP_ID,
+    name: "群聊",
+    avatar: null,
+    preview: lastMerged
+      ? lastMerged.content.replace(/\s+/g, " ").slice(0, 30)
+      : "多实例共同会话",
+    timeText: lastMerged ? fmtClock(lastMerged.time) : "",
+    online: rows.some((r) => r.online),
+    busy: rows.some((r) => r.busy),
+  });
   return rows;
 });
 
@@ -154,11 +225,12 @@ function fmtClock(ts: number): string {
 }
 
 // 来源徽标解析实例名（peer 消息 from=id → 展示名）；id 保留不可解析时兜底。
-const displayMessages = computed<ChatMessage[]>(() =>
-  messages.value.map((m) =>
+const displayMessages = computed<ChatMessage[]>(() => {
+  if (isGroup.value) return mergedMessages.value;
+  return messages.value.map((m) =>
     m.origin === "peer" && m.from ? { ...m, from: nameOf.value[m.from] ?? m.from } : m,
-  ),
-);
+  );
+});
 </script>
 
 <template>

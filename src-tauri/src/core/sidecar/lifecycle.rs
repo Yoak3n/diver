@@ -171,10 +171,8 @@ pub(super) fn start_impl(mgr: &'static SidecarManager, app: &AppHandle) -> bool 
                     mgr.emit_status(&app_clone);
                     // 后端就绪通知：前端 waitForSidecarReady() 收到该事件后
                     // 即可发起 /api 请求（修复 WebView 先于 sidecar 挂载的启动竞态）。
-                    // P1-2 多实例：UI 事件只转发 active，附加实例保持静默。
-                    if super::runtimes::Runtimes::global().is_active(mgr) {
-                        let _ = app_clone.emit("backend://ready", mgr.status());
-                    }
+                    // P2-3 多实例：全实例广播（payload 带 id），前端按 id 过滤。
+                    let _ = app_clone.emit("backend://ready", mgr.status());
                 }
             }
         }

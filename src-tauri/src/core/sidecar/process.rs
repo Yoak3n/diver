@@ -61,6 +61,8 @@ impl SidecarManager {
         SidecarManager {
             child: Mutex::new(None),
             status: Mutex::new(SidecarStatus {
+                // 实例 id 由 status() 从注册表定位盖章（构造早于 set_registry_target）。
+                id: String::new(),
                 state: SidecarState::Stopped,
                 port,
                 logs: Vec::new(),
@@ -121,9 +123,11 @@ impl SidecarManager {
         *self.hooks.lock() = Some(hooks);
     }
 
-    /// 当前状态快照。
+    /// 当前状态快照（P2-3：盖章实例 id，供多实例 UI 过滤）。
     pub fn status(&self) -> SidecarStatus {
-        self.status.lock().clone()
+        let mut status = self.status.lock().clone();
+        status.id = self.instance_id().unwrap_or_default();
+        status
     }
 
     pub fn port(&self) -> u16 {
@@ -165,10 +169,7 @@ impl SidecarManager {
     }
 
     pub(super) fn emit_status(&self, app: &AppHandle) {
-        // UI 事件只转发 active 实例（多实例 UI 随 P2-3，附加实例保持静默）。
-        if !super::runtimes::Runtimes::global().is_active(self) {
-            return;
-        }
+        // P2-3 多实例 UI：全实例广播，payload 带 id，前端按 id 过滤。
         let status = self.status();
         let _ = app.emit("sidecar://status", status);
     }

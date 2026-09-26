@@ -89,3 +89,19 @@ export function stripPeerMarker(text: string): string {
   const stripped = text.replace(/^【消息来自实例 [^\n]*?】\r?\n?/, '')
   return stripped.trim() !== '' ? stripped : text
 }
+
+/** 群聊广播标记首行（后端注入会话；提示「多人在场、不必每条都回」）。 */
+export function groupMarkerLine(): string {
+  return '【群聊｜其他人也在场，不必每条都回，想说才说】'
+}
+
+/** 剥掉群聊广播标记首行（UI 显示用；空正文回退原文）。 */
+export function stripGroupMarker(text: string): string {
+  const stripped = text.replace(/^【群聊[^】]*?】\r?\n?/, '')
+  return stripped.trim() !== '' ? stripped : text
+}
+
+/** 是否群聊广播消息（标记首行判定）。 */
+export function isGroupMessage(text: string): boolean {
+  return text.startsWith('【群聊')
+}

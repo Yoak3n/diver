@@ -3,7 +3,7 @@
 import type { ServerResponse } from 'node:http'
 import type { Context } from 'cordis'
 import { nativeRpc } from '@diver/native-bridge/rpc'
-import { injectOrigin, injectUiLabel, peerSourceId, stripPeerMarker } from './interaction.ts'
+import { injectOrigin, injectUiLabel, isGroupMessage, peerSourceId, stripGroupMarker, stripPeerMarker } from './interaction.ts'
 import { textOf, imagesOf } from './session-helpers.ts'
 import { SESSION_ID } from './agent.ts'
 import type { WebState } from './state.ts'
@@ -53,6 +53,7 @@ export function attachEventListeners(
         const peerFrom = peerSourceId(ev.data.source)
         if (peerFrom !== null) {
           // P2-3 来源标记渲染：peer 消息正文保留（剥壳盖章首行），from 结构化给 UI 徽标。
+          state.groupPending = true
           broadcast({
             type: 'message', kind: 'user', sessionId: String(session.id),
             messageId: ev.data.id, content: stripPeerMarker(text), origin: 'peer', from: peerFrom, time,
@@ -79,9 +80,13 @@ export function attachEventListeners(
           })
         } else {
           const images = imagesOf(ev.data.content)
+          // 群聊广播：剥「在场提示」首行，group 标记给合并流去重。
+          const group = isGroupMessage(text)
+          if (group) state.groupPending = true
           broadcast({
             type: 'message', kind: 'user', sessionId: String(session.id),
-            messageId: ev.data.id, content: text, origin: 'user', time,
+            messageId: ev.data.id, content: group ? stripGroupMarker(text) : text, origin: 'user', time,
+            ...(group ? { group: true } : {}),
             ...(images.length > 0 ? { images } : {}),
           })
         }
@@ -105,12 +110,15 @@ export function attachEventListeners(
         if (text === '') break
         const origin = state.presencePending ? 'presence' : 'assistant'
         state.presencePending = false
+        const group = state.groupPending
+        state.groupPending = false
         broadcast({
           type: 'message',
           kind: 'assistant',
           sessionId: String(session.id),
           messageId: ev.data.message.id,
           turnMessageId: `turn-${ev.data.turn}-${ev.data.step}`,
+          ...(group ? { group: true } : {}),
           content: text,
           origin,
           time,

@@ -73,6 +73,8 @@ export interface ChatMessage {
   origin: "user" | "assistant" | "presence" | "interaction" | "proactive" | "peer";
   /** origin=peer：来源实例 id（P2-3 来源徽标，名字由实例清单解析）。 */
   from?: string;
+  /** 群聊广播消息（P2-3）：合并流按内容+时间窗去重，只渲染一条。 */
+  group?: boolean;
   time: number;
   streaming?: boolean;
   /** 用户消息附带图片（mime + base64，不含 data: 前缀）。 */
@@ -142,7 +144,7 @@ export interface UserQuestionAnswerItem {
 
 export type StreamEvent =
   | { type: "hello"; persona: string; provider: string; model: string; modelConfigured: boolean; sessionId: string | null; busy: boolean }
-  | { type: "message"; kind: "user" | "assistant" | "system"; sessionId: string; messageId: string; turnMessageId?: string; content: string; origin: "user" | "assistant" | "presence" | "interaction" | "proactive" | "peer"; from?: string; time: number; images?: ChatImage[] }
+  | { type: "message"; kind: "user" | "assistant" | "system"; sessionId: string; messageId: string; turnMessageId?: string; content: string; origin: "user" | "assistant" | "presence" | "interaction" | "proactive" | "peer"; from?: string; group?: boolean; time: number; images?: ChatImage[] }
   | { type: "chunk"; messageId: string; delta: string }
   | { type: "thinking"; messageId: string; delta: string }
   | { type: "tool"; name: string; status: "call" | "result"; summary?: string; messageId?: string; callId?: string; isError?: boolean }

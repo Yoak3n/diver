@@ -9,10 +9,13 @@ import { SessionId, createUserMessage } from '@cos/plugin-api'
 import { readDiverSettings, writeDiverSettings, textOf, imagesOf } from './session-helpers.ts'
 import { SESSION_ID, userMessage } from './agent.ts'
 import {
+  groupMarkerLine,
   injectOrigin,
   injectUiLabel,
+  isGroupMessage,
   peerSourceId,
   readPetInteractionSettings,
+  stripGroupMarker,
   stripPeerMarker,
 } from './interaction.ts'
 import { loadSchedule, saveSchedule } from './presence.ts'
@@ -225,9 +228,18 @@ export async function handleRequest(
         sendJson(res, 400, { error: '消息不能为空' })
         return
       }
+      // P2-3 群聊广播：会话内注入「在场 + 不必回复」提示首行（UI 显示时剥离）。
+      // 不设强制回复：实例自主决定说不说（stay_silent/空回复出口见 @diver/peer）。
+      const text = body.group === true ? `${groupMarkerLine()}\n${content}` : content
       if (deps.state.busy) {
         const agent = await deps.ensureAgent()
-        const msg = userMessage(content || '（图片）', images)
+        const msg = userMessage(text || '（图片）', images)
+        // P2-3 群聊广播（queue）：忙时排队 next-turn，不插话打断当前回合。
+        if (body.queue === true) {
+          agent.followup(msg)
+          sendJson(res, 200, { sessionId: String(agent.id), messageId: String(msg.id), queued: 'next-turn' })
+          return
+        }
         agent.steer(msg)
         sendJson(res, 200, { sessionId: String(agent.id), messageId: String(msg.id), queued: 'next-step' })
         return
@@ -245,7 +257,7 @@ export async function handleRequest(
         return
       }
       const agent = await deps.ensureAgent()
-      const msg = userMessage(content || '（图片）', images)
+      const msg = userMessage(text || '（图片）', images)
       agent.followup(msg)
       sendJson(res, 200, { sessionId: String(agent.id), messageId: String(msg.id), queued: false })
       return
@@ -343,8 +355,8 @@ export async function handleRequest(
 
     // /api/inbox —— P2-2 互实例消息注入：壳消息路由（services/peer::send）调用，
     // from 由壳按身份头盖章（来源可信，不采信调用方自称）；消息进 session inbox
-    // （InboxTarget：next-turn 缺省 / next-step 步间插话），agent 下一轮当输入。
-    // body: { text, from: { id, name }, target?: 'next-turn' | 'next-step' }
+    // （InboxTarget：next-turn 缺省 / next-step 步间插话 / inject 收听不唤醒）。
+    // body: { text, from: { id, name }, target?: 'next-turn' | 'next-step' | 'inject' }
     if (pathname === '/api/inbox' && req.method === 'POST') {
       const body = await readBody(req)
       const text = String(body.text ?? '').trim()
@@ -359,15 +371,21 @@ export async function handleRequest(
         return
       }
       const fromName = String(from.name ?? '').trim() || fromId
-      const target = body.target === 'next-step' ? 'next-step' : 'next-turn'
+      const target =
+        body.target === 'inject'
+          ? 'inject'
+          : body.target === 'next-step'
+            ? 'next-step'
+            : 'next-turn'
       const msg = createUserMessage(`【消息来自实例 ${fromName}（${fromId}）】\n${text}`, {
         kind: 'plugin',
         detail: `peer:${fromId}`,
       })
       const agent = await deps.ensureAgent()
-      // InboxTarget 两档：followup = send(…, 'next-turn', true)，steer = next-step
+      // InboxTarget 三档：followup = next-turn 唤醒；steer = next-step 插话；inject = next-step 不唤醒（群聊收听）。
       // （harness agent-loop 等价实现，接口面只暴露这两档）。
-      if (target === 'next-step') agent.steer(msg)
+      if (target === 'inject') agent.inject(msg)
+      else if (target === 'next-step') agent.steer(msg)
       else agent.followup(msg)
       sendJson(res, 200, { sessionId: String(agent.id), messageId: String(msg.id), queued: target })
       return
@@ -400,6 +418,8 @@ export async function handleRequest(
       // step → 消息下标，便于 tool/result 回填工具结果
       const msgIndexByStep = new Map<string, number>()
       let presencePending = false
+      // P2-3 群聊归属：群/peer 输入后的首条助手回复打 group 标（合并流过滤）。
+      let groupPending = false
       try {
         const events = deps.ctx.sessionPersistence.prepare(SessionId(SESSION_ID)) ?? []
         for (const ev of events) {
@@ -467,6 +487,7 @@ export async function handleRequest(
                 content: stripPeerMarker(text),
                 origin: 'peer', from: peerFrom, time,
               })
+              groupPending = true
               continue
             }
             // 过滤运行时上下文快照；放行真人消息与已裁决注入
@@ -491,11 +512,15 @@ export async function handleRequest(
                 origin: 'presence', time,
               })
             } else {
+              // 群聊广播：剥「在场提示」首行，group 标记给合并流去重。
+              const group = isGroupMessage(text)
+              if (group) groupPending = true
               messages.push({
                 id: ev.data.id,
                 kind: 'user',
-                content: text,
+                content: group ? stripGroupMarker(text) : text,
                 origin: 'user',
+                ...(group ? { group: true } : {}),
                 time,
                 ...(imagesOf(ev.data.content).length > 0 ? { images: imagesOf(ev.data.content) } : {}),
               })
@@ -524,10 +549,14 @@ export async function handleRequest(
               content: text,
               ...(thinking !== '' ? { thinking } : {}),
               ...(tools.length > 0 ? { tools } : {}),
+              // 群聊归属只认「有正文的回复」：空文本工具步不消费标记，
+              // 否则真正想说的那句反而丢标（SSE 端同语义：空文本先 continue）。
+              ...(groupPending && text !== '' ? { group: true } : {}),
               origin: presencePending ? 'presence' : 'assistant', time,
             })
             msgIndexByStep.set(stepKey, messages.length - 1)
             presencePending = false
+            if (text !== '') groupPending = false
           }
         }
       } catch { /* 会话尚不存在 */ }

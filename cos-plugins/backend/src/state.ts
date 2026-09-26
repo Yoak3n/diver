@@ -13,6 +13,8 @@ export interface WebState {
   busy: boolean
   clients: Set<ServerResponse>
   presencePending: boolean
+  /** P2-3 群聊归属：群/peer 输入后首条助手回复标记 group（合并流只收群相关流量）。 */
+  groupPending: boolean
   toolNames: Map<string, string>
   /** 最近一次插件列表缓存（plugin API 变更时广播）。 */
   plugins: PluginInfo[]
@@ -25,6 +27,7 @@ export function createWebState(): WebState {
     busy: false,
     clients: new Set(),
     presencePending: false,
+    groupPending: false,
     toolNames: new Map(),
     plugins: [],
   }

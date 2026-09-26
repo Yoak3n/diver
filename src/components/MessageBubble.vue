@@ -114,6 +114,7 @@ function toolDetail(t: ToolActivity): string {
           <span v-if="msg.origin === 'presence'" class="origin-tag">主动</span>
           <span v-else-if="msg.origin === 'interaction'" class="origin-tag">互动</span>
           <span v-else-if="msg.origin === 'proactive'" class="origin-tag">主动</span>
+          <span v-else-if="msg.origin === 'peer'" class="origin-tag peer-tag">来自 {{ msg.from ?? "实例" }}</span>
           <div class="md-body" v-html="contentHtml"></div>
           <span v-if="msg.streaming" class="cursor">▍</span>
         </div>
@@ -238,6 +239,11 @@ function toolDetail(t: ToolActivity): string {
   padding: 0 7px;
   margin-right: 6px;
   vertical-align: 1px;
+}
+.peer-tag {
+  color: #4080ff;
+  border-color: rgba(64, 128, 255, 0.45);
+  background: rgba(64, 128, 255, 0.08);
 }
 .tool-records {
   min-width: 0;

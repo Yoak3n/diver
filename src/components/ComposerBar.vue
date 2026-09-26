@@ -157,7 +157,7 @@ function onDragOver(e: DragEvent) {
           isReady
             ? '和我说点什么吧…（Enter 发送；可拖入/粘贴图片）'
             : busy
-              ? '正在思考…'
+              ? '正在思考…（可直接发送插话，即时生效）'
               : '先在设置里配置 API Key'
         "
         :disabled="!modelConfigured"

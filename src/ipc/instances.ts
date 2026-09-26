@@ -49,3 +49,17 @@ export function clearInstanceName(id: string): Promise<InstanceMeta> {
 export function deleteInstance(id: string): Promise<void> {
   return invoke<void>("delete_instance", { id });
 }
+
+/** 运行时实例行（P2-3，注册表就绪行）：只含正在运行的 sidecar。 */
+export interface InstanceRuntime {
+  id: string;
+  name: string | null;
+  pid: number;
+  port: number;
+  startedAt: number;
+}
+
+/** 运行时就绪实例（注册表）；未启动的实例不在其中，前端与清单合并渲染。 */
+export function listInstanceRuntimes(): Promise<InstanceRuntime[]> {
+  return invoke<InstanceRuntime[]>("list_instance_runtimes");
+}

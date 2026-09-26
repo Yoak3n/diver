@@ -11,12 +11,14 @@
 //! 分层：[types] 领域类型 / [ops] 纯逻辑（无 IO 可单测）/ 本文件 IO 与装配。
 
 mod ops;
+mod paths;
 mod types;
 
 #[cfg(test)]
 mod tests;
 
 pub use ops::*;
+pub use paths::*;
 pub use types::*;
 
 use std::path::Path;
@@ -55,6 +57,11 @@ pub fn load_or_seed_at(base: &Path, now: u64) -> InstancesFile {
 /// 读取实例清单并确保 `default` 在册。
 pub fn load_or_seed(app: &AppHandle) -> InstancesFile {
     load_or_seed_at(&config_dir(app), now_secs())
+}
+
+/// 运行时实例 id：清单里第一个 `enabled` 实例（见 [`active_instance_id_at`]）。
+pub fn active_instance_id(app: &AppHandle) -> String {
+    active_instance_id_at(&load_or_seed(app))
 }
 
 /// 列出全部实例（首次访问自动登记 `default`）。

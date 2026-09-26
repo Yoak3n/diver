@@ -16,4 +16,4 @@ mod server;
 mod state;
 
 pub use server::start;
-pub use state::{NotifyFn, PresenceDispatchFn, ServiceState};
+pub use state::{CardNameFn, NotifyFn, PresenceDispatchFn, ServiceState};

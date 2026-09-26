@@ -129,3 +129,34 @@ fn legacy_json_without_new_fields_parses() {
     assert_eq!(reg.instances[0].avatar, None);
     assert_eq!(reg.instances[0].created_at, 0);
 }
+
+// ---------- P1-1 路径派生 ----------
+
+#[test]
+fn instance_paths_follow_new_naming() {
+    let base = std::path::Path::new("data");
+    assert_eq!(cos_home_for(base, "default"), base.join("cos-default"));
+    assert_eq!(cos_home_for(base, "a-1"), base.join("cos-a-1"));
+    let harness = std::path::Path::new("harness");
+    assert_eq!(
+        dev_cos_home_for(harness, "default"),
+        harness.join(".cos-home-default")
+    );
+    let m = memory_paths_for(base, "default");
+    assert_eq!(m.private, base.join("diver-memory-default.sqlite3"));
+    assert_eq!(m.shared, base.join("diver-memory-shared.sqlite3"));
+}
+
+#[test]
+fn active_instance_is_first_enabled() {
+    let mut reg = InstancesFile::default();
+    reg.ensure_default(1);
+    assert_eq!(active_instance_id_at(&reg), DEFAULT_ID);
+    // 第一个 enabled 胜出（default 停用后）
+    reg.update(DEFAULT_ID, None, Some(false)).unwrap();
+    let echo = reg.create(Some("Echo"), 2).unwrap();
+    assert_eq!(active_instance_id_at(&reg), echo.id);
+    // 全部停用 → 兜底 default，保证始终有实例可跑
+    reg.update(&echo.id, None, Some(false)).unwrap();
+    assert_eq!(active_instance_id_at(&reg), DEFAULT_ID);
+}

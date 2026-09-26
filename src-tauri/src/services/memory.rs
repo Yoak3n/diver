@@ -1,9 +1,12 @@
 //! memory 服务的 RPC handler：把方法名路由到 `diver-memory` SQLite 存储。
+//!
+//! 双库语义（P1-1）：`append_event` 的 `shared: true` 写共享库，events 读取
+//! 私有∪共享合并（见 `diver_memory::db::DualDb`）；其余能力经解引用直达私有库。
 
-use std::sync::{Arc, Mutex};
-
-use diver_memory::db::{MemoryDb, RelationSpec};
+use diver_memory::db::RelationSpec;
 use serde_json::{json, Value};
+
+use super::state::ServiceState;
 
 fn parse_attrs(v: Option<&Value>) -> Vec<(String, String)> {
     let Some(Value::Object(map)) = v else {
@@ -45,8 +48,8 @@ fn parse_relations(v: Option<&Value>) -> Vec<RelationSpec> {
         .collect()
 }
 
-pub fn dispatch(db: &Arc<Mutex<MemoryDb>>, method: &str, params: &Value) -> Result<Value, String> {
-    let db = db.lock().map_err(|_| "db lock poisoned".to_string())?;
+pub fn dispatch(state: &ServiceState, method: &str, params: &Value) -> Result<Value, String> {
+    let db = state.memory_db.lock().map_err(|_| "db lock poisoned".to_string())?;
 
     let str_opt = |key: &str| params.get(key).and_then(|v| v.as_str()).map(str::to_string);
     let i64_opt = |key: &str| params.get(key).and_then(|v| v.as_i64());
@@ -108,11 +111,13 @@ pub fn dispatch(db: &Arc<Mutex<MemoryDb>>, method: &str, params: &Value) -> Resu
             json!(id)
         }
         "append_event" => {
+            // shared: true 写共享库（全体实例可读），缺省写本实例私有库（P1-1 双库）。
             db.append_event(
                 &req_str(params, "topicId")?,
                 &req_str(params, "statement")?,
                 i64_opt("ts"),
                 str_opt("episodeId"),
+                bool_opt("shared").unwrap_or(false),
             )
             .map_err(err)?;
             Value::Null
@@ -121,7 +126,17 @@ pub fn dispatch(db: &Arc<Mutex<MemoryDb>>, method: &str, params: &Value) -> Resu
         "recent_episodes" => to_value(db.recent_episodes(i64_opt("days"), usize_opt("limit")).map_err(err)?),
         "get_card" => to_value(db.get_card().map_err(err)?),
         "update_card" => {
-            db.update_card(params.get("facts").unwrap_or(&Value::Null)).map_err(err)?;
+            let facts = params.get("facts").unwrap_or(&Value::Null);
+            db.update_card(facts).map_err(err)?;
+            // 写回式回填（P1-1）：人格卡片是名字权威源，落库后把名字同步回实例清单。
+            if let Some(name) = facts
+                .get("name")
+                .and_then(|n| n.as_str())
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+            {
+                (state.on_card_name)(name.to_string());
+            }
             Value::Null
         }
         "list_promises" => to_value(db.list_promises(str_opt("status").as_deref()).map_err(err)?),

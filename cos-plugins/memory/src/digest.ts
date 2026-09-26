@@ -35,9 +35,10 @@ function updateCardTool(store: MemoryStore): { name: string; executor: ToolExecu
   return {
     name: 'memory_update_card',
     executor: async (args: unknown) => {
-      const a = (args ?? {}) as { profile?: unknown; agent_model?: unknown; relationship?: unknown }
-      const facts: Partial<Pick<RelationCard, 'profile' | 'agent_model' | 'relationship'>> = {}
+      const a = (args ?? {}) as { name?: unknown; profile?: unknown; agent_model?: unknown; relationship?: unknown }
+      const facts: Partial<Pick<RelationCard, 'name' | 'profile' | 'agent_model' | 'relationship'>> = {}
       const slot: Array<[keyof typeof facts, unknown]> = [
+        ['name', a.name],
         ['profile', a.profile],
         ['agent_model', a.agent_model],
         ['relationship', a.relationship],
@@ -46,7 +47,7 @@ function updateCardTool(store: MemoryStore): { name: string; executor: ToolExecu
         if (typeof value === 'string' && value.trim() !== '') facts[key] = value.trim()
       }
       if (Object.keys(facts).length === 0) {
-        return { content: '未提供任何字段（profile / agent_model / relationship），未修改身份卡片', isError: true }
+        return { content: '未提供任何字段（name / profile / agent_model / relationship），未修改身份卡片', isError: true }
       }
       await store.updateCard(facts)
       store.markDirty()
@@ -54,10 +55,11 @@ function updateCardTool(store: MemoryStore): { name: string; executor: ToolExecu
     },
     options: {
       description:
-        '增量更新身份卡片（关于用户 / 关于我 / 我们之间的相处模式）——它是 agent 自我认知的长期载体，每次组装提示词时注入。只写证据充分、值得长期保留的结论；每次传需要覆盖的字段。',
+        '增量更新身份卡片（名字 / 关于用户 / 关于我 / 我们之间的相处模式）——它是 agent 自我认知的长期载体，每次组装提示词时注入。只写证据充分、值得长期保留的结论；每次传需要覆盖的字段。',
       parameters: {
         type: 'object',
         properties: {
+          name: { type: 'string', description: '助手的名字/用户对你的称呼（名字的权威源在这里，壳层会同步到实例清单），如"小潜"；不确定就不要填' },
           profile: { type: 'string', description: '关于用户的长期模式/事实/认知缺口，如"最近两周在忙项目、Lily 是同事、还不知道他的生日"' },
           agent_model: { type: 'string', description: '关于助手自己的性格/模式/教训——自我认知的身份卡片字段，如"说话简洁直接、喜欢轻松玩笑；被纠正过啰嗦"' },
           relationship: { type: 'string', description: '相处模式，如"报喜不报忧、喜欢轻松玩笑"' },
@@ -75,8 +77,9 @@ const DIGEST_SYSTEM = `你是陪伴助手的记忆消化员。你的职责：读
 3. 人/物/地点/项目等实体，以及属性与关系，用 entity 写入知识图谱
    （如 name=用户 attrs={"忌口":"香菜"}，或 relations=[{"to":"小明","relation":"同事"}]）。
    有明确主语和关系的结构化事实优先走 entity，叙述性经历走 remember。
-4. 关于用户 / 自己 / 相处模式的长期结论，用 memory_update_card 增量更新身份卡片
-   （agent_model 是"我是什么样的人"——性格、说话方式、价值观；助手在相处中逐渐形成的
+4. 关于名字 / 用户 / 自己 / 相处模式的长期结论，用 memory_update_card 增量更新身份卡片
+   （name 是助手的名字/用户对你的称呼，它是实例名的权威源；agent_model 是"我是什么样的人"——
+   性格、说话方式、价值观；助手在相处中逐渐形成的
    自我认知都沉淀在这里，让性格跨会话保持稳定、持续完善）。
 5. 高门槛保守：证据不足不下结论，寒暄与一次性信息不写；不确定就不写。
 
@@ -86,7 +89,7 @@ const DIGEST_SYSTEM = `你是陪伴助手的记忆消化员。你的职责：读
 export async function digestSession(
   ctx: Context,
   store: MemoryStore,
-  card: { profile: string; agent_model: string; relationship: string },
+  card: { name?: string | null; profile: string; agent_model: string; relationship: string },
   stats: Record<string, any>,
   transcript: string,
 ): Promise<void> {
@@ -95,6 +98,7 @@ export async function digestSession(
     '请消化下面的会话摘要，把值得长期记住的内容写入记忆。',
     '',
     '【当前关系卡】',
+    `名字：${card.name || '（未命名）'}`,
     `关于用户：${card.profile || '（空）'}`,
     `关于我：${card.agent_model || '（空）'}`,
     `我们之间：${card.relationship || '（空）'}`,

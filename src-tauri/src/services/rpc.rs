@@ -64,5 +64,5 @@ async fn route(state: &ServiceState, method: &str, params: &Value) -> Result<Val
             .map_err(|join_err| grep::RpcFailure::new(format!("screenshot task failed: {join_err}")))?;
     }
     // memory 方法保持无前缀（零迁移）；错误无 code。
-    memory::dispatch(&state.memory_db, method, params).map_err(grep::RpcFailure::new)
+    memory::dispatch(state, method, params).map_err(grep::RpcFailure::new)
 }

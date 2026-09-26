@@ -6,30 +6,36 @@ use axum::Router;
 use tauri::{AppHandle, Manager as TauriManager};
 
 use super::rpc;
-use super::state::{NotifyFn, PresenceDispatchFn, ServiceState};
+use super::state::{CardNameFn, NotifyFn, PresenceDispatchFn, ServiceState};
 
 /// 启动所有本地服务，返回监听端口。
 ///
 /// `notify`：弹出原生通知的回调（由 app 层注入，services 不依赖 shell）。
 /// `presence_dispatch`：presence RPC 分发（由 app 层注入，services 不依赖 core）。
+/// `memory_private` / `memory_shared`：记忆双库路径（app 层按实例 id 派生后注入）。
+/// `on_card_name`：人格卡片名字变更回调（app 层包「写回实例清单 name」后注入）。
 pub fn start(
     app: &AppHandle,
     notify: NotifyFn,
     presence_dispatch: PresenceDispatchFn,
+    memory_private: std::path::PathBuf,
+    memory_shared: std::path::PathBuf,
+    on_card_name: CardNameFn,
 ) -> Option<u16> {
     let dir = app.path().app_data_dir().ok()?;
     if let Err(err) = std::fs::create_dir_all(&dir) {
         log::warn!("services: 创建数据目录失败 {}: {err}", dir.display());
     }
 
-    // ── memory 服务：SQLite 存储 ──────────────────────────────
+    // ── memory 服务：私有 + 共享双库（P1-1，私有库按实例分库） ──
     let memory_db = Arc::new(Mutex::new(
-        diver_memory::db::MemoryDb::open(&dir.join("diver-memory.sqlite3")).ok()?,
+        diver_memory::db::DualDb::open(&memory_private, &memory_shared).ok()?,
     ));
     let state = ServiceState {
         memory_db,
         notify,
         presence_dispatch,
+        on_card_name,
     };
 
     // 统一 RPC 入口；未来服务继续在 rpc::dispatch 中扩展。

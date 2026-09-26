@@ -20,7 +20,7 @@ pnpm tauri dev   # 自动拉起 sidecar + Vite(1420) + 窗口
 
 首次启动：在设置（⚙）里填入 DeepSeek API Key 即可开始对话。
 
-- Key 存入本地凭据库 `harness/.cos-home/.credentials.yaml`
+- Key 存入本地凭据库 `harness/.cos-home-default/.credentials.yaml`（P1-1 起 cos home 按实例分叉 `…-<id>`）
 - 模型默认 `deepseek-flash`（可在设置中切换，下次对话生效）
 
 ## 目录结构
@@ -48,7 +48,7 @@ diver/
 │  │  └─ profile/          # DSH 对齐的 profile 模型（home/双锚点/平面回退/reconcile）
 │  ├─ scripts/plugin.ts    # pnpm 转发：profile 插件管理
 │  ├─ cos-plugins/         # 第三方 @diver/*（本仓库实际在仓库根 ../cos-plugins）
-│  └─ .cos-home/           # 仓库本地 cos home（凭据、会话、设置、记忆；gitignore）
+│  └─ .cos-home-<id>/      # 仓库本地 cos home，按实例分叉（默认实例 .cos-home-default；gitignore）
 │     └─ profiles/companion/  # companion profile：package.json（dsh.profile.bundles）
 │                            # + node_modules + cordis.patch.yml
 └─ scripts/                # 冒烟测试脚本
@@ -61,7 +61,7 @@ dev 与壳使用**同一 loader 契约**（profile + pluginRoot + bundle + harne
 ```powershell
 cd harness
 pnpm install
-$env:COS_HOME = "$PWD\.cos-home"
+$env:COS_HOME = "$PWD\.cos-home-default"
 $env:DIVER_PORT = "53620"
 node --import tsx --expose-internals ../cos-plugins/companion/src/companion.ts `
   --profile companion `
@@ -121,7 +121,7 @@ node scripts/memory-test.mjs  # 记忆插件：喂事实 → recall 验证
   （`%APPDATA%/diver/logs/app.log`，见 `app/setup.rs`）
 - sidecar 日志：stdout/stderr 实时转发到 Rust 控制台（前缀 `[sidecar]` / `[sidecar:err]`），
   同时缓存在 `SidecarStatus.logs`（环形 300 条）供 UI 查看
-- 会话 JSONL：`harness/.cos-home/sessions/`（通用事件流格式：`id`/`parentId` 链 + `message` 块 `user`/`assistant`/`toolResult`，明文，方便第三方工具读取）
+- 会话 JSONL：`harness/.cos-home-default/sessions/`（通用事件流格式：`id`/`parentId` 链 + `message` 块 `user`/`assistant`/`toolResult`，明文，方便第三方工具读取）
 
 ## 常见问题
 

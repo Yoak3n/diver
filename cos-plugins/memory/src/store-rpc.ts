@@ -37,6 +37,8 @@ export interface MemoryEvent {
 }
 
 export interface RelationCard {
+  /** 名字（可空 = 未命名）：人格卡片是名字权威源，壳层会写回实例清单 */
+  name?: string | null
   profile: string
   agent_model: string
   relationship: string
@@ -122,7 +124,7 @@ async function rpc<T>(method: string, params: Record<string, unknown> = {}): Pro
   return nativeRpc<T>(method, params, { label: `memory:${method}` })
 }
 
-const EMPTY_CARD: RelationCard = { profile: '', agent_model: '', relationship: '', updatedAt: 0 }
+const EMPTY_CARD: RelationCard = { name: null, profile: '', agent_model: '', relationship: '', updatedAt: 0 }
 
 export class MemoryStore {
   readonly dirty = false
@@ -246,7 +248,7 @@ export class MemoryStore {
     await this.refresh()
   }
 
-  async updateCard(facts: Partial<Pick<RelationCard, 'profile' | 'agent_model' | 'relationship'>>): Promise<void> {
+  async updateCard(facts: Partial<Pick<RelationCard, 'name' | 'profile' | 'agent_model' | 'relationship'>>): Promise<void> {
     await rpc('update_card', { facts })
     await this.refresh()
   }

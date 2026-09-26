@@ -19,7 +19,7 @@ agent 大脑是一个**常驻 Node 进程**，运行仓库内自研 **cos harnes
   | `--plugin-root` | `<repo>/cos-plugins` | `resources/sidecar/plugins` |
   | `--bundles` | `cos-plugins/bundle-companion` | `resources/sidecar/bundles/bundle-companion` |
   | `--harness` | `<repo>/harness` | `resources/sidecar/harness` |
-  | `COS_HOME` | `harness/.cos-home` | `%APPDATA%/com.diver.companion/cos` |
+  | `COS_HOME` | `harness/.cos-home-<id>` | `%APPDATA%/com.diver.companion/cos-<id>` |
 
 - 环境变量：`DIVER_PORT`（默认 53620）、`DIVER_MEMORY_PORT`、`DIVER_SHUTDOWN_TOKEN`、
   `DIVER_UI_DIST`、`DIVER_MCP_CONFIG_FILE`

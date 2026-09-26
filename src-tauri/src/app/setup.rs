@@ -170,7 +170,37 @@ pub fn configure(builder: Builder<tauri::Wry>) -> Builder<tauri::Wry> {
                 std::sync::Arc::new(|method, params| {
                     crate::core::presence::dispatch_rpc(method, params)
                 });
-            match crate::services::start(app.handle(), notify, presence_dispatch) {
+            // 记忆双库路径按实例 id 派生（P1-1）：私有 diver-memory-<id> + 共享 shared。
+            let data_dir = app
+                .path()
+                .app_data_dir()
+                .unwrap_or_else(|_| crate::config::config_dir(app.handle()));
+            let instance_id = crate::config::instances::active_instance_id(app.handle());
+            let memory_paths =
+                crate::config::instances::memory_paths_for(&data_dir, &instance_id);
+            // 写回式回填：人格卡片名字 → 实例清单 name（权威源 = 卡片）。
+            let on_card_name: crate::services::CardNameFn = {
+                let app_handle = app.handle().clone();
+                let backfill_id = instance_id.clone();
+                std::sync::Arc::new(move |name| {
+                    if let Err(err) = crate::config::instances::update_instance(
+                        &app_handle,
+                        &backfill_id,
+                        Some(&name),
+                        None,
+                    ) {
+                        log::warn!("实例名写回失败（{backfill_id}）：{err}");
+                    }
+                })
+            };
+            match crate::services::start(
+                app.handle(),
+                notify,
+                presence_dispatch,
+                memory_paths.private,
+                memory_paths.shared,
+                on_card_name,
+            ) {
                 Some(port) => std::env::set_var("DIVER_MEMORY_PORT", port.to_string()),
                 None => log::error!("本地服务启动失败，记忆功能不可用"),
             }

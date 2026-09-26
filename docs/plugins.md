@@ -1,4 +1,4 @@
-# 插件体系与生命周期
+﻿# 插件体系与生命周期
 
 > 本文是 Diver 插件架构的**权威契约**：运行时如何组合、启停状态落在哪、壳与 cos 如何分工、
 > 深水区（类型边界 / 安全档案 / 安装卸载 / native 插件）按什么分期推进。
@@ -71,7 +71,7 @@ node --import tsx --expose-internals
   --bundles   <repo>/cos-plugins/bundle-companion
   --harness   <repo>/harness
 cwd     = <repo>/harness
-COS_HOME= <repo>/harness/.cos-home
+COS_HOME= <repo>/harness/.cos-home-<id>
 ```
 
 **release（随包 Node，非 SEA）**：
@@ -192,7 +192,7 @@ export function apply(ctx: Context, config: { greeting: string; verbose: boolean
 
 | 概念 | Diver 落点 | 对齐 |
 |---|---|---|
-| cos home | `COS_HOME`（dev: `harness/.cos-home`；release: app data `cos/`） | `$DSH_HOME` |
+| cos home | `COS_HOME`（dev: `harness/.cos-home-<id>`；release: app data `cos-<id>`） | `$DSH_HOME` |
 | profile | `$COS_HOME/profiles/companion/` | `$DSH_HOME/profiles/<id>` |
 | 用户补丁层 | `profiles/companion/cordis.patch.yml` | profile `cordis.patch.yml` |
 | 内部插件 | `cos-plugins/*` / 安装包 `plugins/*`，catalog 标 `kind: internal` | Desktop internal plugins |
@@ -451,7 +451,7 @@ Rust crates / services ──POST /rpc──► @diver/native-bridge（internal�
 | 5 | SEA 残留代码/注释 | 视为历史旁路；release 文档与 reclaim 匹配串以 `companion.ts` / `companion-bundle.ts` 为准 |
 | 6 | 禁用 `backend` | UI 必须提示：界面将无法连接 agent（catalog `advisory`） |
 | 7 | 会话/记忆数据 | 与插件启停无关，仍在 `$COS_HOME`；禁用记忆插件不删 SQLite |
-| 8 | dev COS_HOME | 与 release 隔离（`harness/.cos-home` vs app data）；测启停时别看错目录 |
+| 8 | dev COS_HOME | 与 release 隔离（`harness/.cos-home-<id>` vs app data）；测启停时别看错目录 |
 
 ---
 

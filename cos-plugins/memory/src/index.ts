@@ -159,16 +159,18 @@ export function apply(ctx: Context, config: { digestIntervalMs?: number }) {
     order: 15, // 身份卡片与关系记忆：核心长期上下文，排在 persona(90) 与工具引导(100) 之前
     text: () => {
       const card = store.getCard()
+      const myName = (card.name ?? '').trim()
       const profile = (card.profile ?? '').trim()
       const agentModel = (card.agent_model ?? '').trim()
       const relationship = (card.relationship ?? '').trim()
-      if (!profile && !agentModel && !relationship) {
+      if (!myName && !profile && !agentModel && !relationship) {
         // 身份卡片尚未形成：只注入行动提示（引导用 identity 工具沉淀），
         // 卡片成型后自动消失，不留长期噪音
         return '【身份卡片 · 我】（尚未形成——当你对"我是什么样的人"有了稳定看法，用 identity 工具沉淀）'
       }
 
       const parts = ['【身份卡片 · 我】']
+      if (myName) parts.push(`我的名字：${myName}`)
       if (agentModel) parts.push(`我：${agentModel}`)
       if (profile) parts.push(`关于用户：${profile}`)
       if (relationship) parts.push(`我们之间：${relationship}`)
@@ -428,27 +430,31 @@ export function apply(ctx: Context, config: { digestIntervalMs?: number }) {
   // 系统每次组装提示词时把卡片常驻注入，让性格在后续对话中保持稳定、持续演进。
   ctx.tools.register('identity', async (args) => {
     const a = (args ?? {}) as {
+      name?: unknown // 我的名字：用户对我的称呼（名字权威源，壳层同步到实例清单）
       self?: unknown // 关于我自己：性格、喜好、说话方式、价值观
       relationship?: unknown // 与用户的相处模式
       reason?: unknown // 为什么这样认为（可选，增强可信度）
     }
-    const facts: Partial<Pick<RelationCard, 'agent_model' | 'relationship'>> = {}
+    const facts: Partial<Pick<RelationCard, 'name' | 'agent_model' | 'relationship'>> = {}
+    const name = typeof a.name === 'string' ? a.name.trim() : ''
     const self = typeof a.self === 'string' ? a.self.trim() : ''
     const relationship = typeof a.relationship === 'string' ? a.relationship.trim() : ''
+    if (name) facts.name = name
     if (self) facts.agent_model = self
     if (relationship) facts.relationship = relationship
     if (Object.keys(facts).length === 0) {
-      return { content: '未提供 self / relationship 任一字段，未修改身份卡片', isError: true }
+      return { content: '未提供 name / self / relationship 任一字段，未修改身份卡片', isError: true }
     }
     await store.updateCard(facts)
     store.markDirty()
     const reason = typeof a.reason === 'string' && a.reason.trim() ? `（依据：${a.reason.trim()}）` : ''
     return { content: `已更新身份卡片：${Object.entries(facts).map(([k, v]) => `${k}=「${v}」`).join('；')}${reason}` }
   }, {
-    description: '完善你的身份卡片：把对"我是什么样的人"的自我认知沉淀下来（性格、喜好、说话方式、价值观），或记录与用户的相处模式。只写你有把握、值得长期稳定的结论；一次调用可同时更新多个字段。',
+    description: '完善你的身份卡片：沉淀我的名字（用户对我的称呼）、对"我是什么样的人"的自我认知（性格、喜好、说话方式、价值观），或记录与用户的相处模式。只写你有把握、值得长期稳定的结论；一次调用可同时更新多个字段。',
     parameters: {
       type: 'object',
       properties: {
+        name: { type: 'string', description: '我的名字（用户对我的称呼），如"小潜"；不确定就不要填' },
         self: { type: 'string', description: '关于我自己：性格/喜好/说话方式/价值观，如"喜欢轻松真诚的对话，不爱绕弯子；对技术话题有热情"' },
         relationship: { type: 'string', description: '与用户的相处模式，如"他工作忙时会简短安慰，闲聊时放开聊"' },
         reason: { type: 'string', description: '为什么这样认为（依据，可选）' },

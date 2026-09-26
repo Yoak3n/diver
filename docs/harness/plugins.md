@@ -56,7 +56,7 @@ list), a `node_modules` pnpm manages for those plugins, and a
 bundle layer).
 
 - The cos home resolves `COS_HOME`, then `~/.cos`. This repo's
-  shell drives `COS_HOME=<repo>/harness/.cos-home` (see
+  shell drives `COS_HOME=<repo>/harness/.cos-home-<id>` (see
   `src-tauri/src/base/sidecar.rs`).
 - The `dsh` manifest section is the ecosystem namespace (a bundle written for
   DSH works in a cos profile untouched); `cos` is accepted as an alias.

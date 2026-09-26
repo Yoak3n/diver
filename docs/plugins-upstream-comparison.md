@@ -39,7 +39,7 @@ Diver:      壳 ≠ 大脑；大脑 = monorepo 内自研 cos（理念对齐 DSH�
 
 | 概念 | DSH | Desktop | Diver（现状） |
 |---|---|---|---|
-| 数据家园 | `$DSH_HOME`（默认 `~/.dsh`） | 同左；dev 用 `~/.dsh.dev` 隔离 | `$COS_HOME`：dev `harness/.cos-home`；release `%APPDATA%/com.diver.companion/cos` |
+| 数据家园 | `$DSH_HOME`（默认 `~/.dsh`） | 同左；dev 用 `~/.dsh.dev` 隔离 | `$COS_HOME`：dev `harness/.cos-home-<id>`；release `%APPDATA%/com.diver.companion/cos-<id>` |
 | 档案 / profile | `$DSH_HOME/profiles/<id>`；模板 `web/headless/sdk/acp/...` | `active_profile`（默认引导 `tauri`，避开保留名 `desktop`）；`safe` 安全档案 | 固定 `companion`；`safe` **规划中（P3）**；`active_profile` 未持久化 |
 | 组合包 bundle | `dsh.bundle.patch` → `cordis.patch.yml`（+ 可选 `bundle.yml` requires） | 同左；桌面端校核核心层必须含 `dsh-base`（+ web 层） | `@diver/bundle-companion`：目录式 `cordis.patch.yml` + `bundle.yml` requires |
 | 用户补丁 | profile `cordis.patch.yml` → home patch → `--patch` | 同左；另有壳管理的 `disabled-plugins.json` | profile patch = **壳写启停**；home patch 基本未用 |

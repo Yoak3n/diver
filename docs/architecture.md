@@ -59,7 +59,7 @@ configure(builder)
         → node --import tsx companion.ts
         （统一契约：--profile companion --plugin-root cos-plugins
           --bundles .../bundle-companion --harness harness；
-          COS_HOME=harness/.cos-home；检测 DIVER_READY）
+          COS_HOME=harness/.cos-home-<id>；检测 DIVER_READY）
      4. 按 window_startup 配置打开主窗口 / 桌宠窗口
 ```
 

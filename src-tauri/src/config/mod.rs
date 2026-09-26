@@ -32,18 +32,21 @@ pub fn config_dir(app: &AppHandle) -> PathBuf {
 
 /// cos 数据家园根目录（与 sidecar 注入的 `COS_HOME` 完全一致）。
 ///
-/// - debug 构建：仓库 `harness/.cos-home`（sidecar 的 dev 形态，见
-///   `sidecar.rs` 的 debug 分支）。
-/// - release 构建：`<app_data_dir>/cos`（与安装目录隔离，升级不丢数据）。
+/// P1-1 起按实例分叉（不保留旧 `cos/` / `.cos-home` 命名，见 `instances::paths`）：
+/// - debug 构建：仓库 `harness/.cos-home-<id>`（sidecar 的 dev 形态）。
+/// - release 构建：`<app_data_dir>/cos-<id>`（与安装目录隔离，升级不丢数据）。
+///
+/// 当前单实例运行形态解析到「清单里第一个 enabled 实例」（见
+/// [`instances::active_instance_id`]）；P1-2 多实例拉起后改为逐实例派生。
 ///
 /// `mcp-servers.json` 等由 sidecar 插件读取的配置必须放在这里
 /// （与 `diver-settings.json` 同目录），否则插件按 `$COS_HOME/...` 找不到文件。
 pub fn cos_home(app: &AppHandle) -> PathBuf {
+    let id = instances::active_instance_id(app);
     #[cfg(debug_assertions)]
     {
-        // debug 分支只依赖环境变量，不需要 AppHandle。
         let _ = app;
-        cos_home_at(&std::env::temp_dir())
+        instances::dev_cos_home_for(&harness_dir(), &id)
     }
     #[cfg(not(debug_assertions))]
     {
@@ -51,28 +54,25 @@ pub fn cos_home(app: &AppHandle) -> PathBuf {
             .path()
             .app_data_dir()
             .unwrap_or_else(|_| config_dir(app));
-        cos_home_at(&data)
+        cos_home_at(&data, &id)
     }
 }
 
-/// 纯路径版 cos_home：`base` 为 release 形态的 `app_data_dir`（debug 忽略）。
-pub fn cos_home_at(base: &Path) -> PathBuf {
-    #[cfg(debug_assertions)]
-    {
-        let _ = base;
-        let harness = std::env::var("DIVER_HARNESS_DIR")
-            .map(PathBuf::from)
-            .unwrap_or_else(|_| {
-                // 默认相对仓库布局：src-tauri 的上一级目录下的 harness/
-                let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-                manifest.parent().unwrap_or(&manifest).join("harness")
-            });
-        harness.join(".cos-home")
-    }
-    #[cfg(not(debug_assertions))]
-    {
-        base.join("cos")
-    }
+/// 纯路径版 cos_home（release 形态）：`base` 为 `app_data_dir` → `<base>/cos-<id>`。
+pub fn cos_home_at(base: &Path, instance_id: &str) -> PathBuf {
+    instances::cos_home_for(base, instance_id)
+}
+
+/// debug 形态的 harness 目录（`DIVER_HARNESS_DIR` 可覆盖，默认仓库布局 `harness/`）。
+#[cfg(debug_assertions)]
+fn harness_dir() -> PathBuf {
+    std::env::var("DIVER_HARNESS_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| {
+            // 默认相对仓库布局：src-tauri 的上一级目录下的 harness/
+            let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+            manifest.parent().unwrap_or(&manifest).join("harness")
+        })
 }
 
 /// 从配置文件读取并反序列化指定类型的配置。

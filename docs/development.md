@@ -18,6 +18,11 @@ pnpm install     # pnpm workspace：前端 + harness（安装 @deepseek-ai/dsh�
 pnpm tauri dev   # 自动拉起 sidecar + Vite(1420) + 窗口
 ```
 
+> `pnpm dev` 经 `scripts/dev-vite.mjs` 拉起 vite：调大 libuv 线程池并全量预热
+> `src/**`，规避 Windows 启动期 fs 风暴占满默认 4 线程池、开窗后模块转换排队
+> 数秒的白屏（复现/验证可用 `node scripts/dev-graph-crawl.mjs` +
+> `node_modules/.vite/request.log` 逐请求记账）。
+
 首次启动：在设置（⚙）里填入 DeepSeek API Key 即可开始对话。
 
 - Key 存入本地凭据库 `harness/.cos-home-default/.credentials.yaml`（P1-1 起 cos home 按实例分叉 `…-<id>`）

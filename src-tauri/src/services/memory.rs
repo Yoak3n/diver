@@ -3,7 +3,7 @@
 //! 双库语义（P1-1）：`append_event` 的 `shared: true` 写共享库，events 读取
 //! 私有∪共享合并（见 `diver_memory::db::DualDb`）；其余能力经解引用直达私有库。
 
-use diver_memory::db::RelationSpec;
+use diver_memory::db::{MemoryDb, RelationSpec};
 use serde_json::{json, Value};
 
 use super::state::ServiceState;
@@ -228,6 +228,18 @@ pub fn dispatch(state: &ServiceState, method: &str, params: &Value) -> Result<Va
 
 fn to_value<T: serde::Serialize>(value: T) -> Value {
     serde_json::to_value(value).unwrap_or(Value::Null)
+}
+
+/// 直接写某实例私有库的人格卡片 name（设置面板改名走这里；空串/缺省 = 不修改）。
+///
+/// 不经 RPC 分发，故不触发 `on_card_name` 写回——实例清单（回显层）由调用方自己写，
+/// 保证「卡片 + 清单」双写在同一处编排。
+pub fn set_card_name_at(db_path: &std::path::Path, name: &str) -> Result<(), String> {
+    if name.trim().is_empty() {
+        return Ok(());
+    }
+    let db = MemoryDb::open(db_path).map_err(err)?;
+    db.update_card(&json!({ "name": name })).map_err(err)
 }
 
 fn req_str(params: &Value, key: &str) -> Result<String, String> {

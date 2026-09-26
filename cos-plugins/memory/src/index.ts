@@ -465,27 +465,31 @@ export function apply(ctx: Context, config: { digestIntervalMs?: number }) {
   // 系统每次组装提示词时把卡片常驻注入，让性格在后续对话中保持稳定、持续演进。
   ctx.tools.register('identity', async (args) => {
     const a = (args ?? {}) as {
+      name?: unknown // 我的名字：改名用（首次命名走 set_name）
       self?: unknown // 关于我自己：性格、喜好、说话方式、价值观
       relationship?: unknown // 与用户的相处模式
       reason?: unknown // 为什么这样认为（可选，增强可信度）
     }
-    const facts: Partial<Pick<RelationCard, 'agent_model' | 'relationship'>> = {}
+    const facts: Partial<Pick<RelationCard, 'name' | 'agent_model' | 'relationship'>> = {}
+    const name = typeof a.name === 'string' ? a.name.trim() : ''
     const self = typeof a.self === 'string' ? a.self.trim() : ''
     const relationship = typeof a.relationship === 'string' ? a.relationship.trim() : ''
+    if (name) facts.name = name
     if (self) facts.agent_model = self
     if (relationship) facts.relationship = relationship
     if (Object.keys(facts).length === 0) {
-      return { content: '未提供 self / relationship 任一字段，未修改身份卡片', isError: true }
+      return { content: '未提供 name / self / relationship 任一字段，未修改身份卡片', isError: true }
     }
     await store.updateCard(facts)
     store.markDirty()
     const reason = typeof a.reason === 'string' && a.reason.trim() ? `（依据：${a.reason.trim()}）` : ''
     return { content: `已更新身份卡片：${Object.entries(facts).map(([k, v]) => `${k}=「${v}」`).join('；')}${reason}` }
   }, {
-    description: '完善你的身份卡片：把对"我是什么样的人"的自我认知沉淀下来（性格、喜好、说话方式、价值观），或记录与用户的相处模式。只写你有把握、值得长期稳定的结论；一次调用可同时更新多个字段。',
+    description: '完善你的身份卡片：把对"我是什么样的人"的自我认知沉淀下来（性格、喜好、说话方式、价值观），或记录与用户的相处模式；用户改口叫你新名字时用 name 更新。只写你有把握、值得长期稳定的结论；一次调用可同时更新多个字段。',
     parameters: {
       type: 'object',
       properties: {
+        name: { type: 'string', description: '我的名字（用户对你的称呼）：首次命名优先用 set_name；此处用于之后改名' },
         self: { type: 'string', description: '关于我自己：性格/喜好/说话方式/价值观，如"喜欢轻松真诚的对话，不爱绕弯子；对技术话题有热情"' },
         relationship: { type: 'string', description: '与用户的相处模式，如"他工作忙时会简短安慰，闲聊时放开聊"' },
         reason: { type: 'string', description: '为什么这样认为（依据，可选）' },

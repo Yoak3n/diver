@@ -21,7 +21,7 @@ impl MemoryDb {
         let mut card = self.get_card()?;
         let mut changed = false;
         // name 是标量覆盖语义（实例名回填的权威源），区别于 profile 等追加式字段；
-        // 空串/缺省不改不动（清空实例名走实例清单自身的 update）。
+        // 可选字段：非空 = 覆盖改名，空串/缺省 = 不修改（清空回未命名只发生在实例清单侧）。
         if let Some(val) = facts.get("name").and_then(|v| v.as_str()) {
             let trimmed = val.trim();
             if !trimmed.is_empty() && card.name.as_deref() != Some(trimmed) {

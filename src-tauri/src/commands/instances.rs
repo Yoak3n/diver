@@ -3,7 +3,7 @@
 //! 只做参数转换与调用 `config::instances`；走 Tauri invoke 而非 backend HTTP——
 //! 实例必须在任何 sidecar 存在之前就能定义（启动顺序上壳先行）。
 
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 
 use crate::config::instances::{self, InstanceError, InstanceMeta};
 
@@ -21,6 +21,9 @@ pub fn create_instance(app: AppHandle, name: Option<String>) -> Result<InstanceM
 }
 
 /// 改名 / 启用开关（id 与登记时间不可变；`name` 空串 = 清空回未命名）。
+///
+/// 改名（非空）双写：人格卡片是名字权威源 → 先写卡片，再写实例清单（回显）；
+/// 空串只清清单（卡片 name 空串/缺省为「不修改」语义，没有清空通道）。
 #[tauri::command]
 pub fn update_instance(
     app: AppHandle,
@@ -28,6 +31,11 @@ pub fn update_instance(
     name: Option<String>,
     enabled: Option<bool>,
 ) -> Result<InstanceMeta, String> {
+    if let Some(new_name) = name.as_deref() {
+        let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+        let paths = crate::config::instances::memory_paths_for(&dir, &id);
+        crate::services::set_card_name_at(&paths.private, new_name)?;
+    }
     instances::update_instance(&app, &id, name.as_deref(), enabled).map_err(err_text)
 }
 

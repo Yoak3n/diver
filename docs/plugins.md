@@ -460,10 +460,14 @@ Rust crates / services ──POST /rpc──► @diver/native-bridge（internal�
 ### 新增内部插件（仓库内）
 
 1. `cos-plugins/<name>/`：`package.json`（`name: @diver/<name>`，`main: src/index.ts`）+ `src/index.ts`（`name`/`inject`/`apply`）。
+   **`export const inject = [...]` 必须显式声明**（如 `['tools']`）——裸函数插件会丢
+   注入，报 `cannot get property "X" without inject` 直接崩进程。
 2. `bundle-companion/cordis.patch.yml`：`insert` 增加 `{ id, name: '@diver/<name>' }`。
 3. `bundle-companion/plugins.json`：增加 catalog 行。
-4. 若有第三方依赖：随包布局跑 `install-deps.mjs`；dev 依赖 workspace/`file:` 链接策略见 development。
-5. 重启 sidecar；设置 → 插件 应出现新行。
+4. **`pnpm-workspace.yaml` 登记 `cos-plugins/<name>`** 后 `pnpm install`——漏登记则
+   `file:` 依赖闭包装不齐，loader 报 `Cannot find package '@diver/…'`。
+5. 若有第三方依赖：随包布局跑 `install-deps.mjs`；dev 依赖 workspace/`file:` 链接策略见 development。
+6. 重启 sidecar；设置 → 插件 应出现新行。
 
 ### 禁用 / 启用（用户）
 

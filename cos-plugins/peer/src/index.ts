@@ -87,16 +87,27 @@ export function apply(ctx: Context) {
     },
   })
 
-  ctx.tools.register('stay_silent', async () => ({
-    content: JSON.stringify({
-      ok: true,
-      silent: true,
-      note: '已记录：本轮选择不发言。请直接结束本回合，不要再输出任何文字内容。',
-    }),
-  }), {
+  ctx.tools.register('stay_silent', async (args: unknown) => {
+    const a = (args ?? {}) as { reason?: unknown }
+    const reason = String(a.reason ?? '').trim()
+    return {
+      content: JSON.stringify({
+        ok: true,
+        silent: true,
+        ...(reason !== '' ? { reason } : {}),
+        note: '已记录：本轮选择不发言。请直接结束本回合，不要再输出任何文字内容。',
+      }),
+    }
+  }, {
     description:
-      '选择不发言：收到消息（群聊或私聊）但没有想说的时候调用。不必每条都回——调用后直接结束回合，不产生回复。',
-    parameters: { type: 'object', properties: {} },
+      '选择不发言：收到消息（群聊或私聊）但没有想说的时候调用。不必每条都回——调用后直接结束回合，不产生回复。' +
+      'reason 会记入可追溯记录（活动面板/会话日志），建议填沉默原因。',
+    parameters: {
+      type: 'object',
+      properties: {
+        reason: { type: 'string', description: '选择沉默的原因（留痕可追溯，可不填）' },
+      },
+    },
   })
   console.log('[peer] 互实例消息工具就绪（send_to_peer / send_to_group / stay_silent）')
 }

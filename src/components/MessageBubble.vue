@@ -16,7 +16,11 @@ defineEmits<{ speak: [msg: ChatMessage] }>();
 const hasContent = computed(() => (props.msg.content ?? "").trim() !== "");
 const contentHtml = computed(() => renderMarkdownHtml(props.msg.content ?? ""));
 const hasThinking = computed(() => (props.msg.thinking ?? "") !== "");
-const toolList = computed(() => props.msg.tools ?? []);
+// 静默痕迹在气泡层隐藏（拍板：UI 隐 + 可追溯）——完整记录仍在活动面板与会话日志。
+const HIDDEN_TOOLS = new Set(["stay_silent"]);
+const toolList = computed(() =>
+  (props.msg.tools ?? []).filter((t) => !HIDDEN_TOOLS.has(t.name)),
+);
 const hasTools = computed(() => toolList.value.length > 0);
 const metaOnly = computed(
   () =>

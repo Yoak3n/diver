@@ -94,6 +94,8 @@ Tauri 侧用 axum 起一个只监听 `127.0.0.1` 的 HTTP 服务，供 Node side
 （sidecar 作为 agent 进程不直接持有 SQLite 连接）：
 
 - `POST /rpc`：统一 JSON-RPC 入口（`{ method, params }` → `{ ok, data }` / `{ ok: false, error }`）
+- `peer::send`（P2-2）：互实例消息路由——注册表解析对端 + 按身份头盖章 `from` →
+  POST 对端 `/api/inbox` 注入 session inbox（`next-turn` / `next-step`），agent 下一轮当输入
 - **鉴权（P2-1 / BUG-002）**：全路由过 `services/auth` 中间件——`Host` 必须回环名
   （防 DNS rebinding）+ `Authorization: Bearer <DIVER_TOKEN>`（每 run 随机令牌，
   经 env 注入 sidecar；比对不过 401 / 403）。backend `/api` 同闸（`GET /api/health`

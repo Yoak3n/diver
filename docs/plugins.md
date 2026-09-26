@@ -1,4 +1,4 @@
-﻿# 插件体系与生命周期
+# 插件体系与生命周期
 
 > 本文是 Diver 插件架构的**权威契约**：运行时如何组合、启停状态落在哪、壳与 cos 如何分工、
 > 深水区（类型边界 / 安全档案 / 安装卸载 / native 插件）按什么分期推进。
@@ -491,6 +491,7 @@ Rust crates / services ──POST /rpc──► @diver/native-bridge（internal�
 | `cos-plugins/bundle-companion/bundle.yml` | `requires` 校验 |
 | `cos-plugins/native-bridge/src/rpc.ts` | 原生 `/rpc` 共享客户端（P5） |
 | `cos-plugins/self-prompt/` | 自改提示词入口（prompts/*.md 热加载 + revise-prompt skill + 可选 restart_agent） |
+| `cos-plugins/peer/` | 互实例消息（P2-2）：`send_to_peer` 工具 → 壳消息路由（`peer::send`）→ 对端 `/api/inbox` |
 | `harness/packages/skills/` | `@cos/skills`：skill 目录 + `load_skill` |
 | `src-tauri/src/plugins/mod.rs` | 壳端启停 + preflight + safe 切换 |
 | `src-tauri/src/config/profile.rs` | active_profile 持久化 |
@@ -504,6 +505,7 @@ Rust crates / services ──POST /rpc──► @diver/native-bridge（internal�
 
 | 日期 | 内容 |
 |---|---|
+| 2026-09-26 | **P2-2**：`@diver/peer`（`send_to_peer` → 壳 `peer::send` 盖章来源 → 对端 `/api/inbox` 进 session inbox）；workspace 补 `cos-plugins/peer` |
 | 2026-… | P0/P2 落地：统一 loader 契约、profile 启停、壳端 list/toggle、boot disable 过滤；SEA 正式退出 release 叙事 |
 | （续） | 本文档建立；P1–P5 分期与验收写入，作为深水区实施依据 |
 | （续） | 增加上游对照链接：[plugins-upstream-comparison.md](plugins-upstream-comparison.md) |

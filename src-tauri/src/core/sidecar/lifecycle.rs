@@ -167,6 +167,7 @@ pub(super) fn start_impl(mgr: &SidecarManager, app: &AppHandle) -> bool {
                         }
                     }
                     log::info!("sidecar 就绪 (port {})", mgr.port());
+                    mgr.registry_ready(mgr.port());
                     mgr.push_log("[diver] 就绪 ✓".into());
                     mgr.set_state(SidecarState::Running);
                     mgr.emit_status(&app_clone);
@@ -231,6 +232,7 @@ pub(super) fn start_impl(mgr: &SidecarManager, app: &AppHandle) -> bool {
             }
             log::warn!("sidecar 进程意外退出");
             mgr.push_log("[diver] sidecar 进程退出".into());
+            mgr.registry_gone();
             mgr.set_state(SidecarState::Crashed);
             mgr.emit_status(&app_clone);
         }
@@ -279,6 +281,7 @@ pub(super) fn stop_impl(mgr: &SidecarManager) {
         drop(job);
     }
     mgr.set_state(SidecarState::Stopped);
+    mgr.registry_gone();
     mgr.push_log("[diver] sidecar 已停止".into());
     log::info!("sidecar 已停止");
 }

@@ -30,6 +30,8 @@ pub struct SidecarManager {
     pub(super) stopping: AtomicBool,
     /// 启动期注入的跨层能力（app 组装；core 不依赖 plugins）。
     pub(super) hooks: Mutex<Option<LaunchHooks>>,
+    /// 实例注册表定位（P1-2）：就绪登记 / 退出注销。
+    pub(super) registry: Mutex<Option<crate::core::instance_registry::RegistryTarget>>,
 }
 
 impl SidecarManager {
@@ -62,8 +64,33 @@ impl SidecarManager {
                 node_bin,
                 stopping: AtomicBool::new(false),
                 hooks: Mutex::new(None),
+                registry: Mutex::new(None),
             }
         })
+    }
+
+    /// 注入实例注册表定位（app 组装，启动前调用一次）。
+    pub fn set_registry_target(&self, target: crate::core::instance_registry::RegistryTarget) {
+        *self.registry.lock() = Some(target);
+    }
+
+    /// 就绪时登记注册表（幂等覆盖写）。
+    pub(super) fn registry_ready(&self, port: u16) {
+        let Some(target) = self.registry.lock().clone() else {
+            return;
+        };
+        let pid = self.child.lock().as_ref().map(|c| c.id()).unwrap_or(0);
+        match crate::core::instance_registry::register(&target, pid, port) {
+            Ok(()) => log::info!("实例注册表登记 {} (pid={pid}, port={port})", target.id),
+            Err(e) => log::warn!("实例注册表写入失败: {e}"),
+        }
+    }
+
+    /// 退出 / 崩溃时注销注册表。
+    pub(super) fn registry_gone(&self) {
+        if let Some(target) = self.registry.lock().clone() {
+            crate::core::instance_registry::deregister(&target);
+        }
     }
 
     /// 注入启动期跨层能力（app/setup 调用一次）。

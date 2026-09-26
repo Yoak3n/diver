@@ -10,6 +10,7 @@ mod grep;
 mod memory;
 mod notify;
 mod presence;
+mod registry;
 mod rpc;
 mod screenshot;
 mod server;
@@ -17,4 +18,4 @@ mod state;
 
 pub use memory::{clear_card_name_at, set_card_name_at};
 pub use server::start;
-pub use state::{CardNameFn, NotifyFn, PresenceDispatchFn, ServiceState};
+pub use state::{CardNameFn, NotifyFn, PresenceDispatchFn, RegistryListFn, ServiceState};

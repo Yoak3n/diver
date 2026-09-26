@@ -160,6 +160,24 @@ pub fn configure(builder: Builder<tauri::Wry>) -> Builder<tauri::Wry> {
         }
         let _ = crate::app::tray::create_tray_icon(app, false);
 
+        // P1-2 实例注册表：active 实例身份 + 启动清扫僵尸记录（pid 已死的崩溃残留）。
+        let instance_id = crate::config::instances::active_instance_id(app.handle());
+        let instance_name = crate::config::instances::list_instances(app.handle())
+            .into_iter()
+            .find(|i| i.id == instance_id)
+            .and_then(|i| i.name);
+        {
+            let reg_dir = crate::config::instances::registry_dir(app.handle());
+            let swept = crate::core::instance_registry::sweep_stale_at(&reg_dir);
+            if !swept.is_empty() {
+                log::info!(
+                    "实例注册表清扫 {} 条僵尸记录（{:?}）",
+                    swept.len(),
+                    swept.iter().map(|r| r.id.clone()).collect::<Vec<_>>()
+                );
+            }
+        }
+
         // 启动本地服务（SQLite 记忆后端等），端口注入 sidecar。
         // 通知 / presence 能力在 app 层包好闭包再注入，services 不依赖 shell/core。
         {
@@ -176,7 +194,7 @@ pub fn configure(builder: Builder<tauri::Wry>) -> Builder<tauri::Wry> {
                 .path()
                 .app_data_dir()
                 .unwrap_or_else(|_| crate::config::config_dir(app.handle()));
-            let instance_id = crate::config::instances::active_instance_id(app.handle());
+            let instance_id = instance_id.clone();
             let memory_paths =
                 crate::config::instances::memory_paths_for(&data_dir, &instance_id);
             // 写回式回填：人格卡片名字 → 实例清单 name（权威源 = 卡片）。
@@ -199,6 +217,14 @@ pub fn configure(builder: Builder<tauri::Wry>) -> Builder<tauri::Wry> {
                     }
                 })
             };
+            // P1-2 注册中心查询：registry::list 读注册表文件（P2 消息路由寻址基础）。
+            let registry_list: crate::services::RegistryListFn = {
+                let dir = crate::config::instances::registry_dir(app.handle());
+                std::sync::Arc::new(move || {
+                    serde_json::to_value(crate::core::instance_registry::list_at(&dir))
+                        .map_err(|e| e.to_string())
+                })
+            };
             match crate::services::start(
                 app.handle(),
                 notify,
@@ -206,6 +232,7 @@ pub fn configure(builder: Builder<tauri::Wry>) -> Builder<tauri::Wry> {
                 memory_paths.private,
                 memory_paths.shared,
                 on_card_name,
+                registry_list,
             ) {
                 Some(port) => std::env::set_var("DIVER_MEMORY_PORT", port.to_string()),
                 None => log::error!("本地服务启动失败，记忆功能不可用"),
@@ -247,6 +274,15 @@ pub fn configure(builder: Builder<tauri::Wry>) -> Builder<tauri::Wry> {
             };
             crate::core::sidecar::SidecarManager::global().set_hooks(hooks);
         }
+
+        // P1-2 实例注册表定位注入 manager：就绪登记 / 退出注销。
+        crate::core::sidecar::SidecarManager::global().set_registry_target(
+            crate::core::instance_registry::RegistryTarget {
+                dir: crate::config::instances::registry_dir(app.handle()),
+                id: instance_id.clone(),
+                name: instance_name.clone(),
+            },
+        );
 
         // 全局快捷键：按配置注册启用绑定（运行时热插拔由 app/shortcut.rs 负责）。
         crate::app::shortcut::ShortcutManager::global().init(app.handle());

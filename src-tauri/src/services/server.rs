@@ -6,7 +6,7 @@ use axum::Router;
 use tauri::{AppHandle, Manager as TauriManager};
 
 use super::rpc;
-use super::state::{CardNameFn, NotifyFn, PresenceDispatchFn, ServiceState};
+use super::state::{CardNameFn, NotifyFn, PresenceDispatchFn, RegistryListFn, ServiceState};
 
 /// 启动所有本地服务，返回监听端口。
 ///
@@ -14,6 +14,7 @@ use super::state::{CardNameFn, NotifyFn, PresenceDispatchFn, ServiceState};
 /// `presence_dispatch`：presence RPC 分发（由 app 层注入，services 不依赖 core）。
 /// `memory_private` / `memory_shared`：记忆双库路径（app 层按实例 id 派生后注入）。
 /// `on_card_name`：人格卡片名字变更回调（app 层包「写回实例清单 name」后注入）。
+/// `registry_list`：实例注册表查询（P1-2 注册中心，app 层包 `instance_registry::list_at`）。
 pub fn start(
     app: &AppHandle,
     notify: NotifyFn,
@@ -21,6 +22,7 @@ pub fn start(
     memory_private: std::path::PathBuf,
     memory_shared: std::path::PathBuf,
     on_card_name: CardNameFn,
+    registry_list: RegistryListFn,
 ) -> Option<u16> {
     let dir = app.path().app_data_dir().ok()?;
     if let Err(err) = std::fs::create_dir_all(&dir) {
@@ -36,6 +38,7 @@ pub fn start(
         notify,
         presence_dispatch,
         on_card_name,
+        registry_list,
     };
 
     // 统一 RPC 入口；未来服务继续在 rpc::dispatch 中扩展。

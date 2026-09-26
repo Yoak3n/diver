@@ -1,4 +1,5 @@
 pub mod explore_policy;
+pub mod instance_registry;
 pub mod node_runtime;
 pub mod pet_interaction;
 pub mod pet_models;

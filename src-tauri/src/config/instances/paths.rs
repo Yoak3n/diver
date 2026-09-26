@@ -36,6 +36,14 @@ pub fn memory_paths_for(base: &Path, instance_id: &str) -> MemoryPaths {
     }
 }
 
+/// 运行时注册表目录：`<app_data_dir>/instances/`（P1-2，每实例一个 `<id>.json`）。
+///
+/// 注册表是运行时簿记（pid / port / 名字 / 启动时间），区别于 `app_config_dir`
+/// 下的实例清单（配置）；两者不同目录，命名平行不混。
+pub fn registry_dir_for(base: &Path) -> PathBuf {
+    base.join("instances")
+}
+
 /// 运行时实例 id：清单里第一个 `enabled` 实例。
 ///
 /// P1-1 仍是单实例运行（多实例拉起在 P1-2 端口协商之后），先消费 P0 实例清单的

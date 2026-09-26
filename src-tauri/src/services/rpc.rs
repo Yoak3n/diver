@@ -9,7 +9,7 @@ use axum::{extract::State, Json};
 use serde::Deserialize;
 use serde_json::{json, Value};
 
-use super::{grep, memory, notify, presence, screenshot, ServiceState};
+use super::{grep, memory, notify, presence, registry, screenshot, ServiceState};
 
 #[derive(Deserialize)]
 pub struct RpcRequest {
@@ -62,6 +62,10 @@ async fn route(state: &ServiceState, method: &str, params: &Value) -> Result<Val
         return tokio::task::spawn_blocking(move || screenshot::dispatch(&method, &params))
             .await
             .map_err(|join_err| grep::RpcFailure::new(format!("screenshot task failed: {join_err}")))?;
+    }
+    if method.starts_with("registry::") {
+        // 实例注册中心查询（P1-2）：读注册表文件；闭包由 app 注入。
+        return registry::dispatch(state, method).map_err(grep::RpcFailure::new);
     }
     // memory 方法保持无前缀（零迁移）；错误无 code。
     memory::dispatch(state, method, params).map_err(grep::RpcFailure::new)

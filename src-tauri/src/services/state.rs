@@ -14,6 +14,10 @@ pub type PresenceDispatchFn = Arc<dyn Fn(&str, &Value) -> Result<Value, String> 
 /// 写回式回填（P1-1）：人格卡片是名字权威源，实例清单只是回显。
 pub type CardNameFn = Arc<dyn Fn(String) + Send + Sync>;
 
+/// 实例注册表查询回调（app 层包一层 `core::instance_registry::list_at` 后注入，
+/// P1-2 注册中心查询，返回注册项 JSON 数组）。
+pub type RegistryListFn = Arc<dyn Fn() -> Result<Value, String> + Send + Sync>;
+
 /// 所有本地服务共享的状态；新增服务时在这里扩展字段。
 #[derive(Clone)]
 pub struct ServiceState {
@@ -23,4 +27,6 @@ pub struct ServiceState {
     pub presence_dispatch: PresenceDispatchFn,
     /// 人格卡片更新后把名字写回实例清单（写回式回填）。
     pub on_card_name: CardNameFn,
+    /// 实例注册表查询（`registry::list`）。
+    pub registry_list: RegistryListFn,
 }

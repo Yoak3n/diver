@@ -64,6 +64,12 @@ pub fn active_instance_id(app: &AppHandle) -> String {
     active_instance_id_at(&load_or_seed(app))
 }
 
+/// 运行时注册表目录（`<app_data_dir>/instances/`，P1-2 实例注册表）。
+pub fn registry_dir(app: &AppHandle) -> std::path::PathBuf {
+    use tauri::Manager as _;
+    registry_dir_for(&app.path().app_data_dir().unwrap_or_default())
+}
+
 /// 列出全部实例（首次访问自动登记 `default`）。
 pub fn list_instances(app: &AppHandle) -> Vec<InstanceMeta> {
     load_or_seed(app).instances

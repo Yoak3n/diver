@@ -29,15 +29,15 @@ pnpm tauri dev   # 自动拉起 sidecar + Vite(1420) + 窗口
 diver/
 ├─ src/                    # Vue 3 陪伴 UI（聊天、设置、TTS）
 │  ├─ components/          # ChatArea / ComposerBar / MessageBubble / SettingsPanel 等
-│  ├─ composables/         # useChat（主窗口）/ useSettings
+│  ├─ composables/         # useChat（主窗口）/ useSettings / useInstances
 │  └─ pet/                 # 桌宠：PetApp.vue / live2d.ts / usePetChat / pet.html
 ├─ src-tauri/              # Rust 壳
-│  ├─ src/commands/        # Tauri IPC 薄适配（system/plugins/shortcuts/tts/tts_player/presence/pet/config）
+│  ├─ src/commands/        # Tauri IPC 薄适配（system/plugins/shortcuts/tts/tts_player/presence/pet/instances/config）
 │  ├─ src/app/             # 组装与生命周期（setup / events / handle / state / tray / shortcut）
 │  ├─ src/shell/           # 窗口与桌面集成（window/{manager,pet} / lightweight / pet_mouse / notify）
 │  ├─ src/core/            # 可单测业务（sidecar/{process,lifecycle,shutdown,reclaim} / tts/{synth,player} / node_runtime / pet_interaction / pet_models / presence…）
 │  ├─ src/plugins/         # 插件 catalog/profile/preflight/{registry,package,install,uninstall}
-│  ├─ src/config/          # 持久化配置（window_startup / tts / mcp / shortcuts…）
+│  ├─ src/config/          # 持久化配置（window_startup / instances / tts / mcp / shortcuts…）
 │  ├─ src/services/        # 本地服务：axum /rpc + memory RPC handler（notify 经注入闭包）
 │  └─ config/tts.json     # 在线 TTS 配置
 ├─ crates/diver-geom/     # 桌宠几何纯函数（config/shell/core 共用）

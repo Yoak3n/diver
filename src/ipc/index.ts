@@ -10,3 +10,4 @@ export * from "./shortcuts";
 export * from "./window";
 export * from "./mcp";
 export * from "./presence";
+export * from "./instances";

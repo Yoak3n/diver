@@ -21,6 +21,7 @@ import type { SidecarStatus } from "../types";
 import { getChat } from "./chat";
 
 export type SettingsTab =
+  | "instances"
   | "models"
   | "voice"
   | "mcp"
@@ -31,6 +32,7 @@ export type SettingsTab =
   | "system";
 
 export const SETTINGS_TABS: Array<{ id: SettingsTab; label: string }> = [
+  { id: "instances", label: "实例" },
   { id: "models", label: "模型与提供商" },
   { id: "voice", label: "语音" },
   { id: "mcp", label: "MCP 服务" },

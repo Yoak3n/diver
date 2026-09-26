@@ -166,7 +166,7 @@ export function apply(ctx: Context, config: { digestIntervalMs?: number }) {
       if (!myName && !profile && !agentModel && !relationship) {
         // 身份卡片尚未形成：只注入行动提示（引导用 identity 工具沉淀），
         // 卡片成型后自动消失，不留长期噪音
-        return '【身份卡片 · 我】（尚未形成——当你对"我是什么样的人"有了稳定看法，用 identity 工具沉淀）'
+        return '【身份卡片 · 我】（尚未形成——当你对"我是什么样的人"有了稳定看法，用 identity 工具沉淀；用户告诉你怎么称呼你时用 set_name 记下名字）'
       }
 
       const parts = ['【身份卡片 · 我】']
@@ -424,37 +424,68 @@ export function apply(ctx: Context, config: { digestIntervalMs?: number }) {
     },
   })
 
+  // ───────────────────────── 命名回填：极低频，定名即撤 ─────────────────────────
+  // 名字一次定妥（写进身份卡片 name，壳层同步实例名），之后基本用不到——
+  // 不让它长期占工具列表：名字没定才挂，写入成功立即自撤；启动 refresh 到账后
+  // 发现已有名字也立即撤下（store 构造时 refresh 是异步的，启动瞬间读到的可能是空卡）。
+  let retractName: (() => void) | undefined
+  retractName = ctx.tools.register('set_name', async (args) => {
+    const a = (args ?? {}) as { name?: unknown }
+    const name = typeof a.name === 'string' ? a.name.trim() : ''
+    if (!name) return { content: '缺少 name（用户对你的称呼），未写入', isError: true }
+    await store.updateCard({ name })
+    store.markDirty()
+    retractName?.()
+    retractName = undefined
+    return { content: `已记下我的名字：「${name}」（实例名已同步更新）` }
+  }, {
+    description: '设置我的名字（用户对你的称呼）。仅当用户明确告诉你怎么称呼你、或给你起名字时使用；定名后本工具自动撤下，无需重复调用。',
+    parameters: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: '我的名字（用户对你的称呼），如"小潜"' },
+      },
+      required: ['name'],
+    },
+  })
+  if ((store.getCard().name ?? '').trim()) {
+    retractName()
+    retractName = undefined
+  }
+  void store.refresh().then(() => {
+    if ((store.getCard().name ?? '').trim()) {
+      retractName?.()
+      retractName = undefined
+    }
+  })
+
   // ───────────────────────── 身份卡片：agent 主动完善自我认知 ─────────────────────────
   // 设计理念：不预设身份。agent 在对话中逐渐形成"我是什么样的人"的自我认知，
   // 通过本工具把有证据的结论写进身份卡片（关系卡 agent_model 等字段），
   // 系统每次组装提示词时把卡片常驻注入，让性格在后续对话中保持稳定、持续演进。
   ctx.tools.register('identity', async (args) => {
     const a = (args ?? {}) as {
-      name?: unknown // 我的名字：用户对我的称呼（名字权威源，壳层同步到实例清单）
       self?: unknown // 关于我自己：性格、喜好、说话方式、价值观
       relationship?: unknown // 与用户的相处模式
       reason?: unknown // 为什么这样认为（可选，增强可信度）
     }
-    const facts: Partial<Pick<RelationCard, 'name' | 'agent_model' | 'relationship'>> = {}
-    const name = typeof a.name === 'string' ? a.name.trim() : ''
+    const facts: Partial<Pick<RelationCard, 'agent_model' | 'relationship'>> = {}
     const self = typeof a.self === 'string' ? a.self.trim() : ''
     const relationship = typeof a.relationship === 'string' ? a.relationship.trim() : ''
-    if (name) facts.name = name
     if (self) facts.agent_model = self
     if (relationship) facts.relationship = relationship
     if (Object.keys(facts).length === 0) {
-      return { content: '未提供 name / self / relationship 任一字段，未修改身份卡片', isError: true }
+      return { content: '未提供 self / relationship 任一字段，未修改身份卡片', isError: true }
     }
     await store.updateCard(facts)
     store.markDirty()
     const reason = typeof a.reason === 'string' && a.reason.trim() ? `（依据：${a.reason.trim()}）` : ''
     return { content: `已更新身份卡片：${Object.entries(facts).map(([k, v]) => `${k}=「${v}」`).join('；')}${reason}` }
   }, {
-    description: '完善你的身份卡片：沉淀我的名字（用户对我的称呼）、对"我是什么样的人"的自我认知（性格、喜好、说话方式、价值观），或记录与用户的相处模式。只写你有把握、值得长期稳定的结论；一次调用可同时更新多个字段。',
+    description: '完善你的身份卡片：把对"我是什么样的人"的自我认知沉淀下来（性格、喜好、说话方式、价值观），或记录与用户的相处模式。只写你有把握、值得长期稳定的结论；一次调用可同时更新多个字段。',
     parameters: {
       type: 'object',
       properties: {
-        name: { type: 'string', description: '我的名字（用户对我的称呼），如"小潜"；不确定就不要填' },
         self: { type: 'string', description: '关于我自己：性格/喜好/说话方式/价值观，如"喜欢轻松真诚的对话，不爱绕弯子；对技术话题有热情"' },
         relationship: { type: 'string', description: '与用户的相处模式，如"他工作忙时会简短安慰，闲聊时放开聊"' },
         reason: { type: 'string', description: '为什么这样认为（依据，可选）' },

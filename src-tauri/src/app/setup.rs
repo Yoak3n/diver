@@ -355,6 +355,7 @@ pub fn configure(builder: Builder<tauri::Wry>) -> Builder<tauri::Wry> {
             });
         }
 
+        log::info!("[probe] setup 完成，事件循环即将启动");
         Ok(())
     })
 }

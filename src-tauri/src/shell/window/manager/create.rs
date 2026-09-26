@@ -109,18 +109,47 @@ impl Manager {
 
             // WebView2：原生可拖区域 + 对齐 DSH 的触摸/滚动特性集。
             // autoplay：TTS 自动朗读无用户手势，AudioContext / <audio> 会被默认策略静音。
+            // disable-features 里最后三项是 wry 的默认禁用集——additional_browser_args
+            // 会整体覆盖默认参数，漏掉它们会重新打开 SmartScreen 等每个导航都
+            // 联网做信誉检查的能力（首启慢的已知来源）。
             #[allow(unused_mut)]
             let mut args = String::from(
                 "--enable-features=msWebView2EnableDraggableRegions \
-                 --disable-features=OverscrollHistoryNavigation,msExperimentalScrolling,ElasticOverscroll \
+                 --disable-features=OverscrollHistoryNavigation,msExperimentalScrolling,ElasticOverscroll,msWebOOUI,msPdfOOUI,msSmartScreenProtection \
                  --autoplay-policy=no-user-gesture-required",
             );
             #[cfg(debug_assertions)]
-            if window_type == WindowType::Pet {
-                args.push_str(" --remote-debugging-port=9223");
+            {
+                if window_type == WindowType::Pet {
+                    args.push_str(" --remote-debugging-port=9223");
+                }
+                // NetLog 取证：记录引擎内全部网络事件（进程退出时落盘完成），
+                // 用于定位首次创建窗口的加载停顿停在引擎哪一层。
+                // workspace 的 target 目录 = CARGO_MANIFEST_DIR 的父级，取绝对路径
+                // （Chromium 不解析路径里的 ..）。
+                let netlog_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .parent()
+                    .map(|p| p.join("target").to_string_lossy().replace('\\', "/"))
+                    .unwrap_or_else(|| "target".into());
+                args.push_str(&format!(
+                    " --log-net-log={}/netlog-{}.json",
+                    netlog_dir,
+                    window_type.label()
+                ));
             }
             builder = builder.additional_browser_args(&args);
         }
+
+        // 启动时序探针：记录 webview 页面加载起止，定位「窗口建好 → 内容显示」耗时段。
+        let probe_label = window_type.label().to_string();
+        let builder = builder.on_page_load(move |_, payload| {
+            log::info!(
+                "[probe] {} page_load {:?} url={}",
+                probe_label,
+                payload.event(),
+                payload.url()
+            );
+        });
 
         log::info!(
             "[window] creating {:?} at url={} size={}x{} transparent={} aot={}",

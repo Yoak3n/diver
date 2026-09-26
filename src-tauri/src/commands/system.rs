@@ -13,6 +13,12 @@ pub fn get_sidecar_status() -> SidecarStatus {
 /// 首启/启动准备进度（WebView 晚挂载时回放，避免遮罩卡 0%）。
 #[tauri::command]
 pub fn get_setup_progress() -> Option<crate::core::setup_progress::SetupProgress> {
+    // 启动时序探针：前端挂载后首次 IPC 到达时刻（只打一次）。
+    use std::sync::atomic::{AtomicBool, Ordering};
+    static FIRST_IPC: AtomicBool = AtomicBool::new(false);
+    if !FIRST_IPC.swap(true, Ordering::Relaxed) {
+        log::info!("[probe] 首个前端 IPC 到达（get_setup_progress）");
+    }
     crate::core::setup_progress::last_progress()
 }
 

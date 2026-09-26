@@ -1,16 +1,18 @@
 // 聊天传输层（chat/ 子模块）：HTTP/SSE 连接、健康检查、发送、回答提问。
+// 按实例寻址（P2-3 私聊）：state 之外固定 instanceId，端点全部带上。
 // 不持有消息/工具等 UI 状态；状态由 chat/state 提供。
 
-import { answerQuestion, getSettings, health, sendChat, streamEvents } from "../../api";
+import { answerQuestion, getHistory, getSettings, health, sendChat, streamEvents } from "../../api";
 import { onTauriEvent, tauriAvailable, waitForSidecarReady } from "../../tauri";
-import type { ChatMessage, UserQuestionAnswerItem } from "../../types";
+import type { SidecarStatus, UserQuestionAnswerItem } from "../../types";
 import type { createChatState } from "./state";
 
 export type ChatState = ReturnType<typeof createChatState>;
 
-export function createChatTransport(state: ChatState) {
+export function createChatTransport(state: ChatState, instanceId: string) {
   let closeStream: (() => void) | null = null;
   let stopSidecarEvent: (() => void) | null = null;
+  let healthTimer: number | null = null;
   /** 历史成功加载一次后不再重复拉取（hello / 状态事件 / 健康轮询都会触发重试）。 */
   let historyLoaded = false;
 
@@ -22,9 +24,7 @@ export function createChatTransport(state: ChatState) {
   async function loadHistory() {
     if (historyLoaded) return;
     try {
-      const res = await fetch("/api/history");
-      if (!res.ok) return;
-      const data = (await res.json()) as { messages: ChatMessage[] };
+      const data = await getHistory(instanceId);
       // 仅当本地还没有消息时填充，避免覆盖正在进行的会话
       if (state.messages.value.length === 0) {
         state.messages.value = data.messages.map((m) => ({ ...m, streaming: false }));
@@ -39,7 +39,7 @@ export function createChatTransport(state: ChatState) {
 
   async function refreshHealth() {
     try {
-      const h = await health();
+      const h = await health(instanceId);
       state.healthInfo.value = h;
       state.busy.value = h.busy;
       state.error.value = null;
@@ -59,11 +59,11 @@ export function createChatTransport(state: ChatState) {
     if (!ready) {
       // 就绪超时：仍走一次请求流程，失败由 refreshHealth/loadHistory 的
       // 幂等重试（hello / sidecar://status / 健康轮询）兜底。
-      console.warn("[chat] 等待 sidecar 就绪超时，降级为重试模式");
+      console.warn(`[chat] 等待 sidecar 就绪超时（${instanceId}），降级为重试模式`);
     }
     await refreshHealth();
     try {
-      state.settingsInfo.value = await getSettings();
+      state.settingsInfo.value = await getSettings(instanceId);
     } catch {
       /* 设置接口失败不阻断 */
     }
@@ -72,14 +72,22 @@ export function createChatTransport(state: ChatState) {
     openStream();
     state.scrollToBottom();
 
-    // Tauri 环境：sidecar 状态变为 running（DIVER_READY）时立即补拉历史与设置，
+    // 健康轮询（每会话一份）：驱动历史补拉与断线恢复。
+    if (healthTimer === null) {
+      healthTimer = window.setInterval(() => {
+        void refreshHealth();
+      }, 8000);
+    }
+
+    // Tauri 环境：本实例 sidecar 状态变为 running（DIVER_READY）时立即补拉历史与设置，
     // 修复首次启动 / 插件启停重启后 WebView 状态陈旧（需手动刷新页面）的问题。
+    // P2-3：事件全实例广播（payload 带 id），按 instanceId 过滤。
     if (!stopSidecarEvent && tauriAvailable()) {
-      void onTauriEvent<import("../../types").SidecarStatus>("sidecar://status", (status) => {
-        if (status.state !== "running") return;
+      void onTauriEvent<SidecarStatus>("sidecar://status", (status) => {
+        if (status.state !== "running" || status.id !== instanceId) return;
         void loadHistory();
         void refreshHealth();
-        void getSettings()
+        void getSettings(instanceId)
           .then((s) => {
             state.settingsInfo.value = s;
           })
@@ -101,13 +109,14 @@ export function createChatTransport(state: ChatState) {
       (err) => {
         state.error.value = err instanceof Error ? err.message : String(err);
       },
+      instanceId,
     );
   }
 
   async function reconnect() {
     await refreshHealth();
     try {
-      state.settingsInfo.value = await getSettings();
+      state.settingsInfo.value = await getSettings(instanceId);
     } catch {
       /* 设置接口失败不阻断 */
     }
@@ -141,7 +150,7 @@ export function createChatTransport(state: ChatState) {
     });
     state.busy.value = true;
     try {
-      await sendChat(content, images);
+      await sendChat(content, images, instanceId);
     } catch (err) {
       state.error.value = err instanceof Error ? err.message : String(err);
       const idx = state.messages.value.findIndex((m) => m.id === localId);
@@ -154,7 +163,7 @@ export function createChatTransport(state: ChatState) {
     const q = state.pendingQuestion.value;
     if (!q) return;
     try {
-      await answerQuestion(q.requestId, answers);
+      await answerQuestion(q.requestId, answers, instanceId);
       state.pendingQuestion.value = null;
     } catch (err) {
       state.error.value = err instanceof Error ? err.message : String(err);
@@ -166,6 +175,10 @@ export function createChatTransport(state: ChatState) {
     closeStream?.();
     stopSidecarEvent?.();
     stopSidecarEvent = null;
+    if (healthTimer !== null) {
+      window.clearInterval(healthTimer);
+      healthTimer = null;
+    }
   }
 
   return {
@@ -176,5 +189,6 @@ export function createChatTransport(state: ChatState) {
     send,
     submitQuestionAnswer,
     dispose,
+    instanceId,
   };
 }

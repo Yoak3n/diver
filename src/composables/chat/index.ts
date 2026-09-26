@@ -1,9 +1,8 @@
-// useChat 共享单例：聊天状态/连接跨路由存活（设置页切换时不丢 SSE 与消息）。
+// useChat 会话池：每实例一份（P2-3 私聊），跨路由存活（设置页切换不丢 SSE 与消息）。
 //
-// 首次 useChat() / getChat() 创建；连接生命周期挂在引用方 onMounted/onBeforeUnmount，
-// 由 keep-alive 保证从设置页返回时不会被 dispose。
+// 首次 useChat(id) 创建并连接；会话进程级存活，健康轮询随连接常驻。
+// getChat(id) 只取不建（设置页等非挂载场景）。
 
-import { onBeforeUnmount, onMounted } from "vue";
 import { createChatState } from "./state";
 import { createChatTransport } from "./transport";
 
@@ -11,48 +10,21 @@ type ChatState = ReturnType<typeof createChatState>;
 type ChatTransport = ReturnType<typeof createChatTransport>;
 export type SharedChat = ChatState & ChatTransport;
 
-let shared: SharedChat | null = null;
-let mountCount = 0;
-let timer: number | null = null;
+const chats = new Map<string, SharedChat>();
 
-function ensureChat(): SharedChat {
-  if (shared === null) {
-    const state = createChatState();
-    const transport = createChatTransport(state);
-    shared = { ...state, ...transport };
-  }
-  return shared;
-}
-
-/** 已创建则返回共享实例，不创建（设置页等非挂载场景用）。 */
-export function getChat(): SharedChat | null {
-  return shared;
-}
-
-export function useChat(): SharedChat {
-  const chat = ensureChat();
-
-  onMounted(() => {
-    mountCount += 1;
-    if (mountCount === 1) {
-      void chat.connect();
-      timer = window.setInterval(() => {
-        void chat.refreshHealth();
-      }, 8000);
-    }
-  });
-
-  onBeforeUnmount(() => {
-    mountCount = Math.max(0, mountCount - 1);
-    // keep-alive 切走不触发 unmount；仅真实卸载（窗口关闭/根路由替换）才 dispose。
-    if (mountCount === 0) {
-      if (timer !== null) {
-        window.clearInterval(timer);
-        timer = null;
-      }
-      chat.dispose();
-    }
-  });
-
+/** 取指定实例的会话（缺省 default；不存在则创建并连接）。 */
+export function useChat(instanceId = "default"): SharedChat {
+  const hit = chats.get(instanceId);
+  if (hit) return hit;
+  const state = createChatState();
+  const transport = createChatTransport(state, instanceId);
+  const chat = { ...state, ...transport };
+  chats.set(instanceId, chat);
+  void chat.connect();
   return chat;
+}
+
+/** 已创建则返回共享会话，不创建（设置页等非挂载场景用）。 */
+export function getChat(instanceId = "default"): SharedChat | null {
+  return chats.get(instanceId) ?? null;
 }

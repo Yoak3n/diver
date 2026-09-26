@@ -372,7 +372,7 @@ cordis loader 只挂载 enabled 插件
 | typecheck | 根 `pnpm typecheck` = harness + plugins；单插件 `npx tsc --noEmit` |
 | 其它债 | `@diver/mcp` 的 `file:` 路径已正斜杠化；workspace 补齐 mcp / llm-commandcode |
 
-运行时：`@cos/*` 仍由 loader `pluginPaths` 挂载；插件 import `@cos/plugin-api` 经 workspace/`file:` 链接解析到 harness 源码。
+运行时：`@cos/*` 仍由 loader `pluginPaths` 挂载；插件 import `@cos/plugin-api` 一律 `workspace:*` 软链解析到 harness 源码。**禁用 `file:` 指向 `harness/packages/*`**：pnpm 对 `file:` 目标做拷贝，拷贝后的 plugin-api 打断其兄弟目录相对导入（`../../agent-loop/src/index.ts`），运行时报 `Cannot find module @cos/agent-loop`。
 
 **约束：** 新增框架类型时只改 `@cos/plugin-api` 的 re-export，插件 import 面保持稳定。
 

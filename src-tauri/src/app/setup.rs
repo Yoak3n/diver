@@ -183,6 +183,11 @@ pub fn configure(builder: Builder<tauri::Wry>) -> Builder<tauri::Wry> {
                 let app_handle = app.handle().clone();
                 let backfill_id = instance_id.clone();
                 std::sync::Arc::new(move |name| {
+                    // 不变量：「清空回未命名」只能由用户在设置面板手动完成；
+                    // 写回路径永不为空（双保险，与 services 层过滤一起兜住）。
+                    if name.trim().is_empty() {
+                        return;
+                    }
                     if let Err(err) = crate::config::instances::update_instance(
                         &app_handle,
                         &backfill_id,

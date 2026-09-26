@@ -156,6 +156,16 @@ pub(super) fn start_impl(mgr: &SidecarManager, app: &AppHandle) -> bool {
                 // 实时转发 sidecar 日志进壳日志（控制台 + app.log；含 explore 等执行面日志）
                 log::info!("[sidecar] {}", line);
                 if line.contains("DIVER_READY") {
+                    // P1-2 端口协商：就绪行回报实际端口，与预选不一致时以 Node 为准。
+                    if let Some(actual) = super::ports::parse_ready_port(&line) {
+                        if actual != mgr.port() {
+                            log::warn!(
+                                "sidecar 实际端口 {actual} 与预选端口 {} 不一致，已更正",
+                                mgr.port()
+                            );
+                            mgr.set_port(actual);
+                        }
+                    }
                     log::info!("sidecar 就绪 (port {})", mgr.port());
                     mgr.push_log("[diver] 就绪 ✓".into());
                     mgr.set_state(SidecarState::Running);

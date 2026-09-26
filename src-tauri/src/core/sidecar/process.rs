@@ -46,10 +46,8 @@ impl SidecarManager {
                 });
             #[cfg(debug_assertions)]
             let node_bin = std::env::var("DIVER_NODE_BIN").unwrap_or_else(|_| "node".into());
-            let port = std::env::var("DIVER_PORT")
-                .ok()
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(super::paths::DEFAULT_PORT);
+            // P1-2 端口协商：显式 DIVER_PORT 非 0 固定，0/缺省 → 随机预选。
+            let port = super::ports::resolve_port();
             SidecarManager {
                 child: Mutex::new(None),
                 status: Mutex::new(SidecarStatus {
@@ -80,6 +78,11 @@ impl SidecarManager {
 
     pub fn port(&self) -> u16 {
         self.status.lock().port
+    }
+
+    /// 就绪行回报的实际端口（与预选不一致时更正，以 Node 为准）。
+    pub(super) fn set_port(&self, port: u16) {
+        self.status.lock().port = port;
     }
 
     /// WebView 加载的 UI 地址。

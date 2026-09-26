@@ -5,8 +5,9 @@ use std::path::PathBuf;
 /// 启动时缓存的 COS_HOME：stop() 清 restart 标志用（无 AppHandle）。
 pub(super) static LAST_COS_HOME: once_cell::sync::OnceCell<PathBuf> = once_cell::sync::OnceCell::new();
 
-/// sidecar HTTP 服务默认端口（可用环境变量 DIVER_PORT 覆盖）。
+/// sidecar HTTP 服务兜底端口（P1-2 起仅在预选失败时使用）。
 ///
+/// 正常路径见 `ports::resolve_port`：`DIVER_PORT` 显式非 0 固定，否则随机预选。
 /// 高位端口（动态/私有区间 49152–65535）：本服务非常驻、使用频率低，
 /// 低位段易与常用服务冲突，故迁到高位；53620 取"5 + 旧 3620"便于记忆。
 pub const DEFAULT_PORT: u16 = 53620;

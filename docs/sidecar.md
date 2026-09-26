@@ -21,7 +21,7 @@ agent 大脑是一个**常驻 Node 进程**，运行仓库内自研 **cos harnes
   | `--harness` | `<repo>/harness` | `resources/sidecar/harness` |
   | `COS_HOME` | `harness/.cos-home-<id>` | `%APPDATA%/com.diver.companion/cos-<id>` |
 
-- 环境变量：`DIVER_PORT`（默认 53620）、`DIVER_MEMORY_PORT`、`DIVER_SHUTDOWN_TOKEN`、
+- 环境变量：`DIVER_PORT`（缺省 = 壳随机预选，显式非 0 才固定）、`DIVER_MEMORY_PORT`、`DIVER_SHUTDOWN_TOKEN`、
   `DIVER_UI_DIST`、`DIVER_MCP_CONFIG_FILE`
 - stdout 检测 `DIVER_READY` → 状态 Running；主窗口隐藏不影响 sidecar
 - 退出：`POST /api/shutdown` → `Child::kill` → Windows Job Object 三级兜底

@@ -27,6 +27,14 @@
       "defaultEnabled": true
     },
     {
+      "id": "peer",
+      "packageName": "@diver/peer",
+      "displayName": "互实例消息",
+      "description": "send_to_peer 工具：实例间发消息（壳消息路由 + 对端 session inbox 注入）",
+      "toggleable": true,
+      "defaultEnabled": true
+    },
+    {
       "id": "basic-tools",
       "packageName": "@diver/basic-tools",
       "displayName": "基础工具",

@@ -12,6 +12,7 @@
     "@diver/mcp": "file:../mcp",
     "@diver/memory": "file:../memory",
     "@diver/native-bridge": "file:../native-bridge",
+    "@diver/peer": "file:../peer",
     "@diver/self-prompt": "file:../self-prompt",
     "@diver/web-tools": "file:../web-tools"
   }

@@ -1,0 +1,23 @@
+{
+  "name": "@diver/peer",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Diver peer messaging plugin: send_to_peer tool bridging agent-to-agent messages through the shell message router (P2-2).",
+  "main": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@cos/plugin-api": "workspace:*",
+    "@diver/native-bridge": "file:../native-bridge",
+    "cordis": "4.0.0-rc.7"
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "typescript": "~5.6.2"
+  }
+}

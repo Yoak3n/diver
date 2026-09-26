@@ -339,6 +339,38 @@ export async function handleRequest(
       return
     }
 
+    // /api/inbox —— P2-2 互实例消息注入：壳消息路由（services/peer::send）调用，
+    // from 由壳按身份头盖章（来源可信，不采信调用方自称）；消息进 session inbox
+    // （InboxTarget：next-turn 缺省 / next-step 步间插话），agent 下一轮当输入。
+    // body: { text, from: { id, name }, target?: 'next-turn' | 'next-step' }
+    if (pathname === '/api/inbox' && req.method === 'POST') {
+      const body = await readBody(req)
+      const text = String(body.text ?? '').trim()
+      if (!text) {
+        sendJson(res, 400, { error: 'text 必填' })
+        return
+      }
+      const from = (body.from ?? {}) as { id?: string; name?: string }
+      const fromId = String(from.id ?? '').trim()
+      if (!fromId) {
+        sendJson(res, 400, { error: 'from.id 必填' })
+        return
+      }
+      const fromName = String(from.name ?? '').trim() || fromId
+      const target = body.target === 'next-step' ? 'next-step' : 'next-turn'
+      const msg = createUserMessage(`【消息来自实例 ${fromName}（${fromId}）】\n${text}`, {
+        kind: 'plugin',
+        detail: `peer:${fromId}`,
+      })
+      const agent = await deps.ensureAgent()
+      // InboxTarget 两档：followup = send(…, 'next-turn', true)，steer = next-step
+      // （harness agent-loop 等价实现，接口面只暴露这两档）。
+      if (target === 'next-step') agent.steer(msg)
+      else agent.followup(msg)
+      sendJson(res, 200, { sessionId: String(agent.id), messageId: String(msg.id), queued: target })
+      return
+    }
+
     // /api/shutdown —— 优雅退出（仅限本应用：必须携带 DIVER_SHUTDOWN_TOKEN）。
     // Tauri 壳退出时调用：触发 Node 侧 settle() 完整 dispose agent 树后 exit(0)，
     // 避免强杀导致孤儿进程/未落盘的会话状态。令牌不匹配直接 403，静默返回。

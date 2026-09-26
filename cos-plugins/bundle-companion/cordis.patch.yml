@@ -12,6 +12,10 @@
       config:
         digestIntervalMs: 600000
 
+    # 互实例消息：send_to_peer 工具（壳消息路由 → 对端 /api/inbox 注入，P2-2）
+    - id: peer
+      name: '@diver/peer'
+
     # 五个基础工具：read / write / edit / sh / grep（grep 引擎在 Rust 壳，经 /rpc 调用）
     - id: basic-tools
       name: '@diver/basic-tools'

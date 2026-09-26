@@ -6,16 +6,16 @@ use serde::{Deserialize, Serialize};
 pub const FILE_NAME: &str = "instances.json";
 /// 保留给零迁移实例的 id，不可删。
 pub const DEFAULT_ID: &str = "default";
-/// 零迁移实例的初始名称（可改）。
-pub const DEFAULT_NAME: &str = "小潜";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct InstanceMeta {
     /// 不可变实例 id，路径安全字符集 `[a-z0-9-]`。
     pub id: String,
-    /// 展示名称，可改。
-    pub name: String,
+    /// 展示名称，**创建时可不命名**（`None` = 未命名）——
+    /// 名字通常由用户与其聊天后经人格卡片回填，创建时直接命名只是可选捷径。
+    #[serde(default)]
+    pub name: Option<String>,
     /// 是否随应用启动（P1 起生效，P0 只存储）。
     #[serde(default = "default_true")]
     pub enabled: bool,

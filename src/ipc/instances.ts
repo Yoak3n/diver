@@ -8,8 +8,8 @@ import { invoke } from "./core";
 export interface InstanceMeta {
   /** 不可变实例 id，路径安全字符集 [a-z0-9-] */
   id: string;
-  /** 展示名称，可改 */
-  name: string;
+  /** 展示名称；null = 未命名（名字通常由用户与其聊天后经人格卡片回填） */
+  name: string | null;
   /** 是否随应用启动（P1 起生效，P0 只存储） */
   enabled: boolean;
   /** 头像留位 */
@@ -18,17 +18,17 @@ export interface InstanceMeta {
   createdAt: number;
 }
 
-/** 列出全部实例（首次访问自动登记 default）。 */
+/** 列出全部实例（首次访问自动登记 default，未命名）。 */
 export function listInstances(): Promise<InstanceMeta[]> {
   return invoke<InstanceMeta[]>("list_instances");
 }
 
-/** 登记新实例：名称自动生成 id，只登记不启动。 */
-export function createInstance(name: string): Promise<InstanceMeta> {
-  return invoke<InstanceMeta>("create_instance", { name });
+/** 登记新实例：命名可选（留空 = 未命名），id 自动生成，只登记不启动。 */
+export function createInstance(name?: string): Promise<InstanceMeta> {
+  return invoke<InstanceMeta>("create_instance", { name: name?.trim() || null });
 }
 
-/** 改名 / 启用开关（id 不可变）。 */
+/** 改名 / 启用开关（id 不可变；name 传空串 = 清空回未命名）。 */
 export function updateInstance(
   id: string,
   patch: { name?: string; enabled?: boolean },

@@ -62,8 +62,9 @@ pub fn list_instances(app: &AppHandle) -> Vec<InstanceMeta> {
     load_or_seed(app).instances
 }
 
-/// 登记新实例并落盘（P0 只登记不启动）。
-pub fn create_instance(app: &AppHandle, name: &str) -> Result<InstanceMeta, InstanceError> {
+/// 登记新实例并落盘（P0 只登记不启动）；`name` 可选——不命名留 `None`，
+/// 名字通常由用户与其聊天后经人格卡片回填。
+pub fn create_instance(app: &AppHandle, name: Option<&str>) -> Result<InstanceMeta, InstanceError> {
     let base = config_dir(app);
     let now = now_secs();
     let mut reg = load_or_seed_at(&base, now);

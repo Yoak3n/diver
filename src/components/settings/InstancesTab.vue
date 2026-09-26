@@ -18,17 +18,15 @@ onMounted(() => {
 });
 
 async function onCreate(): Promise<void> {
-  const name = newName.value.trim();
-  if (!name) return;
   creating.value = true;
-  const ok = await create(name);
+  const ok = await create(newName.value.trim() || undefined);
   creating.value = false;
   if (ok) newName.value = "";
 }
 
 function startRename(inst: InstanceMeta): void {
   editingId.value = inst.id;
-  editingName.value = inst.name;
+  editingName.value = inst.name ?? "";
 }
 
 function cancelRename(): void {
@@ -38,7 +36,7 @@ function cancelRename(): void {
 
 async function confirmRename(inst: InstanceMeta): Promise<void> {
   const name = editingName.value.trim();
-  if (!name || name === inst.name) {
+  if (name === (inst.name ?? "")) {
     cancelRename();
     return;
   }
@@ -46,8 +44,14 @@ async function confirmRename(inst: InstanceMeta): Promise<void> {
 }
 
 function onDelete(inst: InstanceMeta): void {
-  if (!window.confirm(`删除实例「${inst.name}」？仅移除登记，数据目录清理随 P1 落地。`)) return;
+  const label = inst.name ? `「${inst.name}」` : ` ${inst.id} `;
+  if (!window.confirm(`删除实例${label}？仅移除登记，数据目录清理随 P1 落地。`)) return;
   void remove(inst.id);
+}
+
+/** 展示名：未命名时回退占位（名字通常由人格卡片在聊天后回填）。 */
+function displayName(inst: InstanceMeta): string {
+  return inst.name || "未命名";
 }
 
 function formatDate(unix: number): string {
@@ -59,19 +63,20 @@ function formatDate(unix: number): string {
   <label class="group-title">实例清单</label>
   <p class="hint">
     每个实例拥有独立的记忆 / 会话 / 人格 / 插件配置。当前版本只登记实例，
-    <strong>多实例运行即将支持</strong>；人格 / 模型 / 插件集在各自的实例设置里配置，不在此登记。
+    <strong>多实例运行即将支持</strong>。命名可选：名字通常由你与它聊天后经人格卡片回填，
+    创建时也可直接命名；人格 / 模型 / 插件集在各自的实例设置里配置，不在此登记。
   </p>
 
   <div class="create-row">
     <input
       v-model="newName"
       class="name-input"
-      placeholder="实例名称（如 小潜二号）"
+      placeholder="实例名称（可选，可留空稍后由人格卡片回填）"
       maxlength="32"
       :disabled="!tauriAvailable() || creating"
       @keyup.enter="onCreate"
     />
-    <button class="btn small" :disabled="!tauriAvailable() || creating || !newName.trim()" @click="onCreate">
+    <button class="btn small" :disabled="!tauriAvailable() || creating" @click="onCreate">
       {{ creating ? "登记中…" : "新建实例" }}
     </button>
   </div>
@@ -81,7 +86,7 @@ function formatDate(unix: number): string {
 
   <div class="instance-list">
     <div v-for="inst in instances" :key="inst.id" class="instance-card">
-      <div class="avatar">{{ inst.name.slice(0, 1) }}</div>
+      <div class="avatar" :class="{ unnamed: !inst.name }">{{ (inst.name || "·").slice(0, 1) }}</div>
       <div class="meta">
         <template v-if="editingId === inst.id">
           <input
@@ -94,7 +99,7 @@ function formatDate(unix: number): string {
         </template>
         <template v-else>
           <div class="name-row">
-            <span class="name">{{ inst.name }}</span>
+            <span class="name" :class="{ unnamed: !inst.name }">{{ displayName(inst) }}</span>
             <span v-if="inst.id === 'default'" class="badge">默认</span>
           </div>
           <div class="id-row">id：{{ inst.id }} · 登记于 {{ formatDate(inst.createdAt) }}</div>
@@ -128,7 +133,8 @@ function formatDate(unix: number): string {
   </div>
 
   <p class="hint">
-    「启用」控制是否随应用启动（P1 起生效）；默认实例不可删除（旧数据零迁移保留）。
+    「启用」控制是否随应用启动（P1 起生效）；改名保存空值 = 清空回未命名；
+    默认实例不可删除（旧数据零迁移保留）。
   </p>
 </template>
 
@@ -205,6 +211,10 @@ function formatDate(unix: number): string {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.unnamed {
+  color: var(--ink-dim);
+  font-style: italic;
 }
 .badge {
   font-size: 10px;

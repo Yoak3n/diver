@@ -39,14 +39,14 @@ async function refresh(): Promise<void> {
   }
 }
 
-/** 登记新实例（名称 → 自动生成 id），只登记不启动。 */
-async function create(name: string): Promise<boolean> {
+/** 登记新实例（命名可选，留空 = 未命名，之后由人格卡片回填），只登记不启动。 */
+async function create(name?: string): Promise<boolean> {
   notice.value = "";
   error.value = "";
   try {
     const meta = await createInstance(name);
     instances.value = await listInstances();
-    notice.value = `已登记实例「${meta.name}」（id: ${meta.id}）；多实例运行即将支持`;
+    notice.value = `已登记实例 ${meta.id}；名字可在与它聊天后由人格卡片回填，也可稍后手动命名`;
     return true;
   } catch (err) {
     fail(err, "新建实例失败");
@@ -54,7 +54,7 @@ async function create(name: string): Promise<boolean> {
   }
 }
 
-/** 改名（id 不可变）。 */
+/** 改名（id 不可变；空名 = 清空回未命名）。 */
 async function rename(id: string, name: string): Promise<boolean> {
   notice.value = "";
   error.value = "";

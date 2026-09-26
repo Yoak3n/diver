@@ -13,13 +13,14 @@ pub fn list_instances(app: AppHandle) -> Vec<InstanceMeta> {
     instances::list_instances(&app)
 }
 
-/// 登记新实例：输入名称，自动生成路径安全 id；P0 只登记不启动。
+/// 登记新实例：`name` 可选（不命名 → 未命名，由人格卡片回填）；
+/// 自动生成路径安全 id，P0 只登记不启动。
 #[tauri::command]
-pub fn create_instance(app: AppHandle, name: String) -> Result<InstanceMeta, String> {
-    instances::create_instance(&app, &name).map_err(err_text)
+pub fn create_instance(app: AppHandle, name: Option<String>) -> Result<InstanceMeta, String> {
+    instances::create_instance(&app, name.as_deref()).map_err(err_text)
 }
 
-/// 改名 / 启用开关（id 与登记时间不可变）。
+/// 改名 / 启用开关（id 与登记时间不可变；`name` 空串 = 清空回未命名）。
 #[tauri::command]
 pub fn update_instance(
     app: AppHandle,

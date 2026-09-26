@@ -1,6 +1,6 @@
 //! 实例清单纯逻辑：id 生成 / 校验，登记、改名、删除（无 IO，可单测）。
 
-use super::types::{InstanceError, InstanceMeta, InstancesFile, DEFAULT_ID, DEFAULT_NAME};
+use super::types::{InstanceError, InstanceMeta, InstancesFile, DEFAULT_ID};
 
 /// 校验实例 id：非空、路径安全字符集 `[a-z0-9-]`、不超过 64 字节。
 pub fn is_valid_id(id: &str) -> bool {
@@ -52,22 +52,31 @@ pub fn generate_id(name: &str, taken: &[String]) -> String {
     base
 }
 
-fn validate_name(name: &str) -> Result<&str, InstanceError> {
+/// 归一化展示名：去首尾空白；空 = 不命名（`None`，之后由人格卡片回填）；
+/// 非空时校验 1–32 字符。
+fn normalize_name(name: &str) -> Result<Option<String>, InstanceError> {
     let name = name.trim();
-    if name.is_empty() || name.chars().count() > 32 {
+    if name.is_empty() {
+        return Ok(None);
+    }
+    if name.chars().count() > 32 {
         return Err(InstanceError::InvalidName);
     }
-    Ok(name)
+    Ok(Some(name.to_string()))
 }
 
 impl InstancesFile {
-    /// 登记新实例：名称校验 + 自动生成路径安全 id，返回新条目。
-    pub fn create(&mut self, name: &str, now: u64) -> Result<InstanceMeta, InstanceError> {
-        let name = validate_name(name)?;
+    /// 登记新实例：`name` 可选（不命名留空 / `None`），id 自动生成路径安全短 id。
+    pub fn create(
+        &mut self,
+        name: Option<&str>,
+        now: u64,
+    ) -> Result<InstanceMeta, InstanceError> {
+        let name = normalize_name(name.unwrap_or(""))?;
         let taken: Vec<String> = self.instances.iter().map(|i| i.id.clone()).collect();
         let meta = InstanceMeta {
-            id: generate_id(name, &taken),
-            name: name.to_string(),
+            id: generate_id(name.as_deref().unwrap_or(""), &taken),
+            name,
             enabled: true,
             avatar: None,
             created_at: now,
@@ -77,6 +86,8 @@ impl InstancesFile {
     }
 
     /// 改名 / 启用开关（id 与登记时间不可变）。
+    ///
+    /// `name` 语义：`None` 不改；`Some("")` 清空（回到未命名）；`Some(非空)` 改名。
     pub fn update(
         &mut self,
         id: &str,
@@ -89,7 +100,7 @@ impl InstancesFile {
             .find(|i| i.id == id)
             .ok_or(InstanceError::NotFound)?;
         if let Some(n) = name {
-            inst.name = validate_name(n)?.to_string();
+            inst.name = normalize_name(n)?;
         }
         if let Some(e) = enabled {
             inst.enabled = e;
@@ -112,6 +123,8 @@ impl InstancesFile {
     }
 
     /// 确保 `default` 在册（missing-default 兜底），缺失时补登记并返回 true。
+    ///
+    /// 不预命名：名字由用户与其聊天后经人格卡片回填（创建时命名只是可选）。
     pub fn ensure_default(&mut self, now: u64) -> bool {
         if self.instances.iter().any(|i| i.id == DEFAULT_ID) {
             return false;
@@ -120,7 +133,7 @@ impl InstancesFile {
             0,
             InstanceMeta {
                 id: DEFAULT_ID.to_string(),
-                name: DEFAULT_NAME.to_string(),
+                name: None,
                 enabled: true,
                 avatar: None,
                 created_at: now,

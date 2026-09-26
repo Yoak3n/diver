@@ -8,6 +8,10 @@
 //! - 持久化绑定在 `config/shortcuts.rs`（`shortcuts.json`）；**热插拔** =
 //!   写配置 + 调用插件运行时 `register` / `unregister`，不重启应用。
 //!
+//! 快捷键作用域占位（P1-3）：动作只作用于 active 实例的窗口/桌宠；注册冲突
+//! （外部程序或另一壳先占）时**后启动者跳过并提示**（先注册者得，OS 仲裁），
+//! 不阻断其余绑定注册。per-instance 显式选占随 P2-3 多桌宠配置化。
+//!
 //! 触发动作只在 `Pressed`（按下）时执行一次，`Released` 忽略。
 
 use std::collections::HashMap;
@@ -69,14 +73,22 @@ impl ShortcutManager {
         }
     }
 
-    /// 启动初始化：读配置，注册全部启用绑定（幂等）。
+    /// 启动初始化：读配置，注册全部启用绑定（幂等；被占用的跳过并提示）。
     pub fn init(&self, app: &AppHandle) {
         let config = load_config(app);
-        if let Err(e) = self.sync(app, &config) {
-            log::error!("[shortcut] 初始化注册失败: {e}");
-        } else {
-            let enabled = config.bindings.iter().filter(|b| b.enabled).count();
-            log::info!("[shortcut] 已注册 {enabled} 个全局快捷键");
+        match self.sync(app, &config) {
+            Ok(skipped) => {
+                let enabled = config.bindings.iter().filter(|b| b.enabled).count();
+                log::info!(
+                    "[shortcut] 已注册 {} 个全局快捷键（跳过 {} 个被占用）",
+                    enabled - skipped.len(),
+                    skipped.len()
+                );
+                if !skipped.is_empty() {
+                    notify_skipped(app, &skipped);
+                }
+            }
+            Err(e) => log::error!("[shortcut] 初始化注册失败: {e}"),
         }
     }
 
@@ -96,7 +108,7 @@ impl ShortcutManager {
     pub fn resume(&self, app: &AppHandle) -> Result<(), String> {
         *self.suspended.lock().unwrap() = false;
         let config = load_config(app);
-        self.sync(app, &config)
+        self.sync(app, &config).map(|_| ())
     }
 
     /// 尽力注销；「本来就没注册」不视为错误（录制挂起后再次注销是正常路径）。
@@ -109,16 +121,26 @@ impl ShortcutManager {
 
     /// 全量同步：注销全部 → 按配置注册启用项。
     ///
+    /// 冲突容错（P1-3 占位策略）：先注册者得（OS 仲裁），单条被占用不阻断其余
+    /// 注册；返回被跳过的 accelerator，由调用方决定是否提示。
     /// 用于启动与批量变更；单条变更走 [set_binding] / [remove_binding]（热插拔）。
-    pub fn sync(&self, app: &AppHandle, config: &ShortcutsConfig) -> Result<(), String> {
+    pub fn sync(
+        &self,
+        app: &AppHandle,
+        config: &ShortcutsConfig,
+    ) -> Result<Vec<String>, String> {
         let gs = app.global_shortcut();
         gs.unregister_all().map_err(|e| format!("注销全部快捷键失败: {e}"))?;
         self.registered.lock().unwrap().clear();
 
+        let mut skipped = Vec::new();
         for binding in config.bindings.iter().filter(|b| b.enabled) {
-            self.register_one(app, binding)?;
+            if let Err(e) = self.register_one(app, binding) {
+                log::warn!("[shortcut] 跳过 {}：{e}", binding.accelerator);
+                skipped.push(binding.accelerator.trim().to_string());
+            }
         }
-        Ok(())
+        Ok(skipped)
     }
 
     /// 热插拔：注册/更新单个绑定（写配置 + 运行时注册）。
@@ -244,6 +266,16 @@ impl ShortcutManager {
         );
         Ok(())
     }
+}
+
+/// 冲突提示（P1-3 占位策略）：被占用的绑定跳过注册，通知用户改绑或释放。
+fn notify_skipped(app: &AppHandle, skipped: &[String]) {
+    let list = skipped.join("、");
+    crate::shell::notify::show(
+        app,
+        "全局快捷键未注册",
+        &format!("{list} 已被其他程序占用，本实例跳过注册（可在设置中改绑）"),
+    );
 }
 
 /// 按动作分发到窗口/桌宠（快捷键 handler 同步调用，使用壳内全局管理器）。

@@ -84,7 +84,9 @@ configure(builder)
   桌宠继续运行，到点恢复主窗口
 - **启动配置**（`config/window_startup.rs`）：`auto_open_main` / `auto_open_pet`
   持久化在 app data 目录，Tauri command `get/set_window_startup_config` 读写
-- **单实例**：第二个实例启动时经命名管道通知已有实例（回调把主窗口带到前台），自身退出
+- **单实例**：第二个实例启动时经命名管道通知已有实例（回调把主窗口带到前台），自身退出；
+  `DIVER_MULTI_INSTANCE` 设置（非空且非 0）时跳过保护允许多壳并行（P1-3 可选化，
+  多壳共享实例清单与记忆库，风险自负）
 
 ## 本地服务（services/）
 

@@ -141,6 +141,16 @@ impl Manager {
             config.transparent,
             config.always_on_top
         );
+        // 启动时序探针：记录 webview 页面加载起止，定位「窗口建好 → 内容显示」耗时段。
+        let probe_label = window_type.label().to_string();
+        let builder = builder.on_page_load(move |_, payload| {
+            log::info!(
+                "[probe] {} page_load {:?} url={}",
+                probe_label,
+                payload.event(),
+                payload.url()
+            );
+        });
         let window = builder.build()?;
         log::info!("[window] {:?} built ok", window_type);
         // 构建返回 Ok 不代表 webview 创建成功（tauri 先返回后创建）。

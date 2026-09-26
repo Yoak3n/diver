@@ -34,6 +34,13 @@ pub fn get_sidecar_url() -> String {
     SidecarManager::global().api_base_url()
 }
 
+/// 本地服务鉴权令牌（P2-1 / BUG-002）：前端 `fetch` / `EventSource` 附着后
+/// 才能访问 sidecar backend `/api`（`/api/health` 与静态 UI 除外）。
+#[tauri::command]
+pub fn get_service_token() -> String {
+    crate::core::sidecar::service_token().to_string()
+}
+
 /// 弹出原生通知（托盘通知；前端可直接调用，Node 侧经 /rpc notify::show）。
 #[tauri::command]
 pub fn notify(app: AppHandle, title: String, body: String) {

@@ -37,7 +37,7 @@ pub type SidecarJob = ();
 pub use job_object::SidecarJob;
 
 pub use launch::{LaunchContext, LaunchHooks, PreflightStatus};
-pub use paths::DEFAULT_PORT;
+pub use paths::{auth_bearer, service_token, DEFAULT_PORT};
 pub use process::SidecarManager;
 pub use runtimes::Runtimes;
 pub use status::{SidecarState, SidecarStatus};

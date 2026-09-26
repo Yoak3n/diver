@@ -192,6 +192,7 @@ pub async fn dispatch_inject(base_url: &str, req: &InjectRequest) -> Result<Valu
     let client = reqwest::Client::new();
     let res = client
         .post(&url)
+        .header("Authorization", crate::core::sidecar::auth_bearer())
         .json(&body)
         .send()
         .await

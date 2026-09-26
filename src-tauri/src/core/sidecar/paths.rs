@@ -20,6 +20,28 @@ pub(super) fn shutdown_token() -> &'static str {
     })
 }
 
+/// 本地服务鉴权令牌（P2-1 / BUG-002）：每次启动壳时随机生成，经 `DIVER_TOKEN`
+/// 环境变量注入 sidecar；壳内 HTTP 调用经 [auth_bearer] 携带。debug 构建额外
+/// 落盘 `<app_data>/service-token` 供本地脚本自动读取，release 不落盘。
+pub fn service_token() -> &'static str {
+    static TOKEN: once_cell::sync::OnceCell<String> = once_cell::sync::OnceCell::new();
+    TOKEN.get_or_init(|| {
+        use std::collections::hash_map::RandomState;
+        use std::hash::{BuildHasher, Hasher};
+        // RandomState 的种子每进程随机：两组 hasher 输出拼 128 bit 熵。
+        let mut h1 = RandomState::new().build_hasher();
+        h1.write_u64(0xD1FE_0001);
+        let mut h2 = RandomState::new().build_hasher();
+        h2.write_u64(0x7A91_0002);
+        format!("{:016x}{:016x}", h1.finish(), h2.finish())
+    })
+}
+
+/// 壳内 HTTP 调用（reqwest）携带的 `Authorization` 头值。
+pub fn auth_bearer() -> String {
+    format!("Bearer {}", service_token())
+}
+
 /// release 构建时 sidecar 资源在 bundle resources 下的相对路径。
 #[cfg(not(debug_assertions))]
 pub(super) const RELEASE_SIDECAR_DIR: &str = "sidecar";

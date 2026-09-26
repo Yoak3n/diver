@@ -127,6 +127,7 @@ impl SidecarManager {
                 .env("COS_HOME", &cos_home)
                 .env("DIVER_PORT", self.port().to_string())
                 .env("DIVER_SHUTDOWN_TOKEN", shutdown_token())
+                .env("DIVER_TOKEN", super::paths::service_token())
                 .env("DIVER_UI_DIST", &ui_dist)
                 .env("DIVER_BUNDLE_DIR", clean(&bundle_dir))
                 .env("DIVER_PLUGINS_ROOT", clean(&plugins_dir))
@@ -218,6 +219,7 @@ impl SidecarManager {
                 .env("COS_HOME", &cos_home)
                 .env("DIVER_PORT", self.port().to_string())
                 .env("DIVER_SHUTDOWN_TOKEN", shutdown_token())
+                .env("DIVER_TOKEN", super::paths::service_token())
                 .env("DIVER_BUNDLE_DIR", ctx.bundle_dir.display().to_string())
                 .env("DIVER_PLUGINS_ROOT", ctx.plugins_root.display().to_string())
                 .env(

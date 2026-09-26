@@ -28,6 +28,7 @@ async fn http_json(method: &str, url: &str, body: Option<Value>) -> Result<Value
         Some(b) => builder.json(&b),
         None => builder,
     };
+    let builder = builder.header("Authorization", crate::core::sidecar::auth_bearer());
     let res = builder
         .send()
         .await

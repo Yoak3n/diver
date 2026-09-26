@@ -6,6 +6,7 @@
 //! 依赖方向：services → config/crates；禁止 use `crate::app` / `crate::shell` / `crate::core`
 //! （壳能力经 start 时注入的闭包提供）。
 
+mod auth;
 mod grep;
 mod memory;
 mod notify;

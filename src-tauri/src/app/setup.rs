@@ -33,6 +33,7 @@ pub fn generate_handlers() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + 
         get_setup_progress,
         restart_sidecar,
         get_sidecar_url,
+        get_service_token,
         list_shortcuts,
         set_shortcut,
         remove_shortcut,
@@ -243,6 +244,7 @@ pub fn configure(builder: Builder<tauri::Wry>) -> Builder<tauri::Wry> {
             };
             match crate::services::start(
                 app.handle(),
+                crate::core::sidecar::service_token().to_string(),
                 notify,
                 presence_dispatch,
                 memory_dbs,
@@ -252,6 +254,18 @@ pub fn configure(builder: Builder<tauri::Wry>) -> Builder<tauri::Wry> {
             ) {
                 Some(port) => std::env::set_var("DIVER_MEMORY_PORT", port.to_string()),
                 None => log::error!("本地服务启动失败，记忆功能不可用"),
+            }
+            // debug 形态把鉴权令牌落盘供本地脚本（scripts/*.mjs）自动读取；
+            // release 不落盘（令牌只活在进程 env / 内存）。
+            #[cfg(debug_assertions)]
+            {
+                if let Ok(dir) = app.path().app_data_dir() {
+                    match std::fs::write(dir.join("service-token"), crate::core::sidecar::service_token())
+                    {
+                        Ok(()) => log::debug!("[init] service-token 已落盘（debug 形态）"),
+                        Err(e) => log::warn!("[init] service-token 落盘失败: {e}"),
+                    }
+                }
             }
         }
 

@@ -36,11 +36,14 @@ const catalog = catalogJson as PetModelCatalog;
  * 模型文件 URL 解析：dev 由 vite 从 public/pet/models 提供；release 模型外置为
  * bundle resources（不进 diver.exe），经 asset 协议读安装目录明文文件。
  * 绝对路径由 Rust 侧拼接（剥 `\\?\` 前缀 + 按段拼），前端只递相对路径。
+ * 目录分隔符必须归一成字面 `/`：模型内部（moc/贴图/动作）按 URL 语义相对解析，
+ * `%5C`/`%2F` 形态会把相对引用塌到根（实测 moc3 HTTP 403）。
  */
 export async function resolveModelUrl(model3: string): Promise<string> {
   if (import.meta.env.DEV) return model3;
   const rel = model3.replace(/^\/?pet\/models\//, "");
-  return convertFileSrc(await getPetModelPath(rel));
+  const url = convertFileSrc(await getPetModelPath(rel));
+  return url.replace(/%2f|%5c/gi, "/");
 }
 
 export async function loadModelCatalog(): Promise<PetModelCatalog> {

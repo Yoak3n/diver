@@ -94,6 +94,10 @@ Tauri 侧用 axum 起一个只监听 `127.0.0.1` 的 HTTP 服务，供 Node side
 （sidecar 作为 agent 进程不直接持有 SQLite 连接）：
 
 - `POST /rpc`：统一 JSON-RPC 入口（`{ method, params }` → `{ ok, data }` / `{ ok: false, error }`）
+- **鉴权（P2-1 / BUG-002）**：全路由过 `services/auth` 中间件——`Host` 必须回环名
+  （防 DNS rebinding）+ `Authorization: Bearer <DIVER_TOKEN>`（每 run 随机令牌，
+  经 env 注入 sidecar；比对不过 401 / 403）。backend `/api` 同闸（`GET /api/health`
+  与 `/api/shutdown` 豁免，SSE 走 `?token=`），CORS 为受信 origin 白名单（非 `*`）
 - 当前路由：`grep::*` 前缀 → `grep::dispatch`（grep 搜索，`spawn_blocking` 跑
   `diver-search` 引擎）；`screenshot::*` → `screenshot::dispatch`（`diver-shot` 捕获 + JPEG）；其余 → `memory::dispatch`（见 [关系层记忆](memory.md)）
 - 扩展方式：`ServiceState` 加字段 → `rpc::route` 按 method 前缀分流 → merge 进 Router

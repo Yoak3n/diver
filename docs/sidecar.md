@@ -24,6 +24,8 @@ agent 大脑是一个**常驻 Node 进程**，运行仓库内自研 **cos harnes
 - 环境变量：`DIVER_PORT`（缺省 = 壳随机预选，显式非 0 才固定；附加实例一律随机端口）、
   `DIVER_MEMORY_PORT`、`DIVER_INSTANCE_ID`（P1-2 身份头路由：native-bridge RPC 带
   `X-Diver-Instance` 头，壳按头路由到该实例私有记忆库，无头回退 active）、
+  `DIVER_TOKEN`（P2-1 本地服务鉴权令牌，每 run 随机；native-bridge RPC 以
+  `Authorization: Bearer` 携带，backend `/api` 同闸校验）、
   `DIVER_SHUTDOWN_TOKEN`、`DIVER_UI_DIST`、`DIVER_MCP_CONFIG_FILE`
 - stdout 检测 `DIVER_READY` → 状态 Running（就绪行回报实际端口，与预选不一致以 Node 为准）；
   主窗口隐藏不影响 sidecar

@@ -120,6 +120,11 @@ node scripts/readlog.mjs      # 查看会话日志
 node scripts/memory-test.mjs  # 记忆插件：喂事实 → recall 验证
 ```
 
+冒烟脚本自动携带本地服务鉴权令牌（P2-1 / BUG-002）：取 `DIVER_TOKEN` 环境变量，
+缺省回落 debug 形态壳端落盘的 `<app_data>/service-token`（`scripts/service-auth.mjs`）。
+手动 curl `/api` 或 `/rpc` 时同样需要 `Authorization: Bearer <令牌>`（`GET /api/health`
+与 `/api/shutdown` 除外）。
+
 ## 日志
 
 - Rust 侧日志：`tauri-plugin-log` 输出到控制台 + Webview + 文件

@@ -323,9 +323,6 @@ pub fn configure(builder: Builder<tauri::Wry>) -> Builder<tauri::Wry> {
             startup.auto_open_main,
             startup.auto_open_pet
         );
-        if crate::config::multi_instance_enabled() {
-            log::warn!("[init] 多壳模式（DIVER_MULTI_INSTANCE）：单实例保护已跳过");
-        }
         // 仅当用户要求自动打开，或仍需首启准备（解压 / Node）时弹出主窗口看进度。
         // 禁止用 last_progress().is_none() 兜底 —— 该值是进程内内存，每次启动都是
         // None，会恒真并旁路「启动时打开主窗口」配置。

@@ -79,18 +79,6 @@ fn harness_dir() -> PathBuf {
         })
 }
 
-/// `DIVER_MULTI_INSTANCE` 开关（P1-3 单例插件可选化）：设置且非空、非 `0`
-/// → 跳过单实例保护，允许多壳并行（开发 / 测试）；缺省 = 保留保护（二启聚焦
-/// 已有窗口）。多壳共享实例清单与记忆库，缺省保护正是为挡这类并发写。
-pub fn multi_instance_enabled() -> bool {
-    parse_flag(std::env::var("DIVER_MULTI_INSTANCE").ok().as_deref())
-}
-
-/// 纯解析：环境开关字符串 → 布尔（`None` / 空串 / `"0"` = 关）。
-fn parse_flag(v: Option<&str>) -> bool {
-    matches!(v, Some(v) if !v.trim().is_empty() && v.trim() != "0")
-}
-
 /// 从配置文件读取并反序列化指定类型的配置。
 ///
 /// 文件不存在或内容解析失败时返回 `T::default()`，保证应用始终可用。
@@ -174,15 +162,5 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("diver-cfg-miss-{}", std::process::id()));
         let loaded: Demo = load_at(&dir, "nope.json");
         assert_eq!(loaded, Demo::default());
-    }
-
-    #[test]
-    fn multi_instance_flag_parse() {
-        assert!(!parse_flag(None));
-        assert!(!parse_flag(Some("")));
-        assert!(!parse_flag(Some("  ")));
-        assert!(!parse_flag(Some("0")));
-        assert!(parse_flag(Some("1")));
-        assert!(parse_flag(Some("true")));
     }
 }

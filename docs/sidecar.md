@@ -21,9 +21,15 @@ agent 大脑是一个**常驻 Node 进程**，运行仓库内自研 **cos harnes
   | `--harness` | `<repo>/harness` | `resources/sidecar/harness` |
   | `COS_HOME` | `harness/.cos-home-<id>` | `%APPDATA%/com.diver.companion/cos-<id>` |
 
-- 环境变量：`DIVER_PORT`（缺省 = 壳随机预选，显式非 0 才固定）、`DIVER_MEMORY_PORT`、`DIVER_SHUTDOWN_TOKEN`、
-  `DIVER_UI_DIST`、`DIVER_MCP_CONFIG_FILE`
-- stdout 检测 `DIVER_READY` → 状态 Running；主窗口隐藏不影响 sidecar
+- 环境变量：`DIVER_PORT`（缺省 = 壳随机预选，显式非 0 才固定；附加实例一律随机端口）、
+  `DIVER_MEMORY_PORT`、`DIVER_INSTANCE_ID`（P1-2 身份头路由：native-bridge RPC 带
+  `X-Diver-Instance` 头，壳按头路由到该实例私有记忆库，无头回退 active）、
+  `DIVER_SHUTDOWN_TOKEN`、`DIVER_UI_DIST`、`DIVER_MCP_CONFIG_FILE`
+- stdout 检测 `DIVER_READY` → 状态 Running（就绪行回报实际端口，与预选不一致以 Node 为准）；
+  主窗口隐藏不影响 sidecar
+- 多实例（P1-2）：每个 enabled 实例一个 sidecar（`core/sidecar/runtimes` 统一管理），
+  各持端口 / COS_HOME；就绪登记 `<app_data_dir>/instances/<id>.json`（pid / port / 名字 /
+  启动时间），退出注销、壳启动按 pid 存活清扫僵尸
 - 退出：`POST /api/shutdown` → `Child::kill` → Windows Job Object 三级兜底
 
 ## 模块解析（摘要）

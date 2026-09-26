@@ -50,11 +50,53 @@ export function apply(ctx: Context) {
         text: { type: 'string', description: '消息内容' },
         target: {
           type: 'string',
-          description: "投递时机：'next-turn'（对方下一轮，缺省）或 'next-step'（对方当前轮步间插话）",
+          description:
+            "投递时机：'next-turn'（对方下一轮，缺省）/'next-step'（对方当前轮步间插话）/'inject'（只入对方上下文，不打扰对方）",
         },
       },
       required: ['to', 'text'],
     },
   })
-  console.log('[peer] 互实例消息工具就绪（send_to_peer → 壳消息路由）')
+
+  ctx.tools.register('send_to_group', async (args: unknown) => {
+    const a = (args ?? {}) as { text?: unknown; wake?: unknown }
+    const text = String(a.text ?? '').trim()
+    if (!text) return { content: JSON.stringify({ error: 'text 必填' }) }
+    const wake = a.wake === true
+    try {
+      const data = await nativeRpc<{ delivered: unknown[]; failed: unknown[]; queued: string }>(
+        'peer::broadcast',
+        { text, wake },
+        { label: 'send_to_group' },
+      )
+      return { content: JSON.stringify({ sent: true, ...data }) }
+    } catch (e) {
+      return { content: JSON.stringify({ error: String((e as Error)?.message ?? e) }) }
+    }
+  }, {
+    description:
+      '在群聊里向其它所有实例发言（广播，不发给自己）。缺省只入对方上下文、不唤醒（对方不必回复）；' +
+      'wake=true 才唤醒对方给发言机会。群聊规则：不必每条都回，想说才说；被 @ 点名时再认真接话。',
+    parameters: {
+      type: 'object',
+      properties: {
+        text: { type: 'string', description: '发言内容' },
+        wake: { type: 'boolean', description: '是否唤醒对方给发言机会（缺省 false = 只入上下文不打扰）' },
+      },
+      required: ['text'],
+    },
+  })
+
+  ctx.tools.register('stay_silent', async () => ({
+    content: JSON.stringify({
+      ok: true,
+      silent: true,
+      note: '已记录：本轮选择不发言。请直接结束本回合，不要再输出任何文字内容。',
+    }),
+  }), {
+    description:
+      '选择不发言：收到消息（群聊或私聊）但没有想说的时候调用。不必每条都回——调用后直接结束回合，不产生回复。',
+    parameters: { type: 'object', properties: {} },
+  })
+  console.log('[peer] 互实例消息工具就绪（send_to_peer / send_to_group / stay_silent）')
 }

@@ -3,7 +3,7 @@
 import type { ServerResponse } from 'node:http'
 import type { Context } from 'cordis'
 import { nativeRpc } from '@diver/native-bridge/rpc'
-import { injectOrigin, injectUiLabel } from './interaction.ts'
+import { injectOrigin, injectUiLabel, peerSourceId, stripPeerMarker } from './interaction.ts'
 import { textOf, imagesOf } from './session-helpers.ts'
 import { SESSION_ID } from './agent.ts'
 import type { WebState } from './state.ts'
@@ -50,6 +50,15 @@ export function attachEventListeners(
         const injectFrom = injectOrigin(ev.data.source)
         if (!isHuman && injectLabel === null) break
         const text = textOf(ev.data.content)
+        const peerFrom = peerSourceId(ev.data.source)
+        if (peerFrom !== null) {
+          // P2-3 来源标记渲染：peer 消息正文保留（剥壳盖章首行），from 结构化给 UI 徽标。
+          broadcast({
+            type: 'message', kind: 'user', sessionId: String(session.id),
+            messageId: ev.data.id, content: stripPeerMarker(text), origin: 'peer', from: peerFrom, time,
+          })
+          break
+        }
         if (injectLabel !== null) {
           // presence 展示问候正文；互动/主动折叠为一行
           const isPresence = injectFrom === 'presence'

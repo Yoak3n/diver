@@ -75,3 +75,17 @@ export function injectOrigin(source: unknown): 'interaction' | 'presence' | 'pro
   if (s?.detail === 'self-prompt-restart') return 'proactive'
   return 'proactive'
 }
+
+/** peer 消息来源实例 id（source.kind 'plugin' + detail 'peer:<id>'）；非 peer 返回 null。 */
+export function peerSourceId(source: unknown): string | null {
+  const s = source as { kind?: string; detail?: string } | null | undefined
+  if (s?.kind !== 'plugin') return null
+  const d = s.detail ?? ''
+  return d.startsWith('peer:') && d.length > 5 ? d.slice(5) : null
+}
+
+/** 剥掉壳盖章的首行「【消息来自实例 …】」，保留正文原文（UI 显示用；空正文回退原文）。 */
+export function stripPeerMarker(text: string): string {
+  const stripped = text.replace(/^【消息来自实例 [^\n]*?】\r?\n?/, '')
+  return stripped.trim() !== '' ? stripped : text
+}

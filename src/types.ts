@@ -70,7 +70,9 @@ export interface ChatMessage {
   id: string;
   kind: "user" | "assistant" | "system" | "activity-summary";
   content: string;
-  origin: "user" | "assistant" | "presence" | "interaction" | "proactive";
+  origin: "user" | "assistant" | "presence" | "interaction" | "proactive" | "peer";
+  /** origin=peer：来源实例 id（P2-3 来源徽标，名字由实例清单解析）。 */
+  from?: string;
   time: number;
   streaming?: boolean;
   /** 用户消息附带图片（mime + base64，不含 data: 前缀）。 */
@@ -115,6 +117,8 @@ export interface ComposerAttachment extends ChatImage {
 
 /** Rust 侧 sidecar 状态（Tauri 命令 get_sidecar_status 返回）。 */
 export interface SidecarStatus {
+  /** 实例 id（P2-3 多实例事件广播，前端按 id 过滤）。 */
+  id: string;
   state: "stopped" | "starting" | "running" | "crashed";
   port: number;
   logs: string[];
@@ -138,7 +142,7 @@ export interface UserQuestionAnswerItem {
 
 export type StreamEvent =
   | { type: "hello"; persona: string; provider: string; model: string; modelConfigured: boolean; sessionId: string | null; busy: boolean }
-  | { type: "message"; kind: "user" | "assistant" | "system"; sessionId: string; messageId: string; turnMessageId?: string; content: string; origin: "user" | "assistant" | "presence" | "interaction" | "proactive"; time: number; images?: ChatImage[] }
+  | { type: "message"; kind: "user" | "assistant" | "system"; sessionId: string; messageId: string; turnMessageId?: string; content: string; origin: "user" | "assistant" | "presence" | "interaction" | "proactive" | "peer"; from?: string; time: number; images?: ChatImage[] }
   | { type: "chunk"; messageId: string; delta: string }
   | { type: "thinking"; messageId: string; delta: string }
   | { type: "tool"; name: string; status: "call" | "result"; summary?: string; messageId?: string; callId?: string; isError?: boolean }

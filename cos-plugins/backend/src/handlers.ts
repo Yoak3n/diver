@@ -11,7 +11,9 @@ import { SESSION_ID, userMessage } from './agent.ts'
 import {
   injectOrigin,
   injectUiLabel,
+  peerSourceId,
   readPetInteractionSettings,
+  stripPeerMarker,
 } from './interaction.ts'
 import { loadSchedule, saveSchedule } from './presence.ts'
 import {
@@ -456,11 +458,21 @@ export async function handleRequest(
           if (ev.type !== 'user/message' && ev.type !== 'assistant/message') continue
           const time = Number(ev.time) || Date.now()
           if (ev.type === 'user/message') {
+            const text = textOf(ev.data.content)
+            // P2-3 来源标记渲染：peer 消息正文保留（剥壳盖章首行），from 结构化给 UI 徽标。
+            const peerFrom = peerSourceId(ev.data.source)
+            if (peerFrom !== null) {
+              messages.push({
+                id: ev.data.id, kind: 'user',
+                content: stripPeerMarker(text),
+                origin: 'peer', from: peerFrom, time,
+              })
+              continue
+            }
             // 过滤运行时上下文快照；放行真人消息与已裁决注入
             const injectLabel = injectUiLabel(ev.data.source)
             const injectFrom = injectOrigin(ev.data.source)
             if (ev.data.source?.kind !== 'human' && injectLabel === null) continue
-            const text = textOf(ev.data.content)
             if (injectLabel !== null) {
               const isPresence = injectFrom === 'presence'
               const content = isPresence

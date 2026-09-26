@@ -18,7 +18,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@cos/plugin-api": "file:../../harness/packages/plugin-api",
+    "@cos/plugin-api": "workspace:*",
     "cordis": "4.0.0-rc.7",
     "node-html-parser": "^6.1.13"
   },

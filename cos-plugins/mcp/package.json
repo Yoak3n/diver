@@ -12,7 +12,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@cos/plugin-api": "file:../../harness/packages/plugin-api",
+    "@cos/plugin-api": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.12.0",
     "cordis": "4.0.0-rc.7"
   },

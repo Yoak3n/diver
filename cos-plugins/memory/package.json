@@ -16,7 +16,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@cos/plugin-api": "file:../../harness/packages/plugin-api",
+    "@cos/plugin-api": "workspace:*",
     "@diver/native-bridge": "file:../native-bridge",
     "@diver/web-tools": "file:../web-tools",
     "cordis": "4.0.0-rc.7"

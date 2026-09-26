@@ -159,7 +159,8 @@ pub fn ensure_deps_extracted(app: &AppHandle, sidecar_dir: &Path) -> Result<(), 
         .cloned()
         .collect();
     if pending.is_empty() {
-        emit_progress(app, "extract", "依赖已就绪", 100.0, true);
+        // 无事可做时保持静默：覆层只认 extract/node phase，无事发送会让遮罩
+        // 在每次启动都闪现。它只为首启/升级的真实解压进度而存在。
         return Ok(());
     }
 
@@ -233,10 +234,17 @@ pub fn ensure_node_ready(
     app: &AppHandle,
     push: &mut dyn FnMut(String),
 ) -> Result<crate::core::node_runtime::NodeRuntime, String> {
-    emit_progress(app, "node", "正在准备 Node 运行时…", 0.0, false);
+    // 只有真的需要下载/准备 Node 时才广播进度；本地已有 Node 时全程静默，
+    // 否则遮罩每次启动都会被「正在准备 Node 运行时…」例行闪现。
+    let needs_setup = !crate::core::node_runtime::node_available_locally(app);
+    if needs_setup {
+        emit_progress(app, "node", "正在准备 Node 运行时…", 0.0, false);
+    }
     let mut last = String::new();
     let result = crate::core::node_runtime::resolve_node(app, &mut |line: String| {
-        emit_progress(app, "node", line.clone(), 30.0, false);
+        if needs_setup {
+            emit_progress(app, "node", line.clone(), 30.0, false);
+        }
         if line != last {
             last = line.clone();
         }
@@ -244,13 +252,15 @@ pub fn ensure_node_ready(
     });
     match result {
         Ok(rt) => {
-            emit_progress(
-                app,
-                "node",
-                format!("Node 就绪（{}）", rt.source),
-                100.0,
-                true,
-            );
+            if needs_setup {
+                emit_progress(
+                    app,
+                    "node",
+                    format!("Node 就绪（{}）", rt.source),
+                    100.0,
+                    true,
+                );
+            }
             Ok(rt)
         }
         Err(e) => {

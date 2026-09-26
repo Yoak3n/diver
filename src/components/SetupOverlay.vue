@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // 首启/启动准备遮罩：订阅 Rust `setup://progress`，显示解压 / Node 准备进度。
-// 窗口先于 sidecar 显示，避免用户面对空白或黑窗。
+// 仅在真实 bootstrap（解压 / Node 准备）阶段出场；平时启动不显示。
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { onTauriEvent, tauriAvailable, getSidecarStatus } from "../tauri";
@@ -13,7 +13,8 @@ export interface SetupProgress {
   error?: string;
 }
 
-const active = ref(true);
+const BOOTSTRAP_PHASES = new Set(["extract", "node"]);
+const active = ref(false);
 const phase = ref("start");
 const message = ref("正在准备运行环境…");
 const percent = ref(0);
@@ -58,8 +59,12 @@ function apply(p: SetupProgress) {
     active.value = true;
     return;
   }
+  // 平时启动（start 阶段拉 sidecar）不显示；只有解压 / Node 准备等真实 bootstrap 才出场。
+  // done=true 的完成态不点亮遮罩：例行检查的「已就绪」不应让覆层闪现；
+  // 真实的首启流程一定会先出现 done=false 的进行态。
+  if (!BOOTSTRAP_PHASES.has(p.phase) || p.done) return;
   active.value = true;
-  phase.value = p.phase || "start";
+  phase.value = p.phase;
   message.value = p.message || "正在准备运行环境…";
   percent.value = p.percent ?? 0;
 }

@@ -12,6 +12,7 @@ pub mod avatar;
 pub mod groups;
 pub mod instances;
 pub mod mcp;
+pub mod pet_model;
 pub mod pet_window;
 pub mod profile;
 pub mod shortcuts;

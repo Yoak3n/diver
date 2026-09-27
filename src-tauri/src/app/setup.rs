@@ -83,6 +83,8 @@ pub fn generate_handlers() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + 
         create_instance,
         list_groups,
         set_instance_pet_model,
+        get_global_pet_model,
+        set_global_pet_model,
         open_instance_pet,
         close_instance_pet,
         list_instance_pets,

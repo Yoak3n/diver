@@ -15,7 +15,7 @@ type Deps = {
   startClickthrough: () => Promise<void>;
   bindTts: () => void;
   initModel: () => Promise<void>;
-  onExternalModelChange: (id: string) => Promise<void>;
+  onExternalModelChange: (id: string, instanceId?: string) => Promise<void>;
   setMapReady: () => void;
   onModelError: (err: unknown) => void;
   disposePanel: () => void;
@@ -27,6 +27,13 @@ type Deps = {
 };
 
 export function usePetLifecycle(deps: Deps) {
+  let unlistenModelChanged: (() => void) | null = null;
+  const onStorage = (e: StorageEvent) => {
+    if (e.key === "diver.pet.modelId" && e.newValue) {
+      void deps.onExternalModelChange(e.newValue);
+    }
+  };
+
   onMounted(async () => {
     deps.connect();
     deps.startAutoRefresh();
@@ -47,17 +54,18 @@ export function usePetLifecycle(deps: Deps) {
       deps.onModelError(err);
     }
     // 模型热切换监听：与模型加载成败无关，挂上以便失败后重试/切换
-    void onTauriEvent<{ id: string }>(PET_MODEL_CHANGED_EVENT, (p) => {
-      void deps.onExternalModelChange(p?.id);
-    });
-    window.addEventListener("storage", (e) => {
-      if (e.key === "diver.pet.modelId" && e.newValue) {
-        void deps.onExternalModelChange(e.newValue);
-      }
-    });
+    unlistenModelChanged = await onTauriEvent<{ id: string; instanceId?: string }>(
+      PET_MODEL_CHANGED_EVENT,
+      (p) => {
+        void deps.onExternalModelChange(p?.id, p?.instanceId ?? undefined);
+      },
+    );
+    window.addEventListener("storage", onStorage);
   });
 
   onBeforeUnmount(() => {
+    unlistenModelChanged?.();
+    window.removeEventListener("storage", onStorage);
     deps.disposePanel();
     deps.disposeDrag();
     deps.stopClickthrough();

@@ -7,6 +7,7 @@ import { ensureLive2dCore } from "../live2d/core";
 import {
   loadModelCatalog,
   pickModelProfile,
+  loadGlobalModelId,
   selectModelId,
   PET_MODEL_CHANGED_EVENT,
 } from "../models";
@@ -123,7 +124,9 @@ export function usePetModel(opts: {
     try {
       const catalog = await loadModelCatalog();
       modelProfiles.value = catalog.models;
-      const profile = pickModelProfile(catalog, opts.getInstancePetModel?.() ?? undefined);
+      // 未钉定的实例宠/经典宠都从全局真源起步（localStorage 各窗隔离，不可作真源）
+      const slot = opts.getInstancePetModel?.() ?? null;
+      const profile = pickModelProfile(catalog, slot ?? (await loadGlobalModelId()));
       await mountPetModel(profile);
     } catch (err) {
       const detail = err instanceof Error ? err.message : String(err);

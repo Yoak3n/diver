@@ -4,7 +4,11 @@
 // （Happy/Sad/…）经各模型 groupAliases 解析到 model3.json 的真实组名。
 
 import { convertFileSrc } from "@tauri-apps/api/core";
-import { getPetModelPath } from "../ipc/petModels";
+import {
+  getGlobalPetModel,
+  getPetModelPath,
+  setGlobalPetModel,
+} from "../ipc/petModels";
 import catalogJson from "./model-catalog.json";
 
 export interface PetModelProfile {
@@ -69,20 +73,55 @@ export function storeModelId(id: string): void {
 /** 持久化选择并广播（同窗口 CustomEvent + Tauri 跨窗口）。 */
 export function selectModelId(id: string): void {
   storeModelId(id);
+  void setGlobalPetModel(id).catch(() => {
+    /* 浏览器调试无 Tauri */
+  });
+  notifyModelChanged(id);
+}
+
+/**
+ * 读取全局模型 id 的共享真源（壳层 pet-model.json）。
+ *
+ * 各窗 WebView2 data 目录隔离 localStorage，「跟随全局」的实例宠读不到彼此的
+ * 存储——统一走 IPC。旧选择只存 localStorage 时自动迁移到真源（一次性自愈）。
+ */
+export async function loadGlobalModelId(): Promise<string | null> {
+  try {
+    const id = await getGlobalPetModel();
+    if (id) return id;
+    const legacy = getStoredModelId();
+    if (legacy) {
+      void setGlobalPetModel(legacy).catch(() => {
+        /* 忽略 */
+      });
+      return legacy;
+    }
+    return null;
+  } catch {
+    return getStoredModelId();
+  }
+}
+
+/**
+ * 广播模型变更（不写全局持久化）。
+ * `instanceId` 有值 = 定向换装：只有绑定该实例的桌宠窗口响应（设置页改每实例模型用）；
+ * 无值 = 全局换装：经典桌宠与「跟随全局」的实例桌宠响应。
+ */
+export function notifyModelChanged(id: string, instanceId?: string): void {
   try {
     window.dispatchEvent(
-      new CustomEvent(PET_MODEL_CHANGED_EVENT, { detail: { id } }),
+      new CustomEvent(PET_MODEL_CHANGED_EVENT, { detail: { id, instanceId } }),
     );
   } catch {
     /* 忽略 */
   }
-  void emitModelChanged(id);
+  void emitModelChanged(id, instanceId);
 }
 
-async function emitModelChanged(id: string): Promise<void> {
+async function emitModelChanged(id: string, instanceId?: string): Promise<void> {
   try {
     const { emit } = await import("@tauri-apps/api/event");
-    await emit(PET_MODEL_CHANGED_EVENT, { id });
+    await emit(PET_MODEL_CHANGED_EVENT, { id, instanceId });
   } catch {
     /* 浏览器调试或 Tauri 不可用 */
   }

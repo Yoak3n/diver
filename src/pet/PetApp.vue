@@ -158,7 +158,22 @@ usePetLifecycle({
   startClickthrough: click.startClickthrough,
   bindTts: lip.bindTts,
   initModel: petModel.initModel,
-  onExternalModelChange: petModel.onExternalModelChange,
+  // 换装路由（P2-5）：定向事件只进目标实例宠；全局事件进经典宠与「跟随全局」的实例宠。
+  onExternalModelChange: (id: string, sourceInstance?: string) => {
+    const me = petInstance.instanceId.value;
+    if (!me) {
+      return sourceInstance == null ? petModel.onExternalModelChange(id) : Promise.resolve();
+    }
+    if (sourceInstance === me) {
+      // 设置页定向改本宠模型：同步 slot（元数据已落盘，重读即准）再换装
+      void petInstance.loadMeta();
+      return petModel.onExternalModelChange(id);
+    }
+    if (sourceInstance == null && petInstance.petModelId.value == null) {
+      return petModel.onExternalModelChange(id);
+    }
+    return Promise.resolve();
+  },
   setMapReady: () => {
     emotionMapReady = true;
   },

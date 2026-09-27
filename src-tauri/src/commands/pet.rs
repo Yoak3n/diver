@@ -153,3 +153,17 @@ pub async fn focus_instance_chat(app: AppHandle, id: String) -> Result<(), Strin
     app.emit("pet://focus-instance", serde_json::json!({ "instanceId": id }))
         .map_err(|e| format!("事件广播失败：{e}"))
 }
+
+// ---- 全局模型真源（跨窗口共享；localStorage 因 data 目录隔离不可用） ----
+
+/// 读取全局模型 id（`None` = 未选择，前端回落 `defaultModelId`）。
+#[tauri::command]
+pub fn get_global_pet_model(app: AppHandle) -> Option<String> {
+    crate::config::pet_model::load_global_model(&app)
+}
+
+/// 写入全局模型 id（`model: null` 清除选择）。
+#[tauri::command]
+pub fn set_global_pet_model(app: AppHandle, model: Option<String>) -> bool {
+    crate::config::pet_model::save_global_model(&app, model.as_deref())
+}

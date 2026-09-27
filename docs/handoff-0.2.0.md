@@ -97,7 +97,9 @@
 
 ## 6. 下一步 backlog（用户拍板后开做）
 
-1. **群管理面板二期**：成员/踢人/改名/邀请记录。
+1. ~~**群管理面板二期**：成员/踢人/改名/邀请记录~~ **已完成**（`02ddb61`，2026-09-27）：
+   ops 纯迁移 + services/groups_manage（用户群务，系统事件 inject）+ State 接线 +
+   GroupManage.vue 面板；冒烟清单在 daily「P2-4 二期实施」节。
 2. **未读计数 + 侧栏收尾**。
 3. ~~**handlers.ts 拆分**（`cos-plugins/backend`，~860 行超限债）~~ **已完成**（`6fb0cae` `cd1190f`）：
    handlers.ts→auth/http/routes/* 纯分发器，plugins.ts→plugin-store/plugin-install/装配面。

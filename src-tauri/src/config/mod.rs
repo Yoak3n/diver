@@ -9,6 +9,7 @@
 //! 新增配置时，在此目录下添加一个子模块，并按读取方选择 [config_dir] / [cos_home]。
 
 pub mod avatar;
+pub mod groups;
 pub mod instances;
 pub mod mcp;
 pub mod pet_window;

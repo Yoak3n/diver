@@ -3,6 +3,7 @@
 // 图片压到最长边 1600px 的 JPEG，避免 base64 撑爆请求。
 import { onBeforeUnmount, ref, watch } from "vue";
 import type { ComposerAttachment } from "../types";
+import { useSttRecorder } from "../composables/useSttRecorder";
 
 const composer = defineModel<string>({ default: "" });
 
@@ -26,6 +27,28 @@ const ta = ref<HTMLTextAreaElement | null>(null);
 const fileInput = ref<HTMLInputElement | null>(null);
 const dragOver = ref(false);
 
+// ---------- 语音输入（STT 底座，拍板 2026-09-27：引擎后接） ----------
+// 点击开始/结束录音；结束 → 当前引擎转写 → 文本追加进输入框（状态机见 useSttRecorder）。
+const sttNotice = ref<string | null>(null);
+let noticeTimer: number | null = null;
+const { state: sttState, seconds: sttSeconds, level: sttLevel, toggle: toggleStt, cancel: cancelStt } =
+  useSttRecorder({
+    onTranscribed: (text) => {
+      composer.value = composer.value ? `${composer.value} ${text}` : text;
+    },
+    onNotice: (message) => {
+      sttNotice.value = message;
+      if (noticeTimer !== null) clearTimeout(noticeTimer);
+      noticeTimer = window.setTimeout(() => {
+        sttNotice.value = null;
+      }, 6000);
+    },
+  });
+
+function fmtStt(seconds: number): string {
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+}
+
 watch(composer, () => {
   const el = ta.value;
   if (!el) return;
@@ -35,6 +58,7 @@ watch(composer, () => {
 
 onBeforeUnmount(() => {
   if (ta.value) ta.value.style.height = "";
+  if (noticeTimer !== null) clearTimeout(noticeTimer);
 });
 
 function onEnter(e: KeyboardEvent) {
@@ -96,6 +120,7 @@ function onDragOver(e: DragEvent) {
     @drop="onDrop"
   >
     <div v-if="error" class="composer-error">{{ error }}</div>
+    <div v-if="sttNotice" class="composer-error">{{ sttNotice }}</div>
 
     <div v-if="attachments.length" class="attach-strip">
       <div v-for="a in attachments" :key="a.id" class="attach-item">
@@ -141,6 +166,19 @@ function onDragOver(e: DragEvent) {
           />
         </svg>
       </button>
+      <button
+        class="icon-btn attach-btn mic-btn"
+        :class="{ recording: sttState === 'recording' }"
+        type="button"
+        title="语音输入（点击开始/结束，Esc 取消）"
+        :disabled="!modelConfigured"
+        @click="toggleStt"
+      >
+        <svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true">
+          <rect x="6" y="1.5" width="4" height="8" rx="2" fill="none" stroke="currentColor" stroke-width="1.3" />
+          <path d="M3.5 7.5a4.5 4.5 0 0 0 9 0M8 12v2.5" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" />
+        </svg>
+      </button>
       <input
         ref="fileInput"
         type="file"
@@ -164,6 +202,12 @@ function onDragOver(e: DragEvent) {
         @keydown.enter.exact="onEnter"
         @paste="onPaste"
       ></textarea>
+      <span v-if="sttState === 'recording'" class="stt-live" title="点击麦克风结束，Esc 取消">
+        <span class="stt-dot" :style="{ transform: `scale(${0.7 + sttLevel * 0.6})` }"></span>
+        {{ fmtStt(sttSeconds) }}
+        <button class="stt-cancel" type="button" title="取消本次录音" @click="cancelStt">×</button>
+      </span>
+      <span v-else-if="sttState === 'transcribing'" class="stt-live">转写中…</span>
       <button
         class="send-btn"
         :disabled="!canSend || (!composer.trim() && attachments.length === 0)"
@@ -276,6 +320,39 @@ function onDragOver(e: DragEvent) {
   height: 32px;
   margin-bottom: 2px;
   flex-shrink: 0;
+}
+.mic-btn.recording {
+  color: #e5484d;
+  border-color: rgba(229, 72, 77, 0.5);
+}
+.stt-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  margin-bottom: 4px;
+  font-size: 12px;
+  color: #e5484d;
+  font-variant-numeric: tabular-nums;
+}
+.stt-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #e5484d;
+  transition: transform 80ms ease;
+}
+.stt-cancel {
+  border: none;
+  background: none;
+  color: var(--ink-muted);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 2px;
+}
+.stt-cancel:hover {
+  color: var(--ink);
 }
 .composer-shell textarea {
   flex: 1;

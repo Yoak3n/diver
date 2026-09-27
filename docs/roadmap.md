@@ -37,8 +37,10 @@
 - [x] **日程提醒的持久化配置界面**：presence 调度并入 `@diver/backend`（`src/presence.ts`），
       配置存 `$COS_HOME/presence-schedule.json`（不再硬编码 patch）；设置页「日程」Tab
       编辑，30s tick 热生效；到点注入 `[presence]` 主动问候 + 原生通知
-- [ ] **语音输入**（麦克风，STT）：提供建议后待拍板——本地 whisper（离线私密，
-      模型下载）vs 云 API（需 key）；按拍板结果实施
+- [ ] **语音输入**（麦克风，STT）：**底座已落**（2026-09-27 拍板「引擎后接」）——
+      按住说话 UI（ComposerBar 麦克风按钮）+ `getUserMedia`/MediaRecorder 采集管线
+      （`src/stt/recorder.ts`）+ 引擎契约（`src/stt/engine.ts`，`SttEngine.transcribe`，
+      现为空位）；接入本地 whisper 或云 API 即可实现 `setSttEngine` 注册即用
 - [x] **模型供应商扩展（自定义 base URL）**：deepseek-official / commandcode 适配器新增
       `baseUrl` 设置字段（`store: 'settings'`，设置面板动态渲染），运行时时读取
       `$COS_HOME/diver-settings.json` 的 `<provider>.baseUrl`，热生效无需重启

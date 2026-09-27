@@ -59,14 +59,15 @@ export function apply(ctx: Context) {
   })
 
   ctx.tools.register('send_to_group', async (args: unknown) => {
-    const a = (args ?? {}) as { text?: unknown; wake?: unknown }
+    const a = (args ?? {}) as { text?: unknown; wake?: unknown; group?: unknown }
     const text = String(a.text ?? '').trim()
     if (!text) return { content: JSON.stringify({ error: 'text 必填' }) }
     const wake = a.wake === true
+    const group = String(a.group ?? '').trim()
     try {
       const data = await nativeRpc<{ delivered: unknown[]; failed: unknown[]; queued: string }>(
-        'peer::broadcast',
-        { text, wake },
+        'group::say',
+        { text, wake, group },
         { label: 'send_to_group' },
       )
       return { content: JSON.stringify({ sent: true, ...data }) }
@@ -75,12 +76,14 @@ export function apply(ctx: Context) {
     }
   }, {
     description:
-      '在群聊里向其它所有实例发言（广播，不发给自己）。缺省只入对方上下文、不唤醒（对方不必回复）；' +
-      'wake=true 才唤醒对方给发言机会。群聊规则：不必每条都回，想说才说；被 @ 点名时再认真接话。',
+      '在群聊里发言（发给群内其它成员，不发给自己）。group 缺省 = 全员群，也可指定群 id 或群名。' +
+      '缺省只入对方上下文、不唤醒（对方不必回复）；wake=true 才唤醒对方给发言机会。' +
+      '群聊规则：不必每条都回，想说才说。',
     parameters: {
       type: 'object',
       properties: {
         text: { type: 'string', description: '发言内容' },
+        group: { type: 'string', description: '群 id 或群名（缺省全员群 general）；先用 list_groups 确认' },
         wake: { type: 'boolean', description: '是否唤醒对方给发言机会（缺省 false = 只入上下文不打扰）' },
       },
       required: ['text'],
@@ -126,5 +129,116 @@ export function apply(ctx: Context) {
       '名单是运行时注册表，随实例增减变化。',
     parameters: { type: 'object', properties: {} },
   })
-  console.log('[peer] 互实例消息工具就绪（send_to_peer / send_to_group / stay_silent / list_peers）')
+
+  ctx.tools.register('list_groups', async () => {
+    try {
+      const data = await nativeRpc<Array<{ id: string; name: string; system: boolean; members: string[]; member: boolean; invited: boolean }>>(
+        'group::list',
+        {},
+        { label: 'list_groups' },
+      )
+      return { content: JSON.stringify({ groups: data }) }
+    } catch (e) {
+      return { content: JSON.stringify({ error: String((e as Error)?.message ?? e) }) }
+    }
+  }, {
+    description:
+      '查看当前有哪些群聊（id/群名/成员，含系统全员群）。发言、拉人进群前先用这个确认群；' +
+      'member 表示自己是否在群里，invited 表示有等你处理的入群邀请。',
+    parameters: { type: 'object', properties: {} },
+  })
+
+  ctx.tools.register('create_group', async (args: unknown) => {
+    const a = (args ?? {}) as { name?: unknown; members?: unknown }
+    const name = String(a.name ?? '').trim()
+    if (!name) return { content: JSON.stringify({ error: 'name 必填' }) }
+    const members = Array.isArray(a.members)
+      ? a.members.map((m) => String(m ?? '').trim()).filter((m) => m !== '')
+      : []
+    try {
+      const data = await nativeRpc<{ group: { id: string; name: string; members: string[] }; invited: string[]; failed: unknown[] }>(
+        'group::create',
+        { name, members },
+        { label: 'create_group' },
+      )
+      return { content: JSON.stringify({ ok: true, ...data }) }
+    } catch (e) {
+      return { content: JSON.stringify({ error: String((e as Error)?.message ?? e) }) }
+    }
+  }, {
+    description:
+      '创建一个新群聊（你自动入群）。members 里的实例会收到入群邀请，由对方自己决定接不接受（可以拒绝）。' +
+      '建群前建议先用 list_peers 确认同伴 id。',
+    parameters: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: '群名（不可与已有群重名）' },
+        members: { type: 'array', items: { type: 'string' }, description: '初始成员实例 id 列表（不含自己）' },
+      },
+      required: ['name'],
+    },
+  })
+
+  ctx.tools.register('invite_to_group', async (args: unknown) => {
+    const a = (args ?? {}) as { group?: unknown; to?: unknown; message?: unknown }
+    const group = String(a.group ?? '').trim()
+    const to = String(a.to ?? '').trim()
+    const message = String(a.message ?? '').trim()
+    if (!group || !to) return { content: JSON.stringify({ error: 'group 与 to 必填' }) }
+    try {
+      const data = await nativeRpc<{ inviteId: string; to: string; group: string }>(
+        'group::invite',
+        { group, to, message },
+        { label: 'invite_to_group' },
+      )
+      return { content: JSON.stringify({ ok: true, ...data }) }
+    } catch (e) {
+      return { content: JSON.stringify({ error: String((e as Error)?.message ?? e) }) }
+    }
+  }, {
+    description:
+      '邀请某个实例加入群聊（你得是群成员）。对方会收到邀请并自己决定接受或拒绝（拒绝会把理由告诉你）。' +
+      '拉人前建议先用 list_peers / list_groups 确认对象与群。',
+    parameters: {
+      type: 'object',
+      properties: {
+        group: { type: 'string', description: '群 id 或群名' },
+        to: { type: 'string', description: '被邀实例 id' },
+        message: { type: 'string', description: '邀请留言（可不填）' },
+      },
+      required: ['group', 'to'],
+    },
+  })
+
+  ctx.tools.register('respond_invite', async (args: unknown) => {
+    const a = (args ?? {}) as { group?: unknown; accept?: unknown; reason?: unknown }
+    const group = String(a.group ?? '').trim()
+    const accept = a.accept === true
+    const reason = String(a.reason ?? '').trim()
+    if (!group) return { content: JSON.stringify({ error: 'group 必填' }) }
+    try {
+      const data = await nativeRpc<{ inviteId: string; status: string; group: { id: string; name: string }; delivered: string[] }>(
+        'group::respond',
+        { group, accept, reason },
+        { label: 'respond_invite' },
+      )
+      return { content: JSON.stringify({ ok: true, ...data }) }
+    } catch (e) {
+      return { content: JSON.stringify({ error: String((e as Error)?.message ?? e) }) }
+    }
+  }, {
+    description:
+      '处理入群邀请（收到「【群聊邀请｜…】」消息后调用）：accept=true 接受入群；' +
+      'accept=false 拒绝——理由会显式告知邀请方（可以直接说不想去）。你自己决定，可以拒绝。',
+    parameters: {
+      type: 'object',
+      properties: {
+        group: { type: 'string', description: '邀请里的群 id' },
+        accept: { type: 'boolean', description: '是否接受' },
+        reason: { type: 'string', description: '拒绝理由（接受时可不填）' },
+      },
+      required: ['group', 'accept'],
+    },
+  })
+  console.log('[peer] 互实例消息工具就绪（send_to_peer / send_to_group / stay_silent / list_peers / list_groups / create_group / invite_to_group / respond_invite）')
 }

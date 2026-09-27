@@ -51,6 +51,7 @@
 | P2-5 | 多桌宠一期：实例桌宠窗池（`pet-<id>`，同屏 3 只 160px 错位）、hash 实例绑定+名牌、召唤入口 | `8dbb313` `26c4fd2` `64d258f` `b1aedd5` |
 | P2-5 收尾 | 换装定向路由 + 全局模型真源、webview_args 收口、设置页每实例模型选择器 | `ed6c527` `9effec9` `c9a0b80` |
 | 收尾 | 显示器 canonical 编号唯一真源 + 事件/截屏编号同源（修「截错屏」） | `8e52a20` `50db5e8` |
+| 收尾 | backend handlers.ts（877 行）按域拆 routes/*；plugins.ts（584 行）拆 store/install/装配面 | `6fb0cae` `cd1190f` |
 
 关键机制约定（细节以代码注释与 daily 文档为准）：
 
@@ -98,7 +99,9 @@
 
 1. **群管理面板二期**：成员/踢人/改名/邀请记录。
 2. **未读计数 + 侧栏收尾**。
-3. **handlers.ts 拆分**（`cos-plugins/backend`，~860 行超限债）。
+3. ~~**handlers.ts 拆分**（`cos-plugins/backend`，~860 行超限债）~~ **已完成**（`6fb0cae` `cd1190f`）：
+   handlers.ts→auth/http/routes/* 纯分发器，plugins.ts→plugin-store/plugin-install/装配面。
+   余下超硬限文件：`cos-plugins/memory/src/index.ts`（525）、`cos-plugins/basic-tools/src/fsio.ts`（512）。
 4. **docs 债**（见记忆 675ee77a 清单）：diver-presence（L0 HSM/L1 能力矩阵/L2 ProactiveSpeak）、
    首启引导（SetupOverlay + setup://progress）、web-tools 插件、TTS 流式合成+双窗播报（配置已迁
    `config/tts.rs`，旧文档写 `config/tts.json` 过时）、examples/ 与 check-plugin-*.mjs。

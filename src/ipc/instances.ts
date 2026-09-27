@@ -14,6 +14,8 @@ export interface InstanceMeta {
   enabled: boolean;
   /** 头像留位 */
   avatar: string | null;
+  /** 每实例桌宠模型 id（P2-5）；null = 跟随全局模型选择 */
+  petModel: string | null;
   /** 登记时间（Unix 秒） */
   createdAt: number;
 }

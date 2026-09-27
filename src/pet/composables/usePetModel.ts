@@ -33,6 +33,10 @@ export function usePetModel(opts: {
   getBubbleSide: () => "left" | "right";
   getBubbleVisible: () => boolean;
   layoutSpeechBubble: () => void;
+  /** P2-5：实例桌宠的模型覆盖（null = 跟随全局 localStorage 选择）。 */
+  getInstancePetModel?: () => string | null;
+  /** P2-5：实例桌宠换装持久化到实例元配置（不写全局）。 */
+  persistModelId?: (id: string) => void;
 }) {
   const modelHost = ref<HTMLElement | null>(null);
   const loading = ref(true);
@@ -77,7 +81,12 @@ export function usePetModel(opts: {
     loadError.value = null;
     try {
       await mountPetModel(profile);
-      selectModelId(profile.id);
+      if (opts.persistModelId) {
+        // 实例桌宠：只改这个实例的模型（不写全局、不广播）。
+        opts.persistModelId(profile.id);
+      } else {
+        selectModelId(profile.id);
+      }
     } catch (err) {
       const detail = err instanceof Error ? err.message : String(err);
       console.error("[pet] switch model failed:", detail, err);
@@ -114,7 +123,7 @@ export function usePetModel(opts: {
     try {
       const catalog = await loadModelCatalog();
       modelProfiles.value = catalog.models;
-      const profile = pickModelProfile(catalog);
+      const profile = pickModelProfile(catalog, opts.getInstancePetModel?.() ?? undefined);
       await mountPetModel(profile);
     } catch (err) {
       const detail = err instanceof Error ? err.message : String(err);

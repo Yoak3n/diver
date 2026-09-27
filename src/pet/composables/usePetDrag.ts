@@ -27,6 +27,8 @@ export function usePetDrag(opts: {
   getPet: () => { react: (e: string, o?: { force?: boolean; zone?: "head" | "body" | "auto" }) => void; getHitbox: () => { left: number; top: number; width: number; height: number } | null } | null;
   inPanelArea: (target: EventTarget | null) => boolean;
   onDragIdle: () => void;
+  /** P2-5 点谁互动谁：点击（非拖拽）时回调。 */
+  onPetClick?: () => void;
 }) {
   const dragState = ref<"idle" | "arming" | "dragging">("idle");
   const chargePos = ref({ x: 0, y: 0 });
@@ -234,6 +236,8 @@ export function usePetDrag(opts: {
       lastClickReactAt[zone] = now;
       console.log("[pet] click zone =", zone);
       pet.react("neutral", { force: true, zone });
+      // P2-5 点谁互动谁：点实例桌宠 = 切到该实例会话（经典窗无绑定不动作）。
+      opts.onPetClick?.();
     }
     clickCandidate = false;
     suppressClickReaction = false;

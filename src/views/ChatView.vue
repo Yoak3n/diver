@@ -9,7 +9,7 @@ import { useInstances } from "../composables/useInstances";
 import { setChrome } from "../composables/useChrome";
 import { filesToAttachments } from "../imageAttach";
 import { setInstanceRuntimes } from "../api";
-import { listInstanceRuntimes, tauriAvailable } from "../tauri";
+import { listInstanceRuntimes, onTauriEvent, tauriAvailable } from "../tauri";
 import { listGroups, type GroupRow } from "../ipc/group";
 import type { ChatMessage } from "../types";
 import ChatArea from "../components/ChatArea.vue";
@@ -67,6 +67,12 @@ onMounted(() => {
     void refreshRuntimes();
     void refreshGroups();
   }, 5000);
+  // P2-5 点谁互动谁：实例桌宠点击 → 主窗切到该实例会话。
+  if (tauriAvailable()) {
+    void onTauriEvent<{ instanceId: string }>("pet://focus-instance", (p) => {
+      if (p?.instanceId) currentId.value = p.instanceId;
+    });
+  }
 });
 
 // 委托解包：模板顶层 ref 语义不变，底下按当前实例取值。

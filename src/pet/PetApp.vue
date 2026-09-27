@@ -17,6 +17,8 @@ import { usePetQuestion } from "./composables/usePetQuestion";
 import { usePetPanel } from "./composables/usePetPanel";
 import { usePetLifecycle } from "./composables/usePetLifecycle";
 import { useMessageReactions } from "./composables/useMessageReactions";
+import { usePetInstance } from "./usePetInstance";
+import { focusInstanceChat } from "../ipc/petInstances";
 import PetChatPanel from "./components/PetChatPanel.vue";
 import PetSpeechBubble from "./components/PetSpeechBubble.vue";
 import PetModelPickerPanel from "./components/PetModelPickerPanel.vue";
@@ -25,11 +27,14 @@ import PetDragCharge from "./components/PetDragCharge.vue";
 
 const runtimeErrors = ref<string[]>([]);
 let emotionMapReady = false;
+// P2-5 多桌宠：窗口绑定实例（URL ?instance=；null = 经典窗跟随 active）。
+const petInstance = usePetInstance();
+void petInstance.loadMeta();
 const {
   messages, busy, connected, composer, attachments, isReady, canSend,
   addAttachments, removeAttachment, connect, send, startAutoRefresh,
   pendingQuestion, submitQuestionAnswer,
-} = usePetChat();
+} = usePetChat(() => petInstance.instanceId.value ?? undefined);
 
 const click = useClickthrough({ getPet: () => petModel.getPet() });
 const bubble = reactive(useSpeechBubble({
@@ -60,6 +65,9 @@ const petModel = reactive(usePetModel({
   getBubbleSide: () => panel.bubbleSide,
   getBubbleVisible: () => bubble.bubbleVisible,
   layoutSpeechBubble: () => bubble.layoutSpeechBubble(),
+  // P2-5：实例桌宠按实例模型启动；本宠面板换装只改该实例。
+  getInstancePetModel: () => petInstance.petModelId.value,
+  persistModelId: (id) => void petInstance.setPetModel(id),
 }));
 watch(modelHost, (el) => {
   petModel.modelHost = el;
@@ -79,6 +87,11 @@ const drag = reactive(usePetDrag({
   inPanelArea: (t) =>
     !!(t instanceof HTMLElement && t.closest(".chat-flow, .speech-bubble, .question-card, .model-picker-panel")),
   onDragIdle: () => void panel.updateBubbleSide(),
+  // P2-5 点谁互动谁：点实例桌宠 → 主窗切到该实例会话。
+  onPetClick: () => {
+    const id = petInstance.instanceId.value;
+    if (id) void focusInstanceChat(id);
+  },
 }));
 const question = reactive(usePetQuestion(pendingQuestion, submitQuestionAnswer));
 const visibleMessages = computed(() => messages.value.filter(hasVisibleMessageBody));
@@ -246,6 +259,13 @@ function onContextMenu(e: MouseEvent) {
       />
     </Transition>
     <div v-if="!connected" class="conn-dot" title="离线"></div>
+    <div
+      v-if="petInstance.instanceName.value"
+      class="instance-badge"
+      title="点击切到该实例会话"
+      @pointerdown.stop
+      @click.stop="petInstance.instanceId.value && focusInstanceChat(petInstance.instanceId.value)"
+    >{{ petInstance.instanceName.value }}</div>
     <Transition name="panel">
       <PetQuestionCard
         v-if="pendingQuestion"

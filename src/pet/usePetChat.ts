@@ -16,7 +16,7 @@ import { hasVisibleMessageBody } from "../markdown";
 const MAX_MESSAGES = 8;
 const HEALTH_POLL_MS = 8000;
 
-export function usePetChat() {
+export function usePetChat(getInstanceId?: () => string | undefined) {
   const messages = ref<ChatMessage[]>([]);
   const busy = ref(false);
   const connected = ref(false);
@@ -80,7 +80,7 @@ export function usePetChat() {
   async function loadHistory() {
     if (historyLoaded) return;
     try {
-      const data = await getHistory();
+      const data = await getHistory(getInstanceId?.());
       // 仅当本地还没有消息时填充，避免覆盖正在进行的会话
       if (messages.value.length === 0) {
         // 历史消息标记 fromHistory：气泡/朗读等"新消息到达提示"不得重放上次会话末尾。
@@ -220,7 +220,7 @@ export function usePetChat() {
     const q = pendingQuestion.value;
     if (!q) return;
     try {
-      await answerQuestion(q.requestId, answers);
+      await answerQuestion(q.requestId, answers, getInstanceId?.());
       pendingQuestion.value = null;
     } catch (err) {
       error.value = err instanceof Error ? err.message : String(err);
@@ -254,13 +254,14 @@ export function usePetChat() {
           connected.value = false;
         }
       },
+      getInstanceId?.(),
     );
   }
 
   /** 探活：sidecar 恢复后自动重开事件流 + 补拉历史。 */
   async function refreshHealth() {
     try {
-      const h = await health();
+      const h = await health(getInstanceId?.());
       connected.value = true;
       error.value = null;
       busy.value = h.busy;
@@ -326,7 +327,7 @@ export function usePetChat() {
     });
     busy.value = true;
     try {
-      await sendChat(content, images);
+      await sendChat(content, images, getInstanceId?.());
     } catch (err) {
       error.value = err instanceof Error ? err.message : String(err);
       busy.value = false;

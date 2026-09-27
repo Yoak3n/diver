@@ -35,6 +35,14 @@
       "defaultEnabled": true
     },
     {
+      "id": "delegate",
+      "packageName": "@diver/delegate",
+      "displayName": "任务委派",
+      "description": "delegate_task / list_tasks / cancel_task（壳层监督 coding agent）",
+      "toggleable": true,
+      "defaultEnabled": true
+    },
+    {
       "id": "basic-tools",
       "packageName": "@diver/basic-tools",
       "displayName": "基础工具",

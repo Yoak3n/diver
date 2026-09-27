@@ -113,6 +113,9 @@ importers:
       '@diver/basic-tools':
         specifier: file:../basic-tools
         version: link:../basic-tools
+      '@diver/delegate':
+        specifier: file:../delegate
+        version: file:cos-plugins/delegate(@cordisjs/plugin-include@1.0.4)(@cordisjs/plugin-loader@1.0.0-rc.5)
       '@diver/llm-commandcode':
         specifier: file:../llm-commandcode
         version: link:../llm-commandcode
@@ -139,6 +142,25 @@ importers:
         version: file:cos-plugins/web-tools(@cordisjs/plugin-include@1.0.4)(@cordisjs/plugin-loader@1.0.0-rc.5)
 
   cos-plugins/companion:
+    devDependencies:
+      '@types/node':
+        specifier: ^26.2.0
+        version: 26.2.0
+      typescript:
+        specifier: ~5.6.2
+        version: 5.6.3
+
+  cos-plugins/delegate:
+    dependencies:
+      '@cos/plugin-api':
+        specifier: workspace:*
+        version: link:../../harness/packages/plugin-api
+      '@diver/native-bridge':
+        specifier: file:../native-bridge
+        version: file:cos-plugins/native-bridge(@cordisjs/plugin-include@1.0.4)(@cordisjs/plugin-loader@1.0.0-rc.5)
+      cordis:
+        specifier: 4.0.0-rc.7
+        version: 4.0.0-rc.7(@cordisjs/plugin-include@1.0.4)(@cordisjs/plugin-loader@1.0.0-rc.5)
     devDependencies:
       '@types/node':
         specifier: ^26.2.0
@@ -822,6 +844,9 @@ packages:
 
   '@deepseek-ai/schemastery@3.18.2':
     resolution: {integrity: sha512-njDtZsznjYxok7KLLlHOPyuv2efdWVbSflAHgztSfbMsg+CVraEoRe2DjOCgClYv3ZCSm7WXoaUkbB/+RY7tWQ==}
+
+  '@diver/delegate@file:cos-plugins/delegate':
+    resolution: {directory: cos-plugins/delegate, type: directory}
 
   '@diver/native-bridge@file:cos-plugins/native-bridge':
     resolution: {directory: cos-plugins/native-bridge, type: directory}
@@ -2979,6 +3004,15 @@ snapshots:
     dependencies:
       '@deepseek-ai/cosmokit': 1.8.3
       '@standard-schema/spec': 1.1.0
+
+  '@diver/delegate@file:cos-plugins/delegate(@cordisjs/plugin-include@1.0.4)(@cordisjs/plugin-loader@1.0.0-rc.5)':
+    dependencies:
+      '@cos/plugin-api': link:harness/packages/plugin-api
+      '@diver/native-bridge': file:cos-plugins/native-bridge(@cordisjs/plugin-include@1.0.4)(@cordisjs/plugin-loader@1.0.0-rc.5)
+      cordis: 4.0.0-rc.7(@cordisjs/plugin-include@1.0.4)(@cordisjs/plugin-loader@1.0.0-rc.5)
+    transitivePeerDependencies:
+      - '@cordisjs/plugin-include'
+      - '@cordisjs/plugin-loader'
 
   '@diver/native-bridge@file:cos-plugins/native-bridge(@cordisjs/plugin-include@1.0.4)(@cordisjs/plugin-loader@1.0.0-rc.5)':
     dependencies:

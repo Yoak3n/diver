@@ -23,4 +23,6 @@ mod state;
 pub use groups_manage::{user_delete_group, user_remove_group_member, user_rename_group};
 pub use memory::{clear_card_name_at, set_card_name_at};
 pub use server::start;
-pub use state::{CardNameFn, NotifyFn, PresenceDispatchFn, RegistryListFn, ServiceState};
+pub use state::{
+    CardNameFn, DelegateDispatchFn, NotifyFn, PresenceDispatchFn, RegistryListFn, ServiceState,
+};

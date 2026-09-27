@@ -5,7 +5,10 @@ use axum::Router;
 use tauri::{AppHandle, Manager as TauriManager};
 
 use super::rpc;
-use super::state::{CardNameFn, MemoryPool, NotifyFn, PresenceDispatchFn, RegistryListFn, ServiceState};
+use super::state::{
+    CardNameFn, DelegateDispatchFn, MemoryPool, NotifyFn, PresenceDispatchFn, RegistryListFn,
+    ServiceState,
+};
 
 /// 鉴权中间件（P2-1）：Host 非回环 → 403，令牌不匹配 → 401（`services::auth`）。
 /// 挂在 Router 最外层，未来新增路由自动继承。
@@ -36,6 +39,7 @@ async fn require_auth(
 /// `on_card_name`：人格卡片名字变更回调（app 层包「写回实例清单 name」后注入）。
 /// `registry_list`：实例注册表查询（P1-2 注册中心，app 层包 `instance_registry::list_at`）。
 /// `groups_dir`：群组文件目录（P2-4 群实体，app 层 app_config_dir 注入）。
+/// `delegate_dispatch`：任务委派分发（0.2.0 委派，app 层包 `core::delegate::dispatch_rpc`）。
 pub fn start(
     app: &AppHandle,
     auth_token: String,
@@ -45,6 +49,7 @@ pub fn start(
     memory_fallback: String,
     on_card_name: CardNameFn,
     registry_list: RegistryListFn,
+    delegate_dispatch: DelegateDispatchFn,
     groups_dir: std::path::PathBuf,
 ) -> Option<u16> {
     let dir = app.path().app_data_dir().ok()?;
@@ -74,6 +79,7 @@ pub fn start(
         presence_dispatch,
         on_card_name,
         registry_list,
+        delegate_dispatch,
         groups_dir,
     };
     // 群管理面板等用户 IPC（commands 层）消费同一份服务状态：

@@ -7,6 +7,7 @@
   "dependencies": {
     "@diver/backend": "file:../backend",
     "@diver/basic-tools": "file:../basic-tools",
+    "@diver/delegate": "file:../delegate",
     "@diver/llm-commandcode": "file:../llm-commandcode",
     "@diver/llm-volcark": "file:../llm-volcark",
     "@diver/mcp": "file:../mcp",

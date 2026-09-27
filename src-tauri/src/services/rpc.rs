@@ -89,6 +89,10 @@ async fn route(
         // 群组消息与群务（P2-4）：群 = 壳层实体，成员解析后经 peer 路由投递。
         return groups::dispatch(state, instance_id, method, params).await;
     }
+    if method.starts_with("delegate::") {
+        // 任务委派（0.2.0）：spawn/list/cancel，监督循环在壳层；闭包由 app 注入。
+        return (state.delegate_dispatch)(instance_id, method, params).map_err(grep::RpcFailure::new);
+    }
     // memory 方法保持无前缀（零迁移）；错误无 code。
     memory::dispatch(state, instance_id, method, params).map_err(grep::RpcFailure::new)
 }

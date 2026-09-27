@@ -1,3 +1,4 @@
+pub mod delegate;
 pub mod explore_policy;
 pub mod instance_registry;
 pub mod node_runtime;

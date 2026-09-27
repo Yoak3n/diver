@@ -255,6 +255,18 @@ pub fn configure(builder: Builder<tauri::Wry>) -> Builder<tauri::Wry> {
                         .map_err(|e| e.to_string())
                 })
             };
+            // 任务委派分发（0.2.0）：监督循环在壳层 core::delegate，闭包注入 services。
+            let delegate_dispatch: crate::services::DelegateDispatchFn = {
+                let data_dir = data_dir.clone();
+                let registry_dir = crate::config::instances::registry_dir(app.handle());
+                std::sync::Arc::new(move |instance_id, method, params| {
+                    let paths = crate::core::delegate::Paths {
+                        data_dir: data_dir.clone(),
+                        registry_dir: registry_dir.clone(),
+                    };
+                    crate::core::delegate::dispatch_rpc(&paths, instance_id, method, params)
+                })
+            };
             match crate::services::start(
                 app.handle(),
                 crate::core::sidecar::service_token().to_string(),
@@ -264,6 +276,7 @@ pub fn configure(builder: Builder<tauri::Wry>) -> Builder<tauri::Wry> {
                 instance_id.clone(),
                 on_card_name,
                 registry_list,
+                delegate_dispatch,
                 app.path()
                     .app_data_dir()
                     .expect("app_data_dir 可用"),

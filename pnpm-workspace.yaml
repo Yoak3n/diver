@@ -6,6 +6,7 @@ packages:
   - cos-plugins/backend
   - cos-plugins/basic-tools
   - cos-plugins/companion
+  - cos-plugins/delegate
   - cos-plugins/memory
   - cos-plugins/peer
   - cos-plugins/self-prompt

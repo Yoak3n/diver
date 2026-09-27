@@ -46,7 +46,7 @@ chrono = { version = "^0.4", features = ["serde"] }
 once_cell = "1.21.4"
 anyhow = "^1.0.102"
 parking_lot = "0.12"
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream", "blocking"] }
 futures-util = "0.3"
 base64 = "0.22"
 # 首启解压 node_modules.tar.zst（进程内解压，无黑窗；进度经 setup://progress 推给 UI）

@@ -18,6 +18,10 @@ pub type CardNameFn = Arc<dyn Fn(String) + Send + Sync>;
 /// P1-2 注册中心查询，返回注册项 JSON 数组）。
 pub type RegistryListFn = Arc<dyn Fn() -> Result<Value, String> + Send + Sync>;
 
+/// 任务委派分发回调（app 层包一层 `core::delegate::dispatch_rpc` + 路径后注入）：
+/// `(instance_id, method, params) -> data`；监督循环在壳层线程。
+pub type DelegateDispatchFn = Arc<dyn Fn(Option<&str>, &str, &Value) -> Result<Value, String> + Send + Sync>;
+
 /// 记忆路由（P1-2 身份头路由）：`X-Diver-Instance` → 实例私有 DualDb。
 ///
 /// 每实例一份私有库 + 共用共享库（P1-1 双库）；无身份 / 未知 id 回退 active
@@ -81,6 +85,8 @@ pub struct ServiceState {
     pub on_card_name: CardNameFn,
     /// 实例注册表查询（`registry::list`）。
     pub registry_list: RegistryListFn,
+    /// 任务委派（`delegate::*`，监督循环在壳层）。
+    pub delegate_dispatch: DelegateDispatchFn,
     /// 群组文件目录（P2-4，app 层 app_config_dir 注入）。
     pub groups_dir: std::path::PathBuf,
 }

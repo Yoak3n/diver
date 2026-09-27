@@ -16,6 +16,10 @@
     - id: peer
       name: '@diver/peer'
 
+    # 任务委派：delegate_task / list_tasks / cancel_task（壳层监督，0.2.0 委派）
+    - id: delegate
+      name: '@diver/delegate'
+
     # 五个基础工具：read / write / edit / sh / grep（grep 引擎在 Rust 壳，经 /rpc 调用）
     - id: basic-tools
       name: '@diver/basic-tools'

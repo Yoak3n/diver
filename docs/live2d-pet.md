@@ -52,7 +52,7 @@
 - **写入时机**：挂在 `internalModel` 的 **`beforeModelUpdate` 事件**（expression/physics 之后、
   `model.update()` 烘焙顶点之前）。`Cubism4InternalModel.update()` 末尾会 `loadParameters()`
   把参数恢复成 motion 快照 —— 在烘焙后或 `setInterval` 里写口型都会被冲掉（嘴几乎不动）
-- **响度来源**：`src/tts.ts` 用 `AnalyserNode` 读播放中的 RMS（`getSpeechLevel()`）；无分析器时退回多频正弦
+- **响度来源**：流式 TTS 经 `src/tts/level.ts` 的 `AnalyserNode` 读播放中的 RMS（`getSpeechLevel()`）；整段 audio 不接分析器（无电平），无分析器时口型退回多频正弦（详见 [tts.md](tts.md)）
 - **参数**：`ParamMouthOpenY` + `ParamMouthForm` +（YUI）`Param71` 齿口
 - **YUI 注意**：原包 `Groups.LipSync.Ids` 为空，`pnpm pet:models` 会自动补上标准嘴部参数
 

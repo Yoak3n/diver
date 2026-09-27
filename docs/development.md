@@ -50,7 +50,7 @@ diver/
 ├─ harness/                # Node sidecar workspace（pnpm，自研 cos）
 │  ├─ packages/            # 所有 @cos/* 工作区插件包（含 skills / system-prompt）
 │  │  └─ profile/          # DSH 对齐的 profile 模型（home/双锚点/平面回退/reconcile）
-│  ├─ scripts/plugin.ts    # pnpm 转发：profile 插件管理
+│  ├─ scripts/harness/plugin.ts    # pnpm 转发：profile 插件管理（harness 侧脚本在 scripts/harness/）
 │  ├─ cos-plugins/         # 第三方 @diver/*（本仓库实际在仓库根 ../cos-plugins）
 │  └─ .cos-home-<id>/      # 仓库本地 cos home，按实例分叉（默认实例 .cos-home-default；gitignore）
 │     └─ profiles/companion/  # companion profile：package.json（dsh.profile.bundles）
@@ -123,6 +123,50 @@ node scripts/memory-test.mjs  # 记忆插件：喂事实 → recall 验证
 缺省回落 debug 形态壳端落盘的 `<app_data>/service-token`（`scripts/service-auth.mjs`）。
 手动 curl `/api` 或 `/rpc` 时同样需要 `Authorization: Bearer <令牌>`（`GET /api/health`
 与 `/api/shutdown` 除外）。
+
+## 插件工具链与示例
+
+### 打包闭包检查
+
+```bash
+pnpm bundle:release --assemble-only --skip-frontend   # 先组装 sidecar 资源
+node scripts/check-plugin-closure.mjs                 # 打包产物闭包自检（退出码 0=通过）
+```
+
+`check-plugin-closure.mjs` 锚定最终产物 `src-tauri/resources/sidecar/`：打包
+不变量（无 tar 归档 / 无嵌套 node_modules / tsx+esbuild 在位 / 进程入口在位）、
+用户工作区 junction 模拟、**全部随包源码裸 import 按 Node 真实解析**、解析落点
+必须 ⊆ sidecar（借道开发机 node_modules 即 FAIL）。CI 在 ts-check job 自动跑
+（`.github/workflows/ci.yml`），`bundle-release.mjs` 组装末尾也会自动调用。
+旧实现 `check-plugin-deps.mjs` 锚定仓库源码会假绿，**已被取代、无引用**（仅留档）。
+
+### 示例插件（examples/）
+
+| 目录 | 用途 | 加载方式 |
+|---|---|---|
+| `examples/dsh-compat-example` | DSH 风格注册语法示例（`defineTool` + `ctx.tools.register(definition)`，cos 兼容层的等价别名形式） | pnpm workspace 成员；作为示例插件装配 |
+| `examples/hello-tool` | P4 profile 安装/卸载验证用（**非** bundle 行） | `pnpm add file:../../examples/hello-tool` 装进 profile 后随 boot 生效 |
+
+### harness 侧开发脚本（scripts/harness/）
+
+| 脚本 | 用途 |
+|---|---|
+| `plugin.ts` | `pnpm plugin --profile <name>` 薄转发：profile 插件管理 |
+| `dsh-compat-test.ts` | DSH 兼容冒烟：defineTool → register → execute |
+| `plugin-config-test.ts` / `plugin-config-persist-test.ts` | 插件配置校验 / 持久化冒烟 |
+| `provider-boot-smoke.ts` | boot companion 组合并打印已注册 LLM provider |
+| `scaffold.ts` | 插件树脚手架生成器 |
+
+### 运行时随包工具（在 sidecar 运行时目录内跑）
+
+`plugin-doctor.mjs`（装配一致性诊断，`node plugin-doctor.mjs [--plugins <dir>]`）、
+`install-deps.mjs`（为用户插件工作区装第三方依赖）。见
+[distribution.md](distribution.md)。
+
+### 各插件自带冒烟
+
+`cos-plugins/*/scripts/smoke.ts`（离线逻辑冒烟，esbuild bundle 后 node 运行）；
+web-tools 另有需外网的 `live-probe.ts`。
 
 ## 日志
 

@@ -121,9 +121,10 @@ SQLite 文件 `diver-memory.sqlite3`。
 |---|---|
 | `get_sidecar_status` / `restart_sidecar` / `get_sidecar_url` | sidecar 状态 / 重启 / UI 地址 |
 | `list_plugins` / `set_plugin_enabled` / `toggle_plugin` / `get_plugin_paths` | 插件启停（见 [plugins.md](plugins.md)） |
-| `get/set_tts_config` / `tts_list_voices` / `tts_list_models` / `tts_synthesize` | 在线 TTS 配置与合成（MiMo / MiniMax / 火山） |
+| `get/set_tts_config` / `tts_list_voices` / `tts_list_models` / `tts_synthesize` / `tts_synthesize_stream` / `tts_attach_player` / `tts_detach_player` / `tts_speak` / `tts_stop` / `tts_report_end` | 在线 TTS：配置、声线/模型表、整段/流式合成、双窗播放器（见 [tts.md](tts.md)） |
 | `show_main_window` | 从托盘/桌宠唤起主窗口 |
 | `get/set_window_startup_config` | 窗口启动配置读写 |
+| `get_setup_progress` | 首启进度回放（WebView 晚挂载兜底，见 [first-run-setup.md](first-run-setup.md)） |
 
 sidecar 状态变更通过事件 `sidecar://status` 推给前端。
 
@@ -143,4 +144,6 @@ sidecar 状态变更通过事件 `sidecar://status` 推给前端。
 `src/api.ts` 封装 sidecar HTTP API（`/api/health`、`/api/chat`、`/api/settings`、
 `/api/question-answer`），`streamEvents` 用 EventSource/SSE 消费流式事件；
 `composables/useChat.ts`（主窗口）与 `pet/usePetChat.ts`（桌宠）各自连接同一 SSE，
-消息互通（共用同一会话/记忆）。TTS 由前端调 `tts_synthesize` 合成后经 `<audio>` 播放，口型同步在桌宠侧按真实音频时长驱动。
+消息互通（共用同一会话/记忆）。TTS 由 `tts_speak` 入后端队列，后端合成并经事件
+把 PCM 流/整段推给播放窗槽位（pet 优先、main 兜底），口型由 `speaking` 事件 +
+AnalyserNode RMS 驱动（见 [tts.md](tts.md)）。

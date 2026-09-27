@@ -122,6 +122,16 @@ backend 增加（全部走 `:53620`，UI **不再 invoke**）：
 
 帧格式保持现有 SSE 风格，避免第二套序列化。
 
+### 壳层 Tauri 事件（与 backend SSE 并行的第三条小通道）
+
+| 事件 | 载荷 | 消费者 |
+|---|---|---|
+| `setup://progress` | `{phase, message, percent, done, error?}` | 首启遮罩（[first-run-setup.md](first-run-setup.md)） |
+| `backend://ready` | — | 首启遮罩隐藏 / 启动编排 |
+| `sidecar://status` | sidecar 状态 + 实例 id | 状态栏 / 侧栏在线点 |
+| `backend://ready`（全实例广播） | 带 instance id | 多实例 UI（P2-3 起） |
+| `pet://focus-instance` / `pet://model-changed` | instanceId / {model, instanceId?} | 桌宠定向路由（P2-5） |
+
 ---
 
 ## 6. 决策表

@@ -109,5 +109,22 @@ export function apply(ctx: Context) {
       },
     },
   })
-  console.log('[peer] 互实例消息工具就绪（send_to_peer / send_to_group / stay_silent）')
+  ctx.tools.register('list_peers', async () => {
+    try {
+      const data = await nativeRpc<Array<{ id: string; name: string; self: boolean }>>(
+        'peer::list',
+        {},
+        { label: 'list_peers' },
+      )
+      return { content: JSON.stringify({ peers: data }) }
+    } catch (e) {
+      return { content: JSON.stringify({ error: String((e as Error)?.message ?? e) }) }
+    }
+  }, {
+    description:
+      '查看当前有哪些实例同伴（id/显示名，含自己）。给别的实例发私聊、拉人进群之前先用这个确认对象；' +
+      '名单是运行时注册表，随实例增减变化。',
+    parameters: { type: 'object', properties: {} },
+  })
+  console.log('[peer] 互实例消息工具就绪（send_to_peer / send_to_group / stay_silent / list_peers）')
 }

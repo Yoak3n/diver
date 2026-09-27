@@ -82,6 +82,21 @@ pub fn broadcast_targets(rows: &[InstanceRow], sender: &str) -> Vec<InstanceRow>
     rows.iter().filter(|r| r.id != sender).cloned().collect()
 }
 
+/// peer 名册（纯函数）：含自己（self 标记）——agent 发起私聊/拉群前的对象清单。
+pub fn peer_roster(rows: &[InstanceRow], sender: &str) -> Value {
+    Value::Array(
+        rows.iter()
+            .map(|r| {
+                json!({
+                    "id": r.id,
+                    "name": display_name(rows, &r.id),
+                    "self": r.id == sender,
+                })
+            })
+            .collect(),
+    )
+}
+
 /// 显示名（纯函数）：实例名空则回退 id。
 fn display_name(rows: &[InstanceRow], id: &str) -> String {
     rows.iter()
@@ -98,10 +113,21 @@ pub async fn dispatch(
     params: &Value,
 ) -> Result<Value, RpcFailure> {
     match method {
+        "peer::list" => list(state, instance_id).map_err(RpcFailure::new),
         "peer::send" => send(state, instance_id, params).await.map_err(RpcFailure::new),
         "peer::broadcast" => broadcast(state, instance_id, params).await.map_err(RpcFailure::new),
         other => Err(RpcFailure::new(format!("未知 peer 方法：{other}"))),
     }
+}
+
+/// peer 名册：注册表行 + self 标记。
+fn list(state: &ServiceState, instance_id: Option<&str>) -> Result<Value, String> {
+    let rows = registry_rows(&(state.registry_list)()?);
+    let sender = instance_id
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| state.memory.fallback());
+    Ok(peer_roster(&rows, &sender))
 }
 
 /// 向单个实例投递 `/api/inbox`（壳盖章来源，Bearer 过 P2-1 闸）。
@@ -220,7 +246,7 @@ async fn broadcast(
 
 #[cfg(test)]
 mod tests {
-    use super::{broadcast_targets, inbox_body, registry_rows, resolve_route, InstanceRow};
+    use super::{broadcast_targets, inbox_body, peer_roster, registry_rows, resolve_route, InstanceRow};
     use serde_json::json;
 
     fn row(id: &str, name: &str, port: u16) -> InstanceRow {
@@ -278,5 +304,16 @@ mod tests {
         let targets = broadcast_targets(&rows, "beta");
         let ids: Vec<&str> = targets.iter().map(|r| r.id.as_str()).collect();
         assert_eq!(ids, vec!["default", "gamma"]);
+    }
+
+    #[test]
+    fn peer_roster_marks_self_and_names() {
+        let rows = vec![row("default", "默认", 1), row("beta", "", 2)];
+        let roster = peer_roster(&rows, "beta");
+        assert_eq!(roster[0]["id"], "default");
+        assert_eq!(roster[0]["name"], "默认");
+        assert_eq!(roster[0]["self"], false);
+        assert_eq!(roster[1]["name"], "beta"); // 名空回退 id
+        assert_eq!(roster[1]["self"], true);
     }
 }

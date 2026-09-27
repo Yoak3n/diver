@@ -10,6 +10,10 @@
         {
           "title": "开发指南",
           "path": "development.md"
+        },
+        {
+          "title": "0.2.0 接手指南",
+          "path": "handoff-0.2.0.md"
         }
       ]
     },

@@ -39,12 +39,11 @@ diver/
 ├─ src-tauri/              # Rust 壳
 │  ├─ src/commands/        # Tauri IPC 薄适配（system/plugins/shortcuts/tts/tts_player/presence/pet/instances/config）
 │  ├─ src/app/             # 组装与生命周期（setup / events / handle / state / tray / shortcut）
-│  ├─ src/shell/           # 窗口与桌面集成（window/{manager,pet} / lightweight / pet_mouse / notify）
+│  ├─ src/shell/           # 窗口与桌面集成（window/{manager,pet} / webview_args（WebView2 参数构造） / displays（显示器 canonical 编号） / lightweight / pet_mouse / notify / cursor）
 │  ├─ src/core/            # 可单测业务（sidecar/{process,lifecycle,ports,runtimes,shutdown,reclaim} / instance_registry / tts/{synth,player} / node_runtime / pet_interaction / pet_models / presence…）
 │  ├─ src/plugins/         # 插件 catalog/profile/preflight/{registry,package,install,uninstall}
-│  ├─ src/config/          # 持久化配置（window_startup / instances / tts / mcp / shortcuts…）
+│  ├─ src/config/          # 持久化配置（window_startup / instances / groups / pet_model（全局模型真源） / pet_window / tts→config_dir/tts.json / mcp / shortcuts / profile…）
 │  ├─ src/services/        # 本地服务：axum /rpc + memory RPC handler（notify 经注入闭包）
-│  └─ config/tts.json     # 在线 TTS 配置
 ├─ crates/diver-geom/     # 桌宠几何纯函数（config/shell/core 共用）
 ├─ crates/diver-memory/    # Rust 记忆后端 crate（SQLite 存储 + 确定性逻辑）
 │  └─ src/db/              # store / topics / events / entities / mappers…

@@ -3,6 +3,9 @@
 ## 当前状态
 
 - 版本 0.1.0，`pnpm tauri dev` 全链路可用（sidecar + 本地服务 + 主窗口 + 桌宠）
+- **开发分支 `feat/multi-instance-interop`（0.2.0「多实例互联」）**：P0~P2-5 全部一期
+  落地——实例清单/路径分叉/记忆双库/端口协商/私聊/群聊/群组自治/多桌宠/多实例模型配置。
+  进度账本与接手资料见 [handoff-0.2.0.md](handoff-0.2.0.md)
 - Windows 分发：`pnpm bundle:release` 产出 NSIS 安装包
   （**随包 Node + 开放 plugins/**，非 SEA；详见 [分发](distribution.md)、
   插件契约 [plugins.md](plugins.md)）

@@ -109,7 +109,10 @@
    首启引导（SetupOverlay + setup://progress）、web-tools 插件、TTS 流式合成+双窗播报（配置已迁
    `config/tts.rs`，旧文档写 `config/tts.json` 过时）、examples/ 与 check-plugin-*.mjs。
 5. roadmap 传统项：代码签名（SmartScreen）、语音输入（STT）、自动更新。
-6. 另一立项：**coding agent 任务委派**（`codingagent任务委派.md`，与本特性同属 0.2.0）。
+6. ~~另一立项：**coding agent 任务委派**~~ **一期已落地**（`a8ff5e5`，2026-09-27，拍板见 daily
+   立项文档）：dsh 首发监督闭环（壳层 core/delegate + `@diver/delegate` 工具）。
+   **前置**：dsh headless profile 需配有效 key（实测现为占位符 AUTH 401）；
+   MCP 通道 / 设置 UI / 自动发现后置。
 
 ## 7. 文档地图
 

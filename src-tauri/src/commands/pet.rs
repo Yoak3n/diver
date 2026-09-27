@@ -122,3 +122,34 @@ pub fn pet_model_path(app: AppHandle, rel: String) -> Result<String, String> {
         .map_err(|e| format!("无法解析资源目录: {e}"))?;
     Ok(crate::core::pet_models::model_file(&res, &rel)?.to_string_lossy().into_owned())
 }
+
+// ---- P2-5 多桌宠（实例桌宠窗口池）：async = 窗口创建/销毁不在主线程（见 pet/mod.rs） ----
+
+/// 打开实例桌宠（幂等前置；同屏上限 3 只）。返回在屏实例 id 列表。
+#[tauri::command]
+pub async fn open_instance_pet(app: AppHandle, id: String) -> Result<Vec<String>, String> {
+    crate::shell::window::pet::instances::open(&app, &id)
+}
+
+/// 收起实例桌宠。返回在屏实例 id 列表。
+#[tauri::command]
+pub async fn close_instance_pet(app: AppHandle, id: String) -> Result<Vec<String>, String> {
+    crate::shell::window::pet::instances::close(&app, &id)
+}
+
+/// 在屏实例桌宠清单（id 列表）。
+#[tauri::command]
+pub fn list_instance_pets(app: AppHandle) -> Vec<String> {
+    crate::shell::window::pet::instances::list(&app)
+}
+
+/// 点谁互动谁：前置主窗并广播「切换到该实例会话」（async：建主窗不在主线程）。
+#[tauri::command]
+pub async fn focus_instance_chat(app: AppHandle, id: String) -> Result<(), String> {
+    use super::super::shell::window::manager::Manager as WM;
+    use super::super::shell::window::schema::WindowType;
+    use tauri::Emitter as _;
+    WM::global().show_window(WindowType::Main, None);
+    app.emit("pet://focus-instance", serde_json::json!({ "instanceId": id }))
+        .map_err(|e| format!("事件广播失败：{e}"))
+}

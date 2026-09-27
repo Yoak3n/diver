@@ -106,6 +106,22 @@ pub fn update_instance(
     }
 }
 
+/// 设置每实例桌宠模型 id 并落盘（P2-5；`None` = 跟随全局）。
+pub fn set_instance_pet_model(
+    app: &AppHandle,
+    id: &str,
+    model: Option<&str>,
+) -> Result<InstanceMeta, InstanceError> {
+    let base = config_dir(app);
+    let mut reg = load_or_seed_at(&base, now_secs());
+    let meta = reg.set_pet_model(id, model)?;
+    if save_config_at(&base, &reg) {
+        Ok(meta)
+    } else {
+        Err(InstanceError::Io)
+    }
+}
+
 /// 删除实例并落盘（`default` 拒绝）。
 pub fn delete_instance(app: &AppHandle, id: &str) -> Result<(), InstanceError> {
     let base = config_dir(app);

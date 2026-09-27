@@ -22,6 +22,9 @@ pub struct InstanceMeta {
     /// 头像留位（P0 无编辑入口）。
     #[serde(default)]
     pub avatar: Option<String>,
+    /// 每实例桌宠模型 id（P2-5 多桌宠；`None` = 跟随全局模型选择）。
+    #[serde(default)]
+    pub pet_model: Option<String>,
     /// 登记时间（Unix 秒）。
     #[serde(default)]
     pub created_at: u64,

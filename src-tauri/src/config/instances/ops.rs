@@ -1,4 +1,4 @@
-﻿//! 实例清单纯逻辑：id 生成 / 校验，登记、改名、删除（无 IO，可单测）。
+//! 实例清单纯逻辑：id 生成 / 校验，登记、改名、删除（无 IO，可单测）。
 
 use super::types::{InstanceError, InstanceMeta, InstancesFile, DEFAULT_ID};
 
@@ -79,6 +79,7 @@ impl InstancesFile {
             name,
             enabled: true,
             avatar: None,
+            pet_model: None,
             created_at: now,
         };
         self.instances.push(meta.clone());
@@ -105,6 +106,24 @@ impl InstancesFile {
         if let Some(e) = enabled {
             inst.enabled = e;
         }
+        Ok(inst.clone())
+    }
+
+    /// 设置每实例桌宠模型 id（P2-5；`None`/空串 = 回到跟随全局模型选择）。
+    pub fn set_pet_model(
+        &mut self,
+        id: &str,
+        model: Option<&str>,
+    ) -> Result<InstanceMeta, InstanceError> {
+        let inst = self
+            .instances
+            .iter_mut()
+            .find(|i| i.id == id)
+            .ok_or(InstanceError::NotFound)?;
+        inst.pet_model = model
+            .map(str::trim)
+            .filter(|m| !m.is_empty())
+            .map(String::from);
         Ok(inst.clone())
     }
 
@@ -136,6 +155,7 @@ impl InstancesFile {
                 name: None,
                 enabled: true,
                 avatar: None,
+                pet_model: None,
                 created_at: now,
             },
         );

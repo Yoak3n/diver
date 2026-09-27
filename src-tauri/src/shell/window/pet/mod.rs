@@ -9,6 +9,7 @@
 //!   进程与 GPU 资源。重新显示时前端挂载后自行拉状态。
 
 mod flags;
+pub mod instances;
 mod lifecycle;
 mod position;
 mod window;

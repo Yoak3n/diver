@@ -1,8 +1,8 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "pet",
-  "description": "Capabilities for the Live2D pet window (drag, focus, chat, click-through)",
-  "windows": ["pet"],
+  "description": "Capabilities for the Live2D pet window (drag, focus, chat, click-through). pet-* = P2-5 实例桌宠（label pet-<id>，动态创建，权限同经典桌宠）",
+  "windows": ["pet", "pet-*"],
   "permissions": [
     "core:default",
     "core:window:allow-start-dragging",

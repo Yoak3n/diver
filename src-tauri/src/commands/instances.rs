@@ -74,6 +74,16 @@ pub fn delete_instance(app: AppHandle, id: String) -> Result<(), String> {
 
 /// 运行时实例行（P2-3 多实例 UI）：注册表就绪行（id / 名字 / pid / 端口）。
 /// 清单里未启动的实例不会出现——前端与 `list_instances` 合并渲染侧栏。
+/// 设置每实例桌宠模型 id（`null` = 跟随全局模型选择）。
+#[tauri::command]
+pub fn set_instance_pet_model(
+    app: AppHandle,
+    id: String,
+    model: Option<String>,
+) -> Result<InstanceMeta, String> {
+    instances::set_instance_pet_model(&app, &id, model.as_deref()).map_err(err_text)
+}
+
 #[tauri::command]
 pub fn list_instance_runtimes(app: AppHandle) -> Vec<crate::core::instance_registry::InstanceRecord> {
     crate::core::instance_registry::list_at(&instances::registry_dir(&app))

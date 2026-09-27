@@ -81,6 +81,7 @@ pub fn generate_handlers() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + 
         save_mcp_config,
         list_instances,
         create_instance,
+        list_groups,
         update_instance,
         clear_instance_name,
         delete_instance,
@@ -252,6 +253,9 @@ pub fn configure(builder: Builder<tauri::Wry>) -> Builder<tauri::Wry> {
                 instance_id.clone(),
                 on_card_name,
                 registry_list,
+                app.path()
+                    .app_data_dir()
+                    .expect("app_data_dir 可用"),
             ) {
                 Some(port) => std::env::set_var("DIVER_MEMORY_PORT", port.to_string()),
                 None => log::error!("本地服务启动失败，记忆功能不可用"),

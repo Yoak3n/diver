@@ -81,6 +81,8 @@ pub struct ServiceState {
     pub on_card_name: CardNameFn,
     /// 实例注册表查询（`registry::list`）。
     pub registry_list: RegistryListFn,
+    /// 群组文件目录（P2-4，app 层 app_config_dir 注入）。
+    pub groups_dir: std::path::PathBuf,
 }
 
 #[cfg(test)]

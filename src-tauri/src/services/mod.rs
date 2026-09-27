@@ -8,6 +8,7 @@
 
 mod auth;
 mod grep;
+mod groups;
 mod memory;
 mod notify;
 mod peer;

@@ -35,6 +35,7 @@ async fn require_auth(
 /// 每实例一份私有库 + 共享库（app 层按实例 id 派生后注入），无身份回退 active。
 /// `on_card_name`：人格卡片名字变更回调（app 层包「写回实例清单 name」后注入）。
 /// `registry_list`：实例注册表查询（P1-2 注册中心，app 层包 `instance_registry::list_at`）。
+/// `groups_dir`：群组文件目录（P2-4 群实体，app 层 app_config_dir 注入）。
 pub fn start(
     app: &AppHandle,
     auth_token: String,
@@ -44,6 +45,7 @@ pub fn start(
     memory_fallback: String,
     on_card_name: CardNameFn,
     registry_list: RegistryListFn,
+    groups_dir: std::path::PathBuf,
 ) -> Option<u16> {
     let dir = app.path().app_data_dir().ok()?;
     if let Err(err) = std::fs::create_dir_all(&dir) {
@@ -72,6 +74,7 @@ pub fn start(
         presence_dispatch,
         on_card_name,
         registry_list,
+        groups_dir,
     };
 
     // 统一 RPC 入口 + 鉴权中间件（P2-1）；未来服务继续在 rpc::dispatch 中扩展。

@@ -77,11 +77,6 @@ pub fn inbox_body(text: &str, sender_name: &str, sender: &str, target: &str, kin
     })
 }
 
-/// 群聊广播目标（纯函数）：注册表全体除发送方自己。
-pub fn broadcast_targets(rows: &[InstanceRow], sender: &str) -> Vec<InstanceRow> {
-    rows.iter().filter(|r| r.id != sender).cloned().collect()
-}
-
 /// peer 名册（纯函数）：含自己（self 标记）——agent 发起私聊/拉群前的对象清单。
 pub fn peer_roster(rows: &[InstanceRow], sender: &str) -> Value {
     Value::Array(
@@ -98,7 +93,7 @@ pub fn peer_roster(rows: &[InstanceRow], sender: &str) -> Value {
 }
 
 /// 显示名（纯函数）：实例名空则回退 id。
-fn display_name(rows: &[InstanceRow], id: &str) -> String {
+pub(crate) fn display_name(rows: &[InstanceRow], id: &str) -> String {
     rows.iter()
         .find(|r| r.id == id)
         .map(|r| if r.name.is_empty() { r.id.clone() } else { r.name.clone() })
@@ -115,7 +110,6 @@ pub async fn dispatch(
     match method {
         "peer::list" => list(state, instance_id).map_err(RpcFailure::new),
         "peer::send" => send(state, instance_id, params).await.map_err(RpcFailure::new),
-        "peer::broadcast" => broadcast(state, instance_id, params).await.map_err(RpcFailure::new),
         other => Err(RpcFailure::new(format!("未知 peer 方法：{other}"))),
     }
 }
@@ -131,7 +125,7 @@ fn list(state: &ServiceState, instance_id: Option<&str>) -> Result<Value, String
 }
 
 /// 向单个实例投递 `/api/inbox`（壳盖章来源，Bearer 过 P2-1 闸）。
-async fn deliver(state: &ServiceState, target: &InstanceRow, body: &Value) -> Result<Value, String> {
+pub(crate) async fn deliver(state: &ServiceState, target: &InstanceRow, body: &Value) -> Result<Value, String> {
     let url = format!("http://127.0.0.1:{}/api/inbox", target.port);
     let response = reqwest::Client::new()
         .post(&url)
@@ -198,55 +192,9 @@ async fn send(
     }))
 }
 
-/// 群聊广播（P2-3）：发给注册表内除自己外的全部实例。
-/// `wake=false`（缺省）：对端 `inject` 收听注入（不唤醒，对方不必回复）；
-/// `wake=true`：`next-turn` 唤醒（点名式，给对方发言机会）。逐个投递，单个失败不阻断。
-async fn broadcast(
-    state: &ServiceState,
-    instance_id: Option<&str>,
-    params: &Value,
-) -> Result<Value, String> {
-    let text = params
-        .get("text")
-        .and_then(Value::as_str)
-        .unwrap_or("")
-        .trim()
-        .to_string();
-    if text.is_empty() {
-        return Err("text 必填".to_string());
-    }
-    let target = if params.get("wake").and_then(Value::as_bool).unwrap_or(false) {
-        "next-turn"
-    } else {
-        "inject"
-    };
-    let sender = instance_id
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .unwrap_or_else(|| state.memory.fallback());
-    let rows = registry_rows(&(state.registry_list)()?);
-    let targets = broadcast_targets(&rows, sender);
-    if targets.is_empty() {
-        return Err("没有其它在线实例可广播".to_string());
-    }
-    let body = inbox_body(&text, &display_name(&rows, sender), sender, target, "group");
-    let mut delivered = Vec::new();
-    let mut failed = Vec::new();
-    for row in &targets {
-        match deliver(state, row, &body).await {
-            Ok(payload) => delivered.push(json!({
-                "to": row.id,
-                "messageId": payload.get("messageId").cloned().unwrap_or(Value::Null),
-            })),
-            Err(err) => failed.push(json!({ "to": row.id, "error": err })),
-        }
-    }
-    Ok(json!({ "delivered": delivered, "failed": failed, "queued": target }))
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{broadcast_targets, inbox_body, peer_roster, registry_rows, resolve_route, InstanceRow};
+    use super::{inbox_body, peer_roster, registry_rows, resolve_route, InstanceRow};
     use serde_json::json;
 
     fn row(id: &str, name: &str, port: u16) -> InstanceRow {
@@ -292,18 +240,6 @@ mod tests {
         assert_eq!(body["text"], "你好");
         assert_eq!(body["target"], "next-step");
         assert_eq!(body["kind"], "group");
-    }
-
-    #[test]
-    fn broadcast_targets_exclude_sender() {
-        let rows = vec![
-            row("default", "默认", 1),
-            row("beta", "小贝", 2),
-            row("gamma", "", 3),
-        ];
-        let targets = broadcast_targets(&rows, "beta");
-        let ids: Vec<&str> = targets.iter().map(|r| r.id.as_str()).collect();
-        assert_eq!(ids, vec!["default", "gamma"]);
     }
 
     #[test]

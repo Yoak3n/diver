@@ -10,6 +10,9 @@ import { readDiverSettings, writeDiverSettings, textOf, imagesOf } from './sessi
 import { SESSION_ID, userMessage } from './agent.ts'
 import {
   groupMarkerLine,
+  groupNameFromMarker,
+  groupTag,
+  inboxMarkerLine,
   injectOrigin,
   injectUiLabel,
   isGroupMessage,
@@ -228,12 +231,23 @@ export async function handleRequest(
         sendJson(res, 400, { error: '消息不能为空' })
         return
       }
-      // P2-3 群聊广播：会话内注入「在场 + 不必回复」提示首行（UI 显示时剥离）。
-      // 不设强制回复：实例自主决定说不说（stay_silent/空回复出口见 @diver/peer）。
-      const text = body.group === true ? `${groupMarkerLine()}\n${content}` : content
+      // P2-4 群聊广播：body.group = {id, name}（true = 全员群缺省）；会话内注入
+      // 「在场 + 不必回复」提示首行（UI 显示时剥离）。不设强制回复：实例自主决定
+      // 说不说（stay_silent/空回复出口见 @diver/peer）。
+      const groupInfo =
+        typeof body.group === 'object' && body.group !== null
+          ? {
+              id: String((body.group as { id?: unknown }).id ?? '').trim() || 'general',
+              name: String((body.group as { name?: unknown }).name ?? '').trim() || '全员群',
+            }
+          : body.group === true
+            ? { id: 'general', name: '全员群' }
+            : null
+      const text = groupInfo !== null ? `${groupMarkerLine(groupInfo.name)}\n${content}` : content
+      const groupDetail = groupInfo !== null ? `group:${groupInfo.id}` : undefined
       if (deps.state.busy) {
         const agent = await deps.ensureAgent()
-        const msg = userMessage(text || '（图片）', images)
+        const msg = userMessage(text || '（图片）', images, groupDetail)
         // P2-3 群聊广播（queue）：忙时排队 next-turn，不插话打断当前回合。
         if (body.queue === true) {
           agent.followup(msg)
@@ -257,7 +271,7 @@ export async function handleRequest(
         return
       }
       const agent = await deps.ensureAgent()
-      const msg = userMessage(text || '（图片）', images)
+      const msg = userMessage(text || '（图片）', images, groupDetail)
       agent.followup(msg)
       sendJson(res, 200, { sessionId: String(agent.id), messageId: String(msg.id), queued: false })
       return
@@ -371,21 +385,25 @@ export async function handleRequest(
         return
       }
       const fromName = String(from.name ?? '').trim() || fromId
-      // 来源区分（用户拍板）：群发言与私聊分章——收方一眼分出「群里说的」还是「私下说的」。
-      const kind = body.kind === 'group' ? 'group' : 'peer'
-      const marker =
-        kind === 'group'
-          ? `【群聊消息｜来自实例 ${fromName}（${fromId}）】`
-          : `【消息来自实例 ${fromName}（${fromId}）】`
+      // 来源区分（用户拍板）：私聊 / 群发言 / 群邀请分章——收方一眼分出语境。
+      const g = (body.group ?? {}) as { id?: string; name?: string }
+      const groupId = String(g.id ?? '').trim() || 'general'
+      const groupName = String(g.name ?? '').trim() || '全员群'
+      const kind = body.kind === 'invite' ? 'invite' : body.kind === 'group' ? 'group' : 'peer'
+      const marker = inboxMarkerLine(kind, fromName, fromId, groupName)
+      const bodyText =
+        kind === 'invite'
+          ? `${marker}\n${text}\n请调用 respond_invite(group="${groupId}", accept, reason) 决定接受或拒绝（可以拒绝）。`
+          : `${marker}\n${text}`
       const target =
         body.target === 'inject'
           ? 'inject'
           : body.target === 'next-step'
             ? 'next-step'
             : 'next-turn'
-      const msg = createUserMessage(`${marker}\n${text}`, {
+      const msg = createUserMessage(bodyText, {
         kind: 'plugin',
-        detail: `${kind}:${fromId}`,
+        detail: kind === 'peer' ? `peer:${fromId}` : `${kind}:${groupId}:${fromId}`,
       })
       const agent = await deps.ensureAgent()
       // InboxTarget 三档：followup = next-turn 唤醒；steer = next-step 插话；inject = next-step 不唤醒（群聊收听）。
@@ -424,8 +442,8 @@ export async function handleRequest(
       // step → 消息下标，便于 tool/result 回填工具结果
       const msgIndexByStep = new Map<string, number>()
       let presencePending = false
-      // P2-3 群聊归属：群/peer 输入后的首条助手回复打 group 标（合并流过滤）。
-      let groupPending = false
+      // P2-3 群聊归属：群/peer 输入后的首条助手回复打 group 标（合并流过滤+归属）。
+      let groupPending: { id: string; name: string } | null = null
       try {
         const events = deps.ctx.sessionPersistence.prepare(SessionId(SESSION_ID)) ?? []
         for (const ev of events) {
@@ -488,14 +506,17 @@ export async function handleRequest(
             // P2-3 来源标记渲染：peer 消息正文保留（剥壳盖章首行），from 结构化给 UI 徽标。
             const peer = peerSource(ev.data.source)
             if (peer !== null) {
+              const isGroup = peer.kind === 'group'
+              const gid = peer.group ?? 'general'
+              const gname = groupNameFromMarker(text) ?? undefined
               messages.push({
                 id: ev.data.id, kind: 'user',
                 content: stripPeerMarker(text),
                 origin: 'peer', from: peer.id, time,
                 // 群发言才进群合并流；实例间私聊留在各自私聊视图。
-                ...(peer.kind === 'group' ? { group: true } : {}),
+                ...(isGroup ? { group: true, groupId: gid, ...(gname ? { groupName: gname } : {}) } : {}),
               })
-              if (peer.kind === 'group') groupPending = true
+              if (isGroup) groupPending = { id: gid, name: gname ?? '全员群' }
               continue
             }
             // 过滤运行时上下文快照；放行真人消息与已裁决注入
@@ -520,15 +541,19 @@ export async function handleRequest(
                 origin: 'presence', time,
               })
             } else {
-              // 群聊广播：剥「在场提示」首行，group 标记给合并流去重。
+              // 群聊广播：剥「在场提示」首行，group 归属（gid 从 source.detail 取）。
               const group = isGroupMessage(text)
-              if (group) groupPending = true
+              const gid = group ? (groupTag(ev.data.source) ?? 'general') : null
+              const gname = group ? (groupNameFromMarker(text) ?? undefined) : undefined
+              if (group && gid !== null) groupPending = { id: gid, name: gname ?? '全员群' }
               messages.push({
                 id: ev.data.id,
                 kind: 'user',
                 content: group ? stripGroupMarker(text) : text,
                 origin: 'user',
-                ...(group ? { group: true } : {}),
+                ...(group && gid !== null
+                  ? { group: true, groupId: gid, ...(gname ? { groupName: gname } : {}) }
+                  : {}),
                 time,
                 ...(imagesOf(ev.data.content).length > 0 ? { images: imagesOf(ev.data.content) } : {}),
               })
@@ -559,12 +584,14 @@ export async function handleRequest(
               ...(tools.length > 0 ? { tools } : {}),
               // 群聊归属只认「有正文的回复」：空文本工具步不消费标记，
               // 否则真正想说的那句反而丢标（SSE 端同语义：空文本先 continue）。
-              ...(groupPending && text !== '' ? { group: true } : {}),
+              ...(groupPending && text !== ''
+                ? { group: true, groupId: groupPending.id, groupName: groupPending.name }
+                : {}),
               origin: presencePending ? 'presence' : 'assistant', time,
             })
             msgIndexByStep.set(stepKey, messages.length - 1)
             presencePending = false
-            if (text !== '') groupPending = false
+            if (text !== '') groupPending = null
           }
         }
       } catch { /* 会话尚不存在 */ }

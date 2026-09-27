@@ -76,25 +76,63 @@ export function injectOrigin(source: unknown): 'interaction' | 'presence' | 'pro
   return 'proactive'
 }
 
-/** peer 消息来源（source.kind 'plugin' + detail 'peer:<id>'｜'group:<id>'）；非 peer 返回 null。 */
-export function peerSource(source: unknown): { id: string; kind: 'peer' | 'group' } | null {
+/** peer 消息来源（source.kind 'plugin' + detail 'peer:<id>'｜'group:<gid>:<id>'｜'invite:<gid>:<id>'）；
+ * 旧形 'group:<id>' 视作全员群。非 peer 返回 null。 */
+export function peerSource(
+  source: unknown,
+): { id: string; kind: 'peer' | 'group' | 'invite'; group?: string } | null {
   const s = source as { kind?: string; detail?: string } | null | undefined
   if (s?.kind !== 'plugin') return null
   const d = s.detail ?? ''
+  const split = (rest: string): { gid: string; id: string } | null => {
+    const at = rest.indexOf(':')
+    return at > 0 ? { gid: rest.slice(0, at), id: rest.slice(at + 1) } : null
+  }
   if (d.startsWith('peer:') && d.length > 5) return { id: d.slice(5), kind: 'peer' }
-  if (d.startsWith('group:') && d.length > 6) return { id: d.slice(6), kind: 'group' }
+  if (d.startsWith('group:')) {
+    const rest = d.slice(6)
+    const parts = split(rest)
+    return parts !== null
+      ? { id: parts.id, kind: 'group', group: parts.gid }
+      : { id: rest, kind: 'group', group: 'general' }
+  }
+  if (d.startsWith('invite:')) {
+    const rest = d.slice(7)
+    const parts = split(rest)
+    return parts !== null
+      ? { id: parts.id, kind: 'invite', group: parts.gid }
+      : { id: rest, kind: 'invite', group: 'general' }
+  }
   return null
 }
 
-/** 剥掉壳盖章首行（「【消息来自实例 …】」/「【群聊消息｜来自实例 …】」），保留正文（空正文回退原文）。 */
+/** 壳盖章首行（收方模型可见的来源区分）：私聊 / 群发言 / 群邀请 / 群系统事件。 */
+export function inboxMarkerLine(
+  kind: 'peer' | 'group' | 'invite',
+  fromName: string,
+  fromId: string,
+  groupName: string,
+): string {
+  if (kind === 'group') {
+    return fromId === 'system'
+      ? `【群聊「${groupName}」｜系统事件】`
+      : `【群聊「${groupName}」｜来自实例 ${fromName}（${fromId}）】`
+  }
+  if (kind === 'invite') {
+    return `【群聊邀请｜「${groupName}」来自实例 ${fromName}（${fromId}）】`
+  }
+  return `【消息来自实例 ${fromName}（${fromId}）】`
+}
+
+/** 剥掉壳盖章首行（「来自实例」/「系统事件」两族），保留正文（空正文回退原文）。 */
 export function stripPeerMarker(text: string): string {
-  const stripped = text.replace(/^【[^】\n]*来自实例 [^\n]*?】\r?\n?/, '')
+  const stripped = text.replace(/^【[^】\n]*(?:来自实例 |系统事件)[^\n]*?】\r?\n?/, '')
   return stripped.trim() !== '' ? stripped : text
 }
 
 /** 群聊广播标记首行（后端注入会话；提示「多人在场、不必每条都回」）。 */
-export function groupMarkerLine(): string {
-  return '【群聊｜其他人也在场，不必每条都回，想说才说】'
+export function groupMarkerLine(groupName: string): string {
+  return `【群聊「${groupName}」｜其他人也在场，不必每条都回，想说才说】`
 }
 
 /** 剥掉群聊广播标记首行（UI 显示用；空正文回退原文）。 */
@@ -103,7 +141,20 @@ export function stripGroupMarker(text: string): string {
   return stripped.trim() !== '' ? stripped : text
 }
 
-/** 是否用户群聊广播消息（标记首行判定；区别于实例群发言「【群聊消息｜…】」）。 */
+/** 用户群广播的归属群（source.detail 'group:<gid>'，kind human）；非群返回 null。 */
+export function groupTag(source: unknown): string | null {
+  const s = source as { detail?: string } | null | undefined
+  const d = s?.detail ?? ''
+  return d.startsWith('group:') && d.length > 6 ? d.slice(6) : null
+}
+
+/** 从群族标记首行取组名（剥章前用）；非群返回 null。 */
+export function groupNameFromMarker(text: string): string | null {
+  const m = text.match(/^【群聊「([^」]*)」/)
+  return m !== null ? m[1] : null
+}
+
+/** 是否用户群聊广播消息（标记首行判定；实例群发言由 peerSource 分支先行拦截）。 */
 export function isGroupMessage(text: string): boolean {
-  return text.startsWith('【群聊｜')
+  return text.startsWith('【群聊')
 }

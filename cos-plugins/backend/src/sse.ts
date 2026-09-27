@@ -3,7 +3,7 @@
 import type { ServerResponse } from 'node:http'
 import type { Context } from 'cordis'
 import { nativeRpc } from '@diver/native-bridge/rpc'
-import { injectOrigin, injectUiLabel, isGroupMessage, peerSource, stripGroupMarker, stripPeerMarker } from './interaction.ts'
+import { groupNameFromMarker, groupTag, injectOrigin, injectUiLabel, isGroupMessage, peerSource, stripGroupMarker, stripPeerMarker } from './interaction.ts'
 import { textOf, imagesOf } from './session-helpers.ts'
 import { SESSION_ID } from './agent.ts'
 import type { WebState } from './state.ts'
@@ -52,13 +52,16 @@ export function attachEventListeners(
         const text = textOf(ev.data.content)
         const peer = peerSource(ev.data.source)
         if (peer !== null) {
-          // P2-3 来源标记渲染：正文保留（剥壳盖章首行），from 结构化给 UI 徽标；
+          // P2-3/P2-4 来源标记渲染：正文保留（剥壳盖章首行），from 结构化给 UI 徽标；
           // 群发言（kind group）进群合并流并挂回复归属，实例间私聊不进。
-          if (peer.kind === 'group') state.groupPending = true
+          const isGroup = peer.kind === 'group'
+          const gid = peer.group ?? 'general'
+          const gname = groupNameFromMarker(text) ?? undefined
+          if (isGroup) state.groupPending = { id: gid, name: gname ?? '全员群' }
           broadcast({
             type: 'message', kind: 'user', sessionId: String(session.id),
             messageId: ev.data.id, content: stripPeerMarker(text), origin: 'peer', from: peer.id, time,
-            ...(peer.kind === 'group' ? { group: true } : {}),
+            ...(isGroup ? { group: true, groupId: gid, ...(gname ? { groupName: gname } : {}) } : {}),
           })
           break
         }
@@ -82,13 +85,17 @@ export function attachEventListeners(
           })
         } else {
           const images = imagesOf(ev.data.content)
-          // 群聊广播：剥「在场提示」首行，group 标记给合并流去重。
+          // 群聊广播：剥「在场提示」首行，group 归属（gid 从 source.detail 取）。
           const group = isGroupMessage(text)
-          if (group) state.groupPending = true
+          const gid = group ? (groupTag(ev.data.source) ?? 'general') : null
+          const gname = group ? (groupNameFromMarker(text) ?? undefined) : undefined
+          if (group && gid !== null) state.groupPending = { id: gid, name: gname ?? '全员群' }
           broadcast({
             type: 'message', kind: 'user', sessionId: String(session.id),
             messageId: ev.data.id, content: group ? stripGroupMarker(text) : text, origin: 'user', time,
-            ...(group ? { group: true } : {}),
+            ...(group && gid !== null
+              ? { group: true, groupId: gid, ...(gname ? { groupName: gname } : {}) }
+              : {}),
             ...(images.length > 0 ? { images } : {}),
           })
         }
@@ -113,14 +120,14 @@ export function attachEventListeners(
         const origin = state.presencePending ? 'presence' : 'assistant'
         state.presencePending = false
         const group = state.groupPending
-        state.groupPending = false
+        state.groupPending = null
         broadcast({
           type: 'message',
           kind: 'assistant',
           sessionId: String(session.id),
           messageId: ev.data.message.id,
           turnMessageId: `turn-${ev.data.turn}-${ev.data.step}`,
-          ...(group ? { group: true } : {}),
+          ...(group ? { group: true, groupId: group.id, groupName: group.name } : {}),
           content: text,
           origin,
           time,

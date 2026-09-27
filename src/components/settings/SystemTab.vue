@@ -3,8 +3,8 @@ import { onMounted, ref, toRef } from "vue";
 import type { HealthInfo, PetInteractionSettings, SettingsInfo } from "../../types";
 import type { SettingsState } from "../../composables/useSettings";
 import { tauriAvailable } from "../../tauri";
-import { useAssistantAvatar } from "../../composables/useAssistantAvatar";
-import AssistantAvatar from "../AssistantAvatar.vue";
+import { useAppIcon } from "../../composables/useAppIcon";
+import AppIconMark from "../AppIconMark.vue";
 import PetModelPicker from "../PetModelPicker.vue";
 import { usePetInteraction } from "./composables/usePetInteraction";
 import { usePetModelSelect } from "./composables/usePetModelSelect";
@@ -34,85 +34,84 @@ const {
   onPickPetModel,
 } = usePetModelSelect();
 
-const { avatarUrl, avatarPath, loadAvatar, setAvatarFromFile, resetAvatar } =
-  useAssistantAvatar();
-const avatarMsg = ref("");
-const avatarBusy = ref(false);
-const fileInput = ref<HTMLInputElement | null>(null);
+const { appIconUrl, appIconPath, loadAppIcon, setAppIconFromFile, resetAppIcon } = useAppIcon();
+const appIconMsg = ref("");
+const appIconBusy = ref(false);
+const appIconInput = ref<HTMLInputElement | null>(null);
 
 onMounted(() => {
-  void loadAvatar(true);
+  void loadAppIcon(true);
 });
 
-async function onPickAvatar(ev: Event) {
+async function onPickAppIcon(ev: Event) {
   const input = ev.target as HTMLInputElement;
   const file = input.files?.[0];
   input.value = "";
   if (!file) return;
   if (!tauriAvailable()) {
-    avatarMsg.value = "仅桌面端可保存自定义头像";
+    appIconMsg.value = "仅桌面端可保存应用图标";
     return;
   }
-  avatarBusy.value = true;
-  avatarMsg.value = "";
+  appIconBusy.value = true;
+  appIconMsg.value = "";
   try {
-    await setAvatarFromFile(file);
-    avatarMsg.value = "头像已保存";
+    await setAppIconFromFile(file);
+    appIconMsg.value = "应用图标已保存";
   } catch (e) {
-    avatarMsg.value = e instanceof Error ? e.message : String(e);
+    appIconMsg.value = e instanceof Error ? e.message : String(e);
   } finally {
-    avatarBusy.value = false;
+    appIconBusy.value = false;
   }
 }
 
-async function onResetAvatar() {
+async function onResetAppIcon() {
   if (!tauriAvailable()) return;
-  avatarBusy.value = true;
+  appIconBusy.value = true;
   try {
-    await resetAvatar();
-    avatarMsg.value = "已恢复默认头像";
+    await resetAppIcon();
+    appIconMsg.value = "已恢复默认应用图标";
   } catch (e) {
-    avatarMsg.value = e instanceof Error ? e.message : String(e);
+    appIconMsg.value = e instanceof Error ? e.message : String(e);
   } finally {
-    avatarBusy.value = false;
+    appIconBusy.value = false;
   }
 }
 </script>
 
 <template>
-  <label class="group-title">助手头像</label>
+  <label class="group-title">应用图标</label>
   <div class="avatar-row">
-    <AssistantAvatar :size="48" variant="welcome" />
+    <AppIconMark :size="48" :radius="8" />
     <div class="avatar-actions">
       <button
         class="btn small"
         type="button"
-        :disabled="!tauriAvailable() || avatarBusy"
-        @click="fileInput?.click()"
+        :disabled="!tauriAvailable() || appIconBusy"
+        @click="appIconInput?.click()"
       >
-        {{ avatarBusy ? "处理中…" : "上传图片" }}
+        {{ appIconBusy ? "处理中…" : "上传图片" }}
       </button>
       <button
         class="btn small"
         type="button"
-        :disabled="!tauriAvailable() || avatarBusy || !avatarUrl"
-        @click="onResetAvatar"
+        :disabled="!tauriAvailable() || appIconBusy || !appIconUrl"
+        @click="onResetAppIcon"
       >
         恢复默认
       </button>
     </div>
   </div>
   <input
-    ref="fileInput"
+    ref="appIconInput"
     class="hidden-input"
     type="file"
     accept="image/png,image/jpeg,image/webp,image/gif"
-    @change="onPickAvatar"
+    @change="onPickAppIcon"
   />
-  <p v-if="avatarMsg" class="hint">{{ avatarMsg }}</p>
+  <p v-if="appIconMsg" class="hint">{{ appIconMsg }}</p>
   <p class="hint">
-    文件路径（agent 可直接改写，保存后聊天里生效）：
-    <code>{{ avatarPath || "$COS_HOME/assistant-avatar.png" }}</code>
+    应用级品牌位（窗口标题栏等），与实例无关；各实例头像在「实例」页单独设置。
+    文件路径：<code>{{ appIconPath || "应用配置目录/app-icon.png" }}</code>
   </p>
 
   <label class="group-title">启动窗口</label>
@@ -174,6 +173,7 @@ async function onResetAvatar() {
   />
   <p v-if="petModelMsg" class="hint">{{ petModelMsg }}</p>
   <p class="hint">
+    此处为应用级默认桌宠模型（未指定桌宠的实例跟随它）；单个实例可在「实例」页固定自己的模型。
     缺少 YUI 时先执行 <code>pnpm pet:models</code>。YUI 来自 N.E.K.O，仅供本地学习评估，请勿商用分发。
   </p>
 

@@ -77,6 +77,10 @@ impl PresenceFsm {
                     self.enter_conversation(ConversationLeaf::Delivering); // T09
                     return;
                 }
+                (ConversationLeaf::Listening, Event::DeliveringStart) => {
+                    self.enter_conversation(ConversationLeaf::Delivering); // T09b
+                    return;
+                }
                 (ConversationLeaf::Delivering, Event::DeliveringEnd) => {
                     // T10 / T11
                     if self.ctx.user_input_active {
@@ -88,6 +92,14 @@ impl PresenceFsm {
                 }
                 _ => {}
             }
+        }
+
+        // T09c：输出打断（异步 TTS 晚于回合结束已回 Ambient / Resting 态手动朗读）
+        if matches!(ev, Event::DeliveringStart)
+            && matches!(live_copy, Live::Resting | Live::Attending(Attending::Ambient(_)))
+        {
+            self.enter_conversation(ConversationLeaf::Delivering);
+            return;
         }
 
         // T04 / T05：Regime ↔ Resting（Conversation 不被掐断）

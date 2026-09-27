@@ -52,7 +52,8 @@
   --dur-ui: 200ms;
 
   --titlebar-h: 40px;
-  --chat-max: 760px;
+  /* 会话列宽：小窗维持可读上限，大窗随视口放宽（55vw，封顶 1280） */
+  --chat-max: clamp(760px, 55vw, 1280px);
 }
 
 @media (prefers-color-scheme: dark) {

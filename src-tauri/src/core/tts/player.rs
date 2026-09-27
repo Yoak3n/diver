@@ -213,6 +213,9 @@ impl TtsPlayer {
     }
 
     async fn drain(&self, cfg: TtsConfig) {
+        // DELIVERING_*：一次 drain 会话首 job 开始 / 队列排空收尾（壳 FSM T09/T09b/T09c）。
+        // 自动朗读晚于 busy(false) 落 Ambient，靠 T09c 才能进 Delivering。
+        let mut delivering = false;
         loop {
             let next = {
                 let mut g = self.0.lock();
@@ -224,9 +227,20 @@ impl TtsPlayer {
                     }
                 }
             };
-            let Some((job, gen)) = next else { return };
+            let Some((job, gen)) = next else {
+                if delivering {
+                    crate::core::presence::PresenceHandle::active()
+                        .apply_event(diver_presence::Event::DeliveringEnd);
+                }
+                return;
+            };
             if self.is_stale(gen) {
                 continue;
+            }
+            if !delivering {
+                delivering = true;
+                crate::core::presence::PresenceHandle::active()
+                    .apply_event(diver_presence::Event::DeliveringStart);
             }
             self.send(&TtsPlayerEvent::Speaking { value: true });
             self.send(&TtsPlayerEvent::Start {

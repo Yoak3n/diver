@@ -14,6 +14,7 @@ packages:
   - cos-plugins/llm-commandcode
   - cos-plugins/llm-volcark
   - cos-plugins/llm-custom
+  - cos-plugins/llm-openai-wire
   - cos-plugins/native-bridge
   - cos-plugins/bundle-companion
 

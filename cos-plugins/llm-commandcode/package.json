@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@cos/plugin-api": "workspace:*",
+    "@diver/llm-openai-wire": "file:../llm-openai-wire",
     "cordis": "4.0.0-rc.7"
   },
   "devDependencies": {

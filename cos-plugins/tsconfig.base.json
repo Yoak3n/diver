@@ -11,6 +11,7 @@
     "skipLibCheck": true,
     "paths": {
       "@cos/plugin-api": ["../harness/packages/plugin-api/src/index.ts"],
+      "@diver/llm-openai-wire": ["../llm-openai-wire/src/index.ts"],
       "@diver/native-bridge": ["../native-bridge/src/index.ts"],
       "@diver/native-bridge/*": ["../native-bridge/src/*.ts"],
       "@diver/native-bridge/rpc": ["../native-bridge/src/rpc.ts"],

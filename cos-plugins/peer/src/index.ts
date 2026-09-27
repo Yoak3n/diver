@@ -62,7 +62,8 @@ export function apply(ctx: Context) {
     const a = (args ?? {}) as { text?: unknown; wake?: unknown; group?: unknown }
     const text = String(a.text ?? '').trim()
     if (!text) return { content: JSON.stringify({ error: 'text 必填' }) }
-    const wake = a.wake === true
+    // 缺省唤醒（拍板 2026-09-27）：发言 = 给成员发言机会；显式 wake=false 才静默投递。
+    const wake = a.wake !== false
     const group = String(a.group ?? '').trim()
     try {
       const data = await nativeRpc<{ delivered: unknown[]; failed: unknown[]; queued: string }>(
@@ -76,15 +77,22 @@ export function apply(ctx: Context) {
     }
   }, {
     description:
-      '在群聊里发言（发给群内其它成员，不发给自己）。group 缺省 = 全员群，也可指定群 id 或群名。' +
-      '缺省只入对方上下文、不唤醒（对方不必回复）；wake=true 才唤醒对方给发言机会。' +
+      '在群聊里发言（发给群内其它成员，不发给自己）。注意：你直接输出的文字只有本地会话可见，' +
+      '不会进入群聊——要让群里其它实例听到，发言必须通过本工具。' +
+      'group 缺省 = 全员群，也可指定群 id 或群名。' +
+      '缺省唤醒群成员：对方下一轮获得发言机会（不打断进行中的话头，对方可自选沉默或回应）。' +
+      'wake=false 只入对方上下文、不唤醒——对方下次开口时才会看到，不保证及时，' +
+      '仅用于不必被及时听到的自说自话。' +
       '群聊规则：不必每条都回，想说才说。',
     parameters: {
       type: 'object',
       properties: {
         text: { type: 'string', description: '发言内容' },
         group: { type: 'string', description: '群 id 或群名（缺省全员群 general）；先用 list_groups 确认' },
-        wake: { type: 'boolean', description: '是否唤醒对方给发言机会（缺省 false = 只入上下文不打扰）' },
+        wake: {
+          type: 'boolean',
+          description: '是否唤醒成员给发言机会（缺省 true）；false = 只入对方上下文不打扰（对方下次开口才看到，不保证及时）',
+        },
       },
       required: ['text'],
     },

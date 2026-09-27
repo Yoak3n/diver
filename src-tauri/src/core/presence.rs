@@ -1,34 +1,54 @@
-//! 壳端 Companion Presence 接线：进程级单例 + L3 `POST /api/inject`。
+//! 壳端 Companion Presence 接线：每实例一份 FSM + L3 `POST /api/inject`。
 //!
 //! 状态机/策略纯逻辑在 `diver-presence` crate；本模块只做：
-//! - 全局单例（`AppState` / OnceCell）
-//! - busy / 聊天回压入口（Node 经 `/rpc presence::*`）
-//! - 已裁决注入的 HTTP 下发（sidecar 无门控执行）
+//! - 实例级句柄注册表（多实例各 sidecar 独立回压 busy/事件，互不踩踏）
+//! - `/rpc presence::*` 派发与注入下发见子模块 [`rpc`]（按 `x-diver-instance` 路由）
 
 pub mod parse_event;
+mod rpc;
+
+pub use rpc::{dispatch_inject, dispatch_rpc, request_and_inject};
+
+use std::collections::HashMap;
+use std::sync::Arc;
 
 use diver_presence::{
     CompanionPresence, Event, InjectRequest, Intent, Phase, PresenceSnapshot, ProactiveConfig,
-    Regime, RequestResult,
+    RequestResult,
 };
 use parking_lot::Mutex;
 use serde_json::{json, Value};
 
-/// 进程级存在感总控。
+/// 进程级存在感总控（单实例一份）。
 pub struct PresenceHandle {
     inner: Mutex<CompanionPresence>,
 }
 
 impl PresenceHandle {
-    pub fn global() -> &'static PresenceHandle {
-        static HANDLE: once_cell::sync::OnceCell<PresenceHandle> = once_cell::sync::OnceCell::new();
-        HANDLE.get_or_init(|| {
-            let now = diver_presence::types::now_ms();
-            log::info!("[presence] BOOT at {now}");
-            PresenceHandle {
-                inner: Mutex::new(CompanionPresence::boot(now)),
-            }
-        })
+    /// 实例 FSM 注册表（get-or-create；随实例删除遗留的空项无害，量级 = 实例数）。
+    fn registry() -> &'static Mutex<HashMap<String, Arc<PresenceHandle>>> {
+        static REG: once_cell::sync::OnceCell<Mutex<HashMap<String, Arc<PresenceHandle>>>> =
+            once_cell::sync::OnceCell::new();
+        REG.get_or_init(|| Mutex::new(HashMap::new()))
+    }
+
+    /// 实例 FSM 句柄；空 id 归到 default（旧 sidecar 不带头时的兜底）。
+    pub fn instance(id: &str) -> Arc<PresenceHandle> {
+        let key = if id.trim().is_empty() { "default".to_string() } else { id.trim().to_string() };
+        let mut reg = Self::registry().lock();
+        reg.entry(key)
+            .or_insert_with(|| {
+                let now = diver_presence::types::now_ms();
+                log::info!("[presence] BOOT instance at {now}");
+                Arc::new(PresenceHandle { inner: Mutex::new(CompanionPresence::boot(now)) })
+            })
+            .clone()
+    }
+
+    /// active 实例 FSM：桌宠 / 探索 / 主动开口等壳级行为的归属
+    /// （与 `SidecarManager::global()` 同源 = 清单第一个 enabled 实例）。
+    pub fn active() -> Arc<PresenceHandle> {
+        Self::instance(&active_instance_id())
     }
 
     pub fn with<R>(&self, f: impl FnOnce(&mut CompanionPresence) -> R) -> R {
@@ -74,162 +94,65 @@ impl PresenceHandle {
     }
 }
 
-/// 解析 sidecar `/rpc` 上的 presence 方法。
-pub fn dispatch_rpc(method: &str, params: &Value) -> Result<Value, String> {
-    let handle = PresenceHandle::global();
-    match method {
-        "presence::ping" => Ok(Value::Null),
-        "presence::phase" => Ok(json!({ "phase": handle.phase().as_str() })),
-        "presence::snapshot" => Ok(serde_json::to_value(handle.snapshot()).unwrap_or(Value::Null)),
-        "presence::busy" => {
-            let busy = params.get("busy").and_then(|v| v.as_bool()).unwrap_or(false);
-            handle.apply_event(Event::Busy(busy));
-            Ok(json!({ "busy": busy }))
-        }
-        "presence::event" => {
-            let ty = params
-                .get("type")
-                .and_then(|v| v.as_str())
-                .ok_or_else(|| "type 必填".to_string())?;
-            let now = diver_presence::types::now_ms();
-            let ev = match ty {
-                "USER_CHAT" => Event::UserChat,
-                "CHAT_ACTIVITY" => Event::ChatActivity,
-                "USER_INPUT_START" => Event::UserInputStart,
-                "USER_INPUT_END" => Event::UserInputEnd,
-                "PET_GESTURE" => Event::PetGesture,
-                "DELIVERING_START" => Event::DeliveringStart,
-                "DELIVERING_END" => Event::DeliveringEnd,
-                "DREAM_START" => Event::DreamStart,
-                "DREAM_END" => Event::DreamEnd,
-                "EXPLORE_START" => Event::ExploreStart,
-                "EXPLORE_END" => Event::ExploreEnd,
-                "BOOT" => Event::Boot,
-                "SHUTDOWN" => Event::Shutdown,
-                "REGIME" => {
-                    let name = params
-                        .get("regime")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("normal");
-                    let regime = match name {
-                        "dnd" => Regime::Dnd,
-                        "quiet_hours" => Regime::QuietHours,
-                        "focus" => Regime::Focus,
-                        "sleep" => Regime::Sleep,
-                        _ => Regime::Normal,
-                    };
-                    Event::Regime(regime)
-                }
-                "ENABLED" => Event::Enabled(params.get("enabled").and_then(|v| v.as_bool()).unwrap_or(true)),
-                other => return Err(format!("未知 presence 事件: {other}")),
-            };
-            handle.apply_event(ev);
-            handle.with(|p| p.evaluate(now));
-            Ok(json!({ "phase": handle.phase().as_str() }))
-        }
-        "presence::set_config" => {
-            let now = diver_presence::types::now_ms();
-            let cfg = handle.with(|p| p.snapshot(now).proactive);
-            let next = ProactiveConfig {
-                quiet_ms: params
-                    .get("quietMs")
-                    .and_then(|v| v.as_u64())
-                    .unwrap_or(cfg.quiet_ms),
-                cooldown_ms: params
-                    .get("cooldownMs")
-                    .and_then(|v| v.as_u64())
-                    .unwrap_or(cfg.cooldown_ms),
-                max_triggers: params
-                    .get("maxTriggers")
-                    .and_then(|v| v.as_u64())
-                    .unwrap_or(cfg.max_triggers as u64)
-                    as u32,
-            };
-            handle.set_proactive_config(next);
-            Ok(json!({
-                "quietMs": next.quiet_ms,
-                "cooldownMs": next.cooldown_ms,
-                "maxTriggers": next.max_triggers,
-            }))
-        }
-        "presence::request_inject" => {
-            let source = params
-                .get("source")
-                .and_then(|v| v.as_str())
-                .unwrap_or("proactive")
-                .to_string();
-            let text = params
-                .get("text")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .trim()
-                .to_string();
-            if text.is_empty() {
-                return Err("text 必填".into());
-            }
-            let (result, payload) = handle.request_proactive_inject(&source, &text);
-            let mut body = serde_json::to_value(&result).unwrap_or(Value::Null);
-            if body.is_null() {
-                body = json!({ "ok": false, "reason": "serialize_failed" });
-            }
-            if let Some(p) = payload {
-                body["inject"] = serde_json::to_value(&p).unwrap_or(Value::Null);
-            }
-            Ok(body)
-        }
-        _ => Err(format!("未知 presence 方法: {method}")),
-    }
+/// active 实例 id（注册表定位由 setup 注入 manager；缺省回退 default）。
+fn active_instance_id() -> String {
+    crate::core::sidecar::SidecarManager::global()
+        .instance_id()
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| "default".to_string())
 }
 
-/// L3：把已裁决注入发给 sidecar `POST /api/inject`（无门控）。
-pub async fn dispatch_inject(base_url: &str, req: &InjectRequest) -> Result<Value, String> {
-    let url = format!("{}/api/inject", base_url.trim_end_matches('/'));
-    let body = json!({
-        "text": req.text,
-        "source": { "kind": "plugin", "detail": req.detail },
-        "origin": req.source,
-    });
-    let client = reqwest::Client::new();
-    let res = client
-        .post(&url)
-        .header("Authorization", crate::core::sidecar::auth_bearer())
-        .json(&body)
-        .send()
-        .await
-        .map_err(|e| format!("inject 请求失败: {e}"))?;
-    let status = res.status();
-    let val = res
-        .json::<Value>()
-        .await
-        .map_err(|e| format!("inject 响应解析失败: {e}"))?;
-    if !status.is_success() {
-        return Err(format!("inject HTTP {status}: {val}"));
-    }
-    Ok(val)
+/// 解析实例 id：显式指定优先；空 / 缺省回退 active 实例。
+pub fn resolve_instance_id(explicit: Option<&str>) -> String {
+    explicit
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(active_instance_id)
 }
 
-/// 壳命令 / 内部调用：裁决 + 下发注入。
-pub async fn request_and_inject(
-    base_url: &str,
-    source: &str,
-    text: &str,
-) -> Result<Value, String> {
-    let (result, payload) = PresenceHandle::global().request_proactive_inject(source, text);
-    let mut body = serde_json::to_value(&result).map_err(|e| e.to_string())?;
-    match (result.is_ok(), payload) {
-        (true, Some(req)) => match dispatch_inject(base_url, &req).await {
-            Ok(val) => {
-                // 注入成功推进静默（与 claim 分离，避免冷却/静默纠缠）
-                PresenceHandle::global().apply_event(Event::ChatActivity);
-                body["dispatch"] = val;
-            }
-            Err(e) => {
-                // 已 claim 不回滚：记日志，不双 claim
-                log::warn!("[presence] L3 inject 失败: {e}");
-                body["dispatchError"] = json!(e);
-            }
-        },
-        _ => {}
+/// 实例快照 JSON（带 `instance` 身份字段；Tauri 命令与 `/rpc` 共用，UI 标注展示来源）。
+pub fn instance_snapshot_json(explicit: Option<&str>) -> Value {
+    let resolved = resolve_instance_id(explicit);
+    let mut body = serde_json::to_value(PresenceHandle::instance(&resolved).snapshot())
+        .unwrap_or(Value::Null);
+    if let Some(obj) = body.as_object_mut() {
+        obj.insert("instance".into(), json!(resolved));
     }
-    Ok(body)
+    body
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use diver_presence::Event;
+
+    #[test]
+    fn instance_handles_are_keyed_and_stable() {
+        let a = PresenceHandle::instance("test-a");
+        let a2 = PresenceHandle::instance("test-a");
+        let b = PresenceHandle::instance("test-b");
+        assert!(Arc::ptr_eq(&a, &a2));
+        assert!(!Arc::ptr_eq(&a, &b));
+        // 空 id 归 default
+        assert!(Arc::ptr_eq(&PresenceHandle::instance(""), &PresenceHandle::instance("default")));
+    }
+
+    #[test]
+    fn busy_events_stay_within_their_instance() {
+        // 回归：多实例共用单例时，一实例的 Busy(false) 会把另一实例的
+        // Thinking 打回 Listening。现按实例隔离：互不影响。
+        let a = PresenceHandle::instance("test-iso-a");
+        let b = PresenceHandle::instance("test-iso-b");
+        for h in [&a, &b] {
+            h.apply_event(Event::UserChat);
+        }
+        a.apply_event(Event::Busy(true));
+        assert_eq!(a.phase(), Phase::Thinking);
+        assert_eq!(b.phase(), Phase::Listening);
+        // b 先结束：a 仍 Thinking
+        b.apply_event(Event::Busy(false));
+        assert_eq!(a.phase(), Phase::Thinking);
+        assert_eq!(b.phase(), Phase::Listening);
+    }
 }

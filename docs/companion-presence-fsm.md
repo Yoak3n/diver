@@ -176,6 +176,8 @@ Regime ∥ = Normal | Dnd | QuietHours | Focus | Sleep
 | T07 | `Conversation/Listening` | `BUSY(true)` | | `Conversation/Thinking` | |
 | T08 | `Conversation/Thinking` | `BUSY(false)` | 无待播 | `Conversation/Delivering` 或 `Ambient/Observing` | |
 | T09 | `Conversation/Thinking` | `DELIVERING_START` | | `Conversation/Delivering` | |
+| T09b | `Conversation/Listening` | `DELIVERING_START` | | `Conversation/Delivering` | 输出打断 |
+| T09c | `Resting` / `Ambient/*` | `DELIVERING_START` | | `Conversation/Delivering` | 异步 TTS 晚于回合结束 / 手动朗读 |
 | T10 | `Conversation/Delivering` | `DELIVERING_END` | 用户仍输入 | `Conversation/Listening` | |
 | T11 | `Conversation/Delivering` | `DELIVERING_END` | 否则 | `Ambient/Observing` | `lastTurnEndAt=now` |
 | T12 | `Live`（Ambient/Resting） | `DREAM_START` | L1+L2 放行 | `Solitary/Dreaming` | |

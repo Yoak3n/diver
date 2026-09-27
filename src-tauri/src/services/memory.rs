@@ -55,7 +55,7 @@ pub fn dispatch(
     method: &str,
     params: &Value,
 ) -> Result<Value, String> {
-    let memory = state.memory.resolve(instance_id)?;
+    let (owner_id, memory) = state.memory.resolve_with_id(instance_id)?;
     let db = memory.lock().map_err(|_| "db lock poisoned".to_string())?;
 
     let str_opt = |key: &str| params.get(key).and_then(|v| v.as_str()).map(str::to_string);
@@ -136,13 +136,15 @@ pub fn dispatch(
             let facts = params.get("facts").unwrap_or(&Value::Null);
             db.update_card(facts).map_err(err)?;
             // 写回式回填（P1-1）：人格卡片是名字权威源，落库后把名字同步回实例清单。
+            // 实例身份必须用刚落库那张卡片的归属实例（身份头解析结果），否则会串写
+            // 到别的实例的清单项（BUG：实例名被写到 default）。
             if let Some(name) = facts
                 .get("name")
                 .and_then(|n| n.as_str())
                 .map(str::trim)
                 .filter(|s| !s.is_empty())
             {
-                (state.on_card_name)(name.to_string());
+                (state.on_card_name)(owner_id.to_string(), name.to_string());
             }
             Value::Null
         }
@@ -268,4 +270,69 @@ fn req_str(params: &Value, key: &str) -> Result<String, String> {
 
 fn err(e: diver_memory::Error) -> String {
     e.to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::{Arc, Mutex};
+
+    use super::dispatch;
+    use crate::services::state::{
+        CardNameFn, DelegateDispatchFn, MemoryPool, NotifyFn, PresenceDispatchFn, RegistryListFn,
+        ServiceState,
+    };
+
+    fn temp_pool() -> MemoryPool {
+        let mut pool = MemoryPool::new("alpha");
+        for id in ["alpha", "beta"] {
+            let dir = std::env::temp_dir().join(format!("diver-card-writeback-{id}-{}", std::process::id()));
+            std::fs::create_dir_all(&dir).unwrap();
+            let db = diver_memory::db::DualDb::open(&dir.join("private.db"), &dir.join("shared.db"))
+                .unwrap();
+            pool.insert(id, db);
+        }
+        pool
+    }
+
+    fn state_with(writes: Arc<Mutex<Vec<(String, String)>>>) -> ServiceState {
+        let on_card_name: CardNameFn = Arc::new(move |id, name| writes.lock().unwrap().push((id, name)));
+        let notify: NotifyFn = Arc::new(|_, _| {});
+        let presence: PresenceDispatchFn = Arc::new(|_, _, _| Ok(serde_json::Value::Null));
+        let registry: RegistryListFn = Arc::new(|| Ok(serde_json::Value::Null));
+        let delegate: DelegateDispatchFn = Arc::new(|_, _, _| Ok(serde_json::Value::Null));
+        ServiceState {
+            memory: temp_pool(),
+            auth_token: "test".into(),
+            notify,
+            presence_dispatch: presence,
+            on_card_name,
+            registry_list: registry,
+            delegate_dispatch: delegate,
+            groups_dir: std::env::temp_dir(),
+        }
+    }
+
+    /// BUG 回归（实例名串写）：update_card 的名字写回必须路由到卡片实际归属的实例，
+    /// 无身份头时回退 active；beta 改名不允许再串写到 alpha（原实现绑死启动时实例）。
+    #[test]
+    fn card_name_writeback_routes_to_owning_instance() {
+        let writes = Arc::new(Mutex::new(Vec::new()));
+        let state = state_with(writes.clone());
+
+        dispatch(&state, Some("beta"), "update_card", &serde_json::json!({ "facts": { "name": "小贝" } }))
+            .unwrap();
+        dispatch(&state, None, "update_card", &serde_json::json!({ "facts": { "name": "小芊" } }))
+            .unwrap();
+
+        assert_eq!(
+            *writes.lock().unwrap(),
+            vec![("beta".to_string(), "小贝".to_string()), ("alpha".to_string(), "小芊".to_string())],
+            "写回应带卡片归属实例；无身份头回退 active 实例"
+        );
+        // 卡片本身落在各自私有库。
+        let beta = dispatch(&state, Some("beta"), "get_card", &serde_json::json!({})).unwrap();
+        assert_eq!(beta["name"], "小贝");
+        let alpha = dispatch(&state, Some("alpha"), "get_card", &serde_json::json!({})).unwrap();
+        assert_eq!(alpha["name"], "小芊");
+    }
 }

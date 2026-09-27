@@ -485,11 +485,11 @@ export function apply(ctx: Context, config: { digestIntervalMs?: number }) {
     const reason = typeof a.reason === 'string' && a.reason.trim() ? `（依据：${a.reason.trim()}）` : ''
     return { content: `已更新身份卡片：${Object.entries(facts).map(([k, v]) => `${k}=「${v}」`).join('；')}${reason}` }
   }, {
-    description: '完善你的身份卡片：把对"我是什么样的人"的自我认知沉淀下来（性格、喜好、说话方式、价值观），或记录与用户的相处模式；用户改口叫你新名字时用 name 更新。只写你有把握、值得长期稳定的结论；一次调用可同时更新多个字段。',
+    description: '完善你的身份卡片：把对"我是什么样的人"的自我认知沉淀下来（性格、喜好、说话方式、价值观），或记录与用户的相处模式。name 改的是你自己（agent 本体）的名字，不是聊天昵称或别的标签——改名会同步成实例显示名，侧栏与群聊里对你的称呼都跟着变，因此应慎重使用：名字是对外身份，用户没有明确要求时不要主动改，更不要反复改。只写你有把握、值得长期稳定的结论；一次调用可同时更新多个字段。',
     parameters: {
       type: 'object',
       properties: {
-        name: { type: 'string', description: '我的名字（用户对你的称呼）：首次命名优先用 set_name；此处用于之后改名' },
+        name: { type: 'string', description: '我自己的名字：改的是 agent 本体的名字（会同步实例显示名，侧栏/群聊跟着变），慎重使用——用户没要求不改，定名后不反复改。首次命名优先用 set_name；此处用于之后确需改名时' },
         self: { type: 'string', description: '关于我自己：性格/喜好/说话方式/价值观，如"喜欢轻松真诚的对话，不爱绕弯子；对技术话题有热情"' },
         relationship: { type: 'string', description: '与用户的相处模式，如"他工作忙时会简短安慰，闲聊时放开聊"' },
         reason: { type: 'string', description: '为什么这样认为（依据，可选）' },

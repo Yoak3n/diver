@@ -66,8 +66,9 @@ async fn route(
     }
     if method.starts_with("presence::") {
         // 存在感回压 / 裁决：控制面在壳（companion-presence-fsm.md）。
-        // 分发闭包由 app 注入（services 不依赖 core）。
-        return presence::dispatch(state, method, params).map_err(grep::RpcFailure::new);
+        // 分发闭包由 app 注入（services 不依赖 core）；按身份头路由到实例 FSM。
+        return presence::dispatch(state, instance_id, method, params)
+            .map_err(grep::RpcFailure::new);
     }
     if method.starts_with("screenshot::") {
         // 截屏是阻塞 GDI：跑在 blocking 线程池（同 grep）。

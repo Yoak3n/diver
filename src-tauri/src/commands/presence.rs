@@ -12,17 +12,16 @@ use crate::core::sidecar::SidecarManager;
 /// 存在感相位（叶子名）。调用点会按 now 补发时间事件。
 #[tauri::command]
 pub fn presence_phase() -> String {
-    crate::core::presence::PresenceHandle::global()
+    crate::core::presence::PresenceHandle::active()
         .phase()
         .as_str()
         .to_string()
 }
 
-/// 存在感调试快照（相位 + ProactiveSpeak 私有记账）。
+/// 存在感调试快照（相位 + ProactiveSpeak 私有记账）。`instance` 缺省读 active 实例。
 #[tauri::command]
-pub fn presence_snapshot() -> serde_json::Value {
-    serde_json::to_value(crate::core::presence::PresenceHandle::global().snapshot())
-        .unwrap_or(serde_json::Value::Null)
+pub fn presence_snapshot(instance: Option<String>) -> serde_json::Value {
+    crate::core::presence::instance_snapshot_json(instance.as_deref())
 }
 
 /// 驱动 L0 事件（手势 / 设置 / 回压统一入口）。
@@ -30,8 +29,8 @@ pub fn presence_snapshot() -> serde_json::Value {
 pub fn presence_event(event: String, regime: Option<String>, enabled: Option<bool>) -> String {
     match parse_presence_event(&event, regime.as_deref(), enabled) {
         Ok(ev) => {
-            crate::core::presence::PresenceHandle::global().apply_event(ev);
-            crate::core::presence::PresenceHandle::global()
+            crate::core::presence::PresenceHandle::active().apply_event(ev);
+            crate::core::presence::PresenceHandle::active()
                 .phase()
                 .as_str()
                 .to_string()

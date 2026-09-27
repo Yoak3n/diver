@@ -130,9 +130,9 @@ export function stripPeerMarker(text: string): string {
   return stripped.trim() !== '' ? stripped : text
 }
 
-/** 群聊广播标记首行（后端注入会话；提示「多人在场、不必每条都回」）。 */
+/** 群聊广播标记首行（后端注入会话；提示「多人在场、不必每条都回」+ 回应渠道）。 */
 export function groupMarkerLine(groupName: string): string {
-  return `【群聊「${groupName}」｜其他人也在场，不必每条都回，想说才说】`
+  return `【群聊「${groupName}」｜其他实例也在场，不必每条都回；想说就用 send_to_group 发言（直接回复对方看不到）】`
 }
 
 /** 剥掉群聊广播标记首行（UI 显示用；空正文回退原文）。 */

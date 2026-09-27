@@ -46,7 +46,7 @@ async fn http_json(method: &str, url: &str, body: Option<Value>) -> Result<Value
 
 /// 取消当前 explore job（USER_CHAT / 壳侧打断）。
 pub fn cancel_active_job() {
-    let job_id = PresenceHandle::global().with(|p| {
+    let job_id = PresenceHandle::active().with(|p| {
         let id = p.explore_policy().job_id().map(|s| s.to_string());
         p.explore_policy().release();
         id
@@ -69,7 +69,7 @@ async fn try_start_explore() {
 
     // 1) 壳策略：到点了吗？
     let now = diver_presence::types::now_ms();
-    let wake = PresenceHandle::global().with(|p| p.explore_should_wake(now));
+    let wake = PresenceHandle::active().with(|p| p.explore_should_wake(now));
     if !wake {
         log::debug!("[explore] tick：未到点，跳过");
         return;
@@ -106,14 +106,14 @@ async fn try_start_explore() {
             .and_then(|v| v.as_str())
             .map(|s| s.to_string());
         let now = diver_presence::types::now_ms();
-        let sleep = PresenceHandle::global().with(|p| p.snapshot(now).regime == "sleep");
+        let sleep = PresenceHandle::active().with(|p| p.snapshot(now).regime == "sleep");
         let reason = if sleep {
             WebExploreReason::Sleep
         } else {
             WebExploreReason::LongIdle
         };
 
-        let (result, job) = PresenceHandle::global().with(|p| {
+        let (result, job) = PresenceHandle::active().with(|p| {
             p.request_web_explore(term, reason, from_memory_id.clone(), now)
         });
         if !result.is_ok() {
@@ -123,7 +123,7 @@ async fn try_start_explore() {
         let Some(job) = job else { continue };
 
         // L0：EXPLORE_START → Solitary/Exploring（T20）
-        PresenceHandle::global().apply_event(Event::ExploreStart);
+        PresenceHandle::active().apply_event(Event::ExploreStart);
 
         let body = json!({
             "term": job.term,
@@ -143,15 +143,15 @@ async fn try_start_explore() {
                     job.term,
                     job.reason.as_str()
                 );
-                PresenceHandle::global().with(|p| p.explore_policy().set_job_id(job_id.clone()));
+                PresenceHandle::active().with(|p| p.explore_policy().set_job_id(job_id.clone()));
                 // 后台等待完成 / 被打断
                 spawn_waiter(job_id);
                 return; // 一次只起一个
             }
             Err(e) => {
                 log::warn!("[explore] POST /api/memory/explore 失败: {e}");
-                PresenceHandle::global().with(|p| p.explore_policy().release());
-                PresenceHandle::global().apply_event(Event::ExploreEnd);
+                PresenceHandle::active().with(|p| p.explore_policy().release());
+                PresenceHandle::active().apply_event(Event::ExploreEnd);
             }
         }
     }
@@ -166,7 +166,7 @@ fn spawn_waiter(job_id: String) {
             // 最多约 3 分钟
             tokio::time::sleep(Duration::from_secs(2)).await;
             // 被壳 release（USER_CHAT）则停等，job 已 cancel
-            let still = PresenceHandle::global().with(|p| p.explore_policy().job_id() == Some(job_id.as_str()));
+            let still = PresenceHandle::active().with(|p| p.explore_policy().job_id() == Some(job_id.as_str()));
             if !still {
                 return;
             }
@@ -175,8 +175,8 @@ fn spawn_waiter(job_id: String) {
                     let state = val.get("state").and_then(|v| v.as_str()).unwrap_or("");
                     if state == "done" || state == "error" || state == "cancelled" {
                         log::info!("[explore] job {job_id} → {}", log_fmt::job_summary(state, &val));
-                        PresenceHandle::global().with(|p| p.explore_policy().release());
-                        PresenceHandle::global().apply_event(Event::ExploreEnd);
+                        PresenceHandle::active().with(|p| p.explore_policy().release());
+                        PresenceHandle::active().apply_event(Event::ExploreEnd);
                         return;
                     }
                 }
@@ -194,7 +194,7 @@ fn spawn_waiter(job_id: String) {
         // 超时兜底
         log::warn!("[explore] job {job_id} 等待超时（3min），取消");
         cancel_active_job();
-        PresenceHandle::global().apply_event(Event::ExploreEnd);
+        PresenceHandle::active().apply_event(Event::ExploreEnd);
     });
 }
 
@@ -213,7 +213,7 @@ pub fn spawn_explore_scheduler() {
 
 /// 调试：当前策略快照。
 pub fn snapshot_json() -> Value {
-    PresenceHandle::global().with(|p| {
+    PresenceHandle::active().with(|p| {
         let s = p.explore_policy().snapshot();
         json!({
             "lastExploreAt": s.last_explore_at,
@@ -236,7 +236,7 @@ pub async fn trigger_manual(term: &str, reason: &str) -> Result<Value, String> {
         _ => WebExploreReason::LongIdle,
     };
     log::info!("[explore] 手动触发「{term}」 reason={}", reason.as_str());
-    let (result, job) = PresenceHandle::global().with(|p| {
+    let (result, job) = PresenceHandle::active().with(|p| {
         p.request_web_explore(term, reason, None, now)
     });
     let mut body = serde_json::to_value(&result).map_err(|e| e.to_string())?;
@@ -246,7 +246,7 @@ pub async fn trigger_manual(term: &str, reason: &str) -> Result<Value, String> {
     let Some(job) = job else {
         return Ok(body);
     };
-    PresenceHandle::global().apply_event(Event::ExploreStart);
+    PresenceHandle::active().apply_event(Event::ExploreStart);
     let base = api_base();
     let payload = json!({
         "term": job.term,
@@ -256,15 +256,15 @@ pub async fn trigger_manual(term: &str, reason: &str) -> Result<Value, String> {
         Ok(val) => {
             if let Some(job_id) = val.get("jobId").and_then(|v| v.as_str()) {
                 log::info!("[explore] 启动 job {job_id} term={}（手动）", job.term);
-                PresenceHandle::global().with(|p| p.explore_policy().set_job_id(job_id));
+                PresenceHandle::active().with(|p| p.explore_policy().set_job_id(job_id));
                 spawn_waiter(job_id.to_string());
             }
             body["dispatch"] = val;
         }
         Err(e) => {
             log::warn!("[explore] 手动触发 dispatch 失败: {e}");
-            PresenceHandle::global().with(|p| p.explore_policy().release());
-            PresenceHandle::global().apply_event(Event::ExploreEnd);
+            PresenceHandle::active().with(|p| p.explore_policy().release());
+            PresenceHandle::active().apply_event(Event::ExploreEnd);
             body["dispatchError"] = json!(e);
         }
     }

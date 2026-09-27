@@ -80,15 +80,18 @@ export async function applyModelChange(ctx: Context, state: WebState, provider?:
 }
 
 /** 构造一条用户消息（可附带图片：base64，不含 data: 前缀；
- *  `detail` 供来源归属（如群广播 'group:<gid>'））。 */
+ *  `detail` 供来源归属（如群广播 'group:<gid>'）；
+ *  `id` 显式指定消息身份（群广播 fan-out 共享同一 id，接收端按 id 去重）。 */
 export function userMessage(
   text: string,
   images?: ReadonlyArray<{ mime: string; data: string; name?: string }>,
   detail?: string,
+  id?: string,
 ) {
   return createUserMessage(
     text,
     detail ? { kind: 'human', detail } : { kind: 'human' },
     images,
+    id,
   )
 }

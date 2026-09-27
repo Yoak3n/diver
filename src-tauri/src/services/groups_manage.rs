@@ -9,7 +9,7 @@ use serde_json::{json, Value};
 
 use crate::config::groups::{self, Group, SYSTEM_SENDER};
 
-use super::groups::{fan_out, group_body, group_targets};
+use super::groups::{client_msg_id, fan_out, group_body, group_targets};
 use super::peer::{deliver, display_name, registry_rows, InstanceRow};
 use super::ServiceState;
 
@@ -52,7 +52,7 @@ fn fan_summary(v: &Value) -> (Vec<String>, Vec<Value>) {
 async fn system_event(state: &ServiceState, group: &Group, text: &str) -> (Vec<String>, Vec<Value>) {
     let rows = registry_rows_lenient(state);
     let targets = group_targets(group, &rows, "");
-    let body = group_body(text, "系统", SYSTEM_SENDER, "inject", group);
+    let body = group_body(text, "系统", SYSTEM_SENDER, "inject", group, &client_msg_id(SYSTEM_SENDER));
     match fan_out(state, &targets, &body).await {
         Ok(v) => fan_summary(&v),
         Err(err) => (
@@ -95,6 +95,7 @@ pub async fn user_remove_group_member(state: &ServiceState, key: &str, member: &
         SYSTEM_SENDER,
         "inject",
         &group,
+        &client_msg_id(SYSTEM_SENDER),
     );
     let targets = group_targets(&group, &rows, "");
     match fan_out(state, &targets, &body).await {
@@ -118,6 +119,7 @@ pub async fn user_remove_group_member(state: &ServiceState, key: &str, member: &
             SYSTEM_SENDER,
             "inject",
             &group,
+            &client_msg_id(member),
         );
         match deliver(state, row, &body).await {
             Ok(_) => delivered.push(row.id.clone()),

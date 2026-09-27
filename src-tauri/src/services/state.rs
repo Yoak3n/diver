@@ -8,11 +8,15 @@ use serde_json::Value;
 pub type NotifyFn = Arc<dyn Fn(String, String) + Send + Sync>;
 
 /// presence RPC 分发回调（app 层包一层 `core::presence::dispatch_rpc` 后注入）。
-pub type PresenceDispatchFn = Arc<dyn Fn(&str, &Value) -> Result<Value, String> + Send + Sync>;
+/// 首参 = `x-diver-instance` 身份头（None = 无头，壳内回退 active 实例）。
+pub type PresenceDispatchFn =
+    Arc<dyn Fn(Option<&str>, &str, &Value) -> Result<Value, String> + Send + Sync>;
 
 /// 人格卡片名字变更回调（app 层包一层「写回实例清单 name」后注入）。
-/// 写回式回填（P1-1）：人格卡片是名字权威源，实例清单只是回显。
-pub type CardNameFn = Arc<dyn Fn(String) + Send + Sync>;
+/// 首参 = 卡片实际归属的实例 id（按 `x-diver-instance` 身份头解析、含 active 回退），
+/// 次参 = 新名字；写回式回填（P1-1）：人格卡片是名字权威源，实例清单只是回显，
+/// 改名只能落归属实例自己的清单项（不允许串写到别的实例）。
+pub type CardNameFn = Arc<dyn Fn(String, String) + Send + Sync>;
 
 /// 实例注册表查询回调（app 层包一层 `core::instance_registry::list_at` 后注入，
 /// P1-2 注册中心查询，返回注册项 JSON 数组）。
@@ -58,17 +62,28 @@ impl MemoryPool {
         &self,
         instance_id: Option<&str>,
     ) -> Result<Arc<Mutex<diver_memory::db::DualDb>>, String> {
+        self.resolve_with_id(instance_id).map(|(_, db)| db)
+    }
+
+    /// 解析实例身份 → (归属实例 id, DualDb)；无头/未知 id 回退 active 实例。
+    /// 归属 id 与实际落库的库严格一致，供写回路径使用（卡片名字 → 实例清单）。
+    pub fn resolve_with_id<'a>(
+        &'a self,
+        instance_id: Option<&'a str>,
+    ) -> Result<(&'a str, Arc<Mutex<diver_memory::db::DualDb>>), String> {
         let id = instance_id.map(str::trim).filter(|s| !s.is_empty());
         if let Some(id) = id {
             if let Some(db) = self.dbs.get(id) {
-                return Ok(db.clone());
+                return Ok((id, db.clone()));
             }
             log::warn!("记忆路由：未知实例身份「{id}」，回退 active 实例库");
         }
-        self.dbs
+        let db = self
+            .dbs
             .get(&self.fallback)
             .cloned()
-            .ok_or_else(|| "memory db unavailable".to_string())
+            .ok_or_else(|| "memory db unavailable".to_string())?;
+        Ok((&self.fallback, db))
     }
 }
 

@@ -1,9 +1,16 @@
 <script setup lang="ts">
 // 存在感状态机（L0 Presence FSM）独立页签：图形化 HSM + 当前相位 + L2 记账。
+import { computed, onMounted, ref } from "vue";
 import { usePresenceStatus } from "../../composables/usePresenceStatus";
 import { tauriAvailable } from "../../tauri";
+import { listInstances, type InstanceMeta } from "../../ipc/instances";
 import type { PresencePhase } from "../../ipc/presence";
 import PresenceHsmGraph from "./children/PresenceHsmGraph.vue";
+import { PHASE_HINTS, capsOf, fmtAgo } from "./children/presenceDisplay";
+
+/** 空串 = 看 active 实例；其余值 = 定点查看该实例的 FSM。 */
+const selectedInstance = ref("");
+const instances = ref<InstanceMeta[]>([]);
 
 const {
   snapshot,
@@ -13,86 +20,23 @@ const {
   enabled,
   userInputActive,
   refresh,
-} = usePresenceStatus();
+} = usePresenceStatus(true, selectedInstance);
 
-/** 当前相位允许的能力（对齐 docs/companion-presence-fsm.md §4 能力矩阵）。 */
-const CAPABILITIES: Record<string, { key: string; label: string; on: boolean }[]> = {
-  off: [],
-  booting: [
-    { key: "accept_user_input", label: "接受输入", on: false },
-    { key: "idle_motion", label: "待机动作", on: false },
-    { key: "react_to_pet", label: "桌宠互动", on: false },
-  ],
-  passive: [
-    { key: "accept_user_input", label: "接受输入", on: true },
-    { key: "auto_tts", label: "自动朗读", on: true },
-    { key: "memory_dream", label: "记忆整理", on: true },
-    { key: "web_explore", label: "网络探索", on: true },
-  ],
-  observing: [
-    { key: "accept_user_input", label: "接受输入", on: true },
-    { key: "proactive_inject", label: "主动搭话", on: false },
-    { key: "auto_tts", label: "自动朗读", on: true },
-    { key: "memory_dream", label: "记忆整理", on: true },
-    { key: "web_explore", label: "网络探索", on: true },
-  ],
-  receptive: [
-    { key: "accept_user_input", label: "接受输入", on: true },
-    { key: "proactive_inject", label: "主动搭话", on: true },
-    { key: "auto_tts", label: "自动朗读", on: true },
-    { key: "memory_dream", label: "记忆整理", on: true },
-    { key: "web_explore", label: "网络探索", on: true },
-  ],
-  listening: [
-    { key: "accept_user_input", label: "接受输入", on: true },
-    { key: "accept_steer", label: "可插话", on: true },
-    { key: "auto_tts", label: "自动朗读", on: true },
-  ],
-  thinking: [
-    { key: "accept_user_input", label: "接受输入（插话）", on: true },
-    { key: "accept_steer", label: "可插话", on: true },
-    { key: "auto_tts", label: "自动朗读", on: false },
-  ],
-  delivering: [
-    { key: "accept_user_input", label: "接受输入", on: true },
-    { key: "accept_steer", label: "可插话", on: true },
-  ],
-  dreaming: [
-    { key: "accept_user_input", label: "接受输入（可打断）", on: true },
-    { key: "accept_steer", label: "可插话（让路）", on: true },
-  ],
-  exploring: [
-    { key: "accept_user_input", label: "接受输入（可打断）", on: true },
-    { key: "accept_steer", label: "可插话（让路）", on: true },
-    { key: "web_explore", label: "网络探索", on: true },
-  ],
-};
+onMounted(async () => {
+  if (!tauriAvailable()) return;
+  try {
+    instances.value = (await listInstances()).filter((i) => i.enabled);
+  } catch {
+    /* 清单读不到时只看 active 实例 */
+  }
+});
 
-function capsOf(p: string) {
-  return CAPABILITIES[p] ?? [];
-}
-
-function fmtAgo(ms: number): string {
-  if (!ms) return "—";
-  const d = Date.now() - ms;
-  if (d < 0) return "刚刚";
-  if (d < 60_000) return `${Math.floor(d / 1000)}s 前`;
-  if (d < 3_600_000) return `${Math.floor(d / 60_000)}m 前`;
-  return `${Math.floor(d / 3_600_000)}h 前`;
-}
-
-const phaseHints: Partial<Record<PresencePhase, string>> = {
-  off: "已关闭，不接受任何对外行为",
-  booting: "启动缓冲中，短暂静默后进入观察",
-  passive: "Regime 压制：只应答，不主动",
-  observing: "在场感知，等待静默升为可搭话",
-  receptive: "可主动搭话 / 可跑记忆整理",
-  listening: "对话回合：正在听你说",
-  thinking: "回合工作中（working）",
-  delivering: "TTS / 动作输出中",
-  dreaming: "后台记忆巩固（可被打断）",
-  exploring: "记忆取词 → 互联网探索（可被打断）",
-};
+/** 快照来源标注：优先实例名，未登记回退 id。 */
+const instanceLabel = computed(() => {
+  const id = snapshot.value?.instance;
+  if (!id) return "";
+  return instances.value.find((i) => i.id === id)?.name || id;
+});
 </script>
 
 <template>
@@ -106,18 +50,27 @@ const phaseHints: Partial<Record<PresencePhase, string>> = {
             <code class="raw">{{ phase || "—" }}</code>
           </div>
           <p class="hint">
-            {{ (phase && phaseHints[phase as PresencePhase]) || "读取状态机中…" }}
+            {{ (phase && PHASE_HINTS[phase as PresencePhase]) || "读取状态机中…" }}
+            <span v-if="instanceLabel" class="inst">· 实例 {{ instanceLabel }}</span>
           </p>
         </div>
       </div>
-      <button
-        v-if="tauriAvailable()"
-        class="btn small"
-        type="button"
-        @click="refresh"
-      >
-        刷新
-      </button>
+      <div v-if="instances.length" class="hero-actions">
+        <select v-model="selectedInstance" class="inst-select" aria-label="选择实例">
+          <option value="">活跃实例</option>
+          <option v-for="i in instances" :key="i.id" :value="i.id">
+            {{ i.name || i.id }}
+          </option>
+        </select>
+        <button
+          v-if="tauriAvailable()"
+          class="btn small"
+          type="button"
+          @click="refresh"
+        >
+          刷新
+        </button>
+      </div>
     </header>
 
     <div class="meta-row">
@@ -183,6 +136,21 @@ const phaseHints: Partial<Record<PresencePhase, string>> = {
   gap: 10px;
   flex: 1;
   min-width: 0;
+}
+.hero-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.inst-select {
+  font-size: 12px;
+  color: var(--ink);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-sm);
+  background: var(--card, #fff);
+  padding: 4px 8px;
+  max-width: 140px;
 }
 .dot {
   width: 10px;
@@ -270,5 +238,8 @@ const phaseHints: Partial<Record<PresencePhase, string>> = {
   color: var(--ink-dim);
   margin: 0;
   line-height: 1.6;
+}
+.hint .inst {
+  color: var(--ink-muted);
 }
 </style>

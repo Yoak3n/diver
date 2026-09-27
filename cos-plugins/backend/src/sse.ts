@@ -41,6 +41,10 @@ export function attachEventListeners(
         const isHuman = ev.data.source?.kind === 'human'
         if (isHuman && !textOf(ev.data.content).startsWith('[presence]')) {
           reportPresence('presence::event', { type: 'USER_CHAT' })
+          // busy(true) 经 wakeDriver 同步发出，恒先于本事件到达壳；FSM 此刻仍在
+          // Ambient，(Ambient, Busy(true)) 无迁移会被吃掉，整轮卡 Listening。
+          // USER_CHAT 落 Listening 后重发一次，T07 才能进 Thinking。
+          if (state.busy) reportPresence('presence::busy', { busy: true })
         } else {
           reportPresence('presence::event', { type: 'CHAT_ACTIVITY' })
         }
@@ -54,10 +58,11 @@ export function attachEventListeners(
         if (peer !== null) {
           // P2-3/P2-4 来源标记渲染：正文保留（剥壳盖章首行），from 结构化给 UI 徽标；
           // 群发言（kind group）进群合并流并挂回复归属，实例间私聊不进。
+          // 注意：agent 自己的口头回复不打 group 标——没经 send_to_group 投递的
+          // 话对方实例收不到，标进群流会显得「说了但没人听见」。
           const isGroup = peer.kind === 'group'
           const gid = peer.group ?? 'general'
           const gname = groupNameFromMarker(text) ?? undefined
-          if (isGroup) state.groupPending = { id: gid, name: gname ?? '全员群' }
           broadcast({
             type: 'message', kind: 'user', sessionId: String(session.id),
             messageId: ev.data.id, content: stripPeerMarker(text), origin: 'peer', from: peer.id, time,
@@ -89,7 +94,6 @@ export function attachEventListeners(
           const group = isGroupMessage(text)
           const gid = group ? (groupTag(ev.data.source) ?? 'general') : null
           const gname = group ? (groupNameFromMarker(text) ?? undefined) : undefined
-          if (group && gid !== null) state.groupPending = { id: gid, name: gname ?? '全员群' }
           broadcast({
             type: 'message', kind: 'user', sessionId: String(session.id),
             messageId: ev.data.id, content: group ? stripGroupMarker(text) : text, origin: 'user', time,
@@ -99,6 +103,22 @@ export function attachEventListeners(
             ...(images.length > 0 ? { images } : {}),
           })
         }
+        break
+      }
+      case 'group/sent': {
+        // 群发言落账（发送方自己的已投递事实）：按群消息广播，发送时刻即显示。
+        // 收方稍后 claim 出的副本共享 clientMsgId，由前端合并流按 id 去重。
+        const fromId = String(ev.data.from?.id ?? '')
+        const gid = String(ev.data.group?.id ?? '') || 'general'
+        const gname = String(ev.data.group?.name ?? '') || undefined
+        broadcast({
+          type: 'message', kind: 'user', sessionId: String(session.id),
+          messageId: String(ev.data.clientMsgId ?? ''),
+          content: String(ev.data.text ?? ''),
+          origin: 'peer', from: fromId, time,
+          group: true, groupId: gid,
+          ...(gname !== undefined ? { groupName: gname } : {}),
+        })
         break
       }
       case 'assistant/chunk': {
@@ -119,15 +139,12 @@ export function attachEventListeners(
         if (text === '') break
         const origin = state.presencePending ? 'presence' : 'assistant'
         state.presencePending = false
-        const group = state.groupPending
-        state.groupPending = null
         broadcast({
           type: 'message',
           kind: 'assistant',
           sessionId: String(session.id),
           messageId: ev.data.message.id,
           turnMessageId: `turn-${ev.data.turn}-${ev.data.step}`,
-          ...(group ? { group: true, groupId: group.id, groupName: group.name } : {}),
           content: text,
           origin,
           time,

@@ -46,6 +46,12 @@ export async function handleChat(
     // P2-4 群聊广播：body.group = {id, name}（true = 全员群缺省）；会话内注入
     // 「在场 + 不必回复」提示首行（UI 显示时剥离）。不设强制回复：实例自主决定
     // 说不说（stay_silent/空回复出口见 @diver/peer）。
+    // body.clientMsgId = 广播方为整次 fan-out 生成的共享 id：各成员会话里的副本
+    // 同 id，群合并流按 id 去重（成员忙时领取时间可差几分钟，时间窗靠不住）。
+    const clientMsgId =
+      typeof body.clientMsgId === 'string' && body.clientMsgId.trim() !== ''
+        ? body.clientMsgId.trim()
+        : undefined
     const groupInfo =
       typeof body.group === 'object' && body.group !== null
         ? {
@@ -59,7 +65,7 @@ export async function handleChat(
     const groupDetail = groupInfo !== null ? `group:${groupInfo.id}` : undefined
     if (deps.state.busy) {
       const agent = await deps.ensureAgent()
-      const msg = userMessage(text || '（图片）', images, groupDetail)
+      const msg = userMessage(text || '（图片）', images, groupDetail, clientMsgId)
       // P2-3 群聊广播（queue）：忙时排队 next-turn，不插话打断当前回合。
       if (body.queue === true) {
         agent.followup(msg)
@@ -83,7 +89,7 @@ export async function handleChat(
       return true
     }
     const agent = await deps.ensureAgent()
-    const msg = userMessage(text || '（图片）', images, groupDetail)
+    const msg = userMessage(text || '（图片）', images, groupDetail, clientMsgId)
     agent.followup(msg)
     sendJson(res, 200, { sessionId: String(agent.id), messageId: String(msg.id), queued: false })
     return true
@@ -136,6 +142,12 @@ export async function handleChat(
     const groupId = String(g.id ?? '').trim() || 'general'
     const groupName = String(g.name ?? '').trim() || '全员群'
     const kind = body.kind === 'invite' ? 'invite' : body.kind === 'group' ? 'group' : 'peer'
+    // 群发言/私聊 fan-out 共享 id（壳 group::say / peer::send 生成）：发送方落账
+    // 与各收方副本同 id，群合并流按 id 去重——收方领取时间不定，时间窗靠不住。
+    const clientMsgId =
+      typeof body.clientMsgId === 'string' && body.clientMsgId.trim() !== ''
+        ? body.clientMsgId.trim()
+        : undefined
     const marker = inboxMarkerLine(kind, fromName, fromId, groupName)
     const bodyText =
       kind === 'invite'
@@ -147,10 +159,15 @@ export async function handleChat(
         : body.target === 'next-step'
           ? 'next-step'
           : 'next-turn'
-    const msg = createUserMessage(bodyText, {
-      kind: 'plugin',
-      detail: kind === 'peer' ? `peer:${fromId}` : `${kind}:${groupId}:${fromId}`,
-    })
+    const msg = createUserMessage(
+      bodyText,
+      {
+        kind: 'plugin',
+        detail: kind === 'peer' ? `peer:${fromId}` : `${kind}:${groupId}:${fromId}`,
+      },
+      undefined,
+      clientMsgId,
+    )
     const agent = await deps.ensureAgent()
     // InboxTarget 三档：followup = next-turn 唤醒；steer = next-step 插话；inject = next-step 不唤醒（群聊收听）。
     // （harness agent-loop 等价实现，接口面只暴露这两档）。
@@ -158,6 +175,32 @@ export async function handleChat(
     else if (target === 'next-step') agent.steer(msg)
     else agent.followup(msg)
     sendJson(res, 200, { sessionId: String(agent.id), messageId: String(msg.id), queued: target })
+    return true
+  }
+
+  // /api/group-sent —— 群发言落账（record-only）：壳 group::say fan-out 成功后
+  // 调用，在发送方会话 append 一条 `group/sent` 已投递事实。不进 inbox、不唤醒、
+  // 不进模型上下文（deriveMessages 不投影该类型）——群视图在发送时刻即显示本条
+  // （发送方池子），收方稍后 claim 出的副本共享 clientMsgId，由前端按 id 去重。
+  // body: { text, from: { id, name }, group: { id, name }, clientMsgId }
+  if (pathname === '/api/group-sent' && req.method === 'POST') {
+    const body = await readBody(req)
+    const text = String(body.text ?? '').trim()
+    const clientMsgId = String(body.clientMsgId ?? '').trim()
+    if (!text || !clientMsgId) {
+      sendJson(res, 400, { error: 'text 与 clientMsgId 必填' })
+      return true
+    }
+    const from = (body.from ?? {}) as { id?: string; name?: string }
+    const g = (body.group ?? {}) as { id?: string; name?: string }
+    const agent = await deps.ensureAgent()
+    agent.session.append('group/sent', {
+      text,
+      from: { id: String(from.id ?? '').trim(), name: String(from.name ?? '').trim() },
+      group: { id: String(g.id ?? '').trim() || 'general', name: String(g.name ?? '').trim() || '全员群' },
+      clientMsgId,
+    })
+    sendJson(res, 200, { recorded: true, messageId: clientMsgId })
     return true
   }
 

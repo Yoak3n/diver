@@ -1,7 +1,7 @@
 // 存在感状态机运行时状态：轮询 PresenceSnapshot（L0 叶子 + 上下文）。
 // 状态机在壳进程内自迁（EVAL 补发时间事件），UI 侧用轻量轮询即可覆盖展示。
 
-import { computed, onBeforeUnmount, onMounted, ref, unref, type MaybeRef } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, unref, watch, type MaybeRef } from "vue";
 import {
   getPresenceSnapshot,
   presencePhaseLabel,
@@ -14,7 +14,10 @@ type ActiveSource = MaybeRef<boolean> | (() => boolean);
 
 const POLL_MS = 1500;
 
-export function usePresenceStatus(active: ActiveSource = true) {
+export function usePresenceStatus(
+  active: ActiveSource = true,
+  instanceId: MaybeRef<string | null> = null,
+) {
   const snapshot = ref<PresenceSnapshot | null>(null);
   const lastError = ref<string | null>(null);
   let timer = 0;
@@ -34,7 +37,8 @@ export function usePresenceStatus(active: ActiveSource = true) {
   async function refresh() {
     if (!isActive() || !tauriAvailable()) return;
     try {
-      const s = await getPresenceSnapshot();
+      const id = unref(instanceId);
+      const s = await getPresenceSnapshot(id || null);
       if (s) {
         snapshot.value = s;
         lastError.value = null;
@@ -59,6 +63,14 @@ export function usePresenceStatus(active: ActiveSource = true) {
       void refresh();
     }, POLL_MS);
   });
+
+  // 切换查看实例：立即拉一次，后续轮询按新实例走
+  watch(
+    () => unref(instanceId),
+    () => {
+      void refresh();
+    },
+  );
 
   onBeforeUnmount(stopPolling);
 

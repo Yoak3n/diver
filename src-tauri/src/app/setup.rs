@@ -77,6 +77,12 @@ pub fn generate_handlers() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + 
         get_assistant_avatar,
         set_assistant_avatar,
         clear_assistant_avatar,
+        get_app_icon,
+        set_app_icon,
+        clear_app_icon,
+        get_group_avatar,
+        set_group_avatar,
+        clear_group_avatar,
         get_mcp_config,
         save_mcp_config,
         list_instances,
@@ -200,8 +206,8 @@ pub fn configure(builder: Builder<tauri::Wry>) -> Builder<tauri::Wry> {
                 crate::shell::notify::show(&notify_app, &title, &body);
             });
             let presence_dispatch: crate::services::PresenceDispatchFn =
-                std::sync::Arc::new(|method, params| {
-                    crate::core::presence::dispatch_rpc(method, params)
+                std::sync::Arc::new(|instance, method, params| {
+                    crate::core::presence::dispatch_rpc(instance, method, params)
                 });
             // 记忆双库路径按实例 id 派生（P1-1 双库 + P1-2 身份头路由）：
             // enabled 实例各一份私有库，无身份/未知回退 active 实例。
@@ -228,10 +234,11 @@ pub fn configure(builder: Builder<tauri::Wry>) -> Builder<tauri::Wry> {
                 })
                 .collect();
             // 写回式回填：人格卡片名字 → 实例清单 name（权威源 = 卡片）。
+            // 实例身份由 services 层按请求身份头解析后传入（首参）——不能绑死启动时
+            // active 实例，否则任一实例改名都会串写到 default 的清单项。
             let on_card_name: crate::services::CardNameFn = {
                 let app_handle = app.handle().clone();
-                let backfill_id = instance_id.clone();
-                std::sync::Arc::new(move |name| {
+                std::sync::Arc::new(move |instance_id, name| {
                     // 不变量：「清空回未命名」只能由用户在设置面板手动完成；
                     // 写回路径永不为空（双保险，与 services 层过滤一起兜住）。
                     if name.trim().is_empty() {
@@ -239,11 +246,11 @@ pub fn configure(builder: Builder<tauri::Wry>) -> Builder<tauri::Wry> {
                     }
                     if let Err(err) = crate::config::instances::update_instance(
                         &app_handle,
-                        &backfill_id,
+                        &instance_id,
                         Some(&name),
                         None,
                     ) {
-                        log::warn!("实例名写回失败（{backfill_id}）：{err}");
+                        log::warn!("实例名写回失败（{instance_id}）：{err}");
                     }
                 })
             };

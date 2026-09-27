@@ -12,7 +12,7 @@ import {
   windowToggleMaximize,
 } from "../tauri";
 import { chrome } from "../composables/useChrome";
-import AssistantAvatar from "./AssistantAvatar.vue";
+import AppIconMark from "./AppIconMark.vue";
 import PresencePhaseChip from "./PresencePhaseChip.vue";
 
 withDefaults(
@@ -86,7 +86,7 @@ onUnmounted(() => {
       </button>
 
       <div class="brand">
-        <AssistantAvatar :size="18" variant="brand" />
+        <AppIconMark :size="18" :radius="4" />
         <span class="brand-name">Diver</span>
       </div>
 

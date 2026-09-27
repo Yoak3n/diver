@@ -34,8 +34,9 @@ explore；请求裁决顺序 = **先 L1 能力门、再 L2 veto+claim**，`Reque
 
 ## 公开 API 面（壳层消费）
 
-消费方：`src-tauri/src/core/presence.rs`（`PresenceHandle` 进程级单例，
-ProactiveSpeak 请求）、`core/explore_policy/`（web_explore 裁决）、
+消费方：`src-tauri/src/core/presence.rs`（`PresenceHandle` 按实例注册表——
+多实例各一份 FSM，sidecar 回压经 `x-diver-instance` 头路由；桌宠/探索/主动开口
+等壳级行为归属 active 实例）、`core/explore_policy/`（web_explore 裁决）、
 `core/presence/parse_event.rs`（前端事件名 → `Event`）、
 `core/pet_interaction/`（手势事件）。
 
@@ -58,9 +59,9 @@ ProactiveSpeak 请求）、`core/explore_policy/`（web_explore 裁决）、
 5. 设计 §8 snapshot 含各策略调试块；代码只含 proactive 块。
 6. 设计 §8 说 layer 可为 `'L0'`；代码实际只产生 `"L1"/"L2"`。
 
-## 测试（36 个）
+## 测试（38 个）
 
-- `fsm/tests.rs` 17：迁移主链（t03/t15/t01/t06/t07-t08/t09-t11/t10/t04-t05/t12-t13/t14/t20-t21/t16/t17 + regime/深历史守卫）
+- `fsm/tests.rs` 19：迁移主链（t03/t15/t01/t06/t07-t08/t09-t11/t10/t09b/t09c×2/t04-t05/t12-t13/t14/t20-t21/t16/t17 + regime/深历史守卫；t09b/t09c 为 DELIVERING_START 自 Listening/Ambient/Resting 进入 Delivering）
 - `capability.rs` 4：矩阵守卫（proactive 仅 receptive / 输入 / dream+explore / auto_tts）
 - `proactive.rs` 4：boot 记时间、quiet/cooldown/quota、user_chat 重置、note 不重置
 - `explore.rs` 4：claim/veto、词冷却、日预算、should_wake

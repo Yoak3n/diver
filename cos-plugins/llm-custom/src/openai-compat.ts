@@ -16,7 +16,7 @@ import type {
   StreamChunk,
 } from '@cos/plugin-api'
 
-import { parseSseData, translate } from './wire.ts'
+import { parseSseData, translate } from '@diver/llm-openai-wire'
 
 /** 凭据 ref / 环境变量命名（与 backend custom-providers.ts 写入端一致）。 */
 export function apiKeyRefOf(provider: string): string {

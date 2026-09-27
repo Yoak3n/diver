@@ -175,3 +175,41 @@ fn deep_history_skips_conversation() {
     f.handle(Event::Regime(Regime::Normal), 3_500);
     assert_eq!(f.phase(), Phase::Observing);
 }
+
+#[test]
+fn t09b_delivering_from_listening() {
+    let mut f = fsm_at(0);
+    f.handle(Event::UserChat, 3_100);
+    assert_eq!(f.phase(), Phase::Listening);
+    f.handle(Event::DeliveringStart, 3_150);
+    assert_eq!(f.phase(), Phase::Delivering);
+    f.handle(Event::DeliveringEnd, 3_600);
+    assert_eq!(f.phase(), Phase::Observing);
+}
+
+#[test]
+fn t09c_delivering_from_ambient_after_turn() {
+    // 自动朗读晚于回合结束：busy(false) 已回深历史 Ambient，播报才开始
+    let mut f = fsm_at(0);
+    f.evaluate(3_000);
+    f.handle(Event::UserChat, 3_100);
+    f.handle(Event::Busy(true), 3_200);
+    f.handle(Event::Busy(false), 4_000);
+    assert_eq!(f.phase(), Phase::Receptive);
+    f.handle(Event::DeliveringStart, 4_300);
+    assert_eq!(f.phase(), Phase::Delivering);
+    f.handle(Event::DeliveringEnd, 5_000);
+    assert_eq!(f.phase(), Phase::Receptive);
+}
+
+#[test]
+fn t09c_delivering_from_resting_returns_to_rest() {
+    let mut f = fsm_at(0);
+    f.evaluate(3_000);
+    f.handle(Event::Regime(Regime::Dnd), 3_050);
+    assert_eq!(f.phase(), Phase::Passive);
+    f.handle(Event::DeliveringStart, 3_100);
+    assert_eq!(f.phase(), Phase::Delivering);
+    f.handle(Event::DeliveringEnd, 3_600);
+    assert_eq!(f.phase(), Phase::Passive);
+}

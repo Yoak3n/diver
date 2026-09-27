@@ -1,0 +1,22 @@
+{
+  "name": "@diver/llm-openai-wire",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "OpenAI 兼容 wire 翻译共享层：模型可见历史 → chat/completions 载荷（含工具序列兜底修复）。llm-* 适配器共用，非 cordis 插件。",
+  "main": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test src/wire.test.ts"
+  },
+  "dependencies": {
+    "@cos/plugin-api": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "typescript": "~5.6.2"
+  }
+}

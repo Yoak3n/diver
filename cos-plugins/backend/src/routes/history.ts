@@ -18,6 +18,7 @@ import {
   stripPeerMarker,
 } from '../interaction.ts'
 import type { WebHandlerDeps } from '../types.ts'
+import { chunkBefore, parseHistoryQuery, roundTail } from './history-page.ts'
 
 /**
  * @cos/persistence `prepare()` 回放事件中历史视图读取的最小结构面。
@@ -42,13 +43,19 @@ export interface ReplayEvent {
       content?: unknown
       isError?: boolean
     }
+    /** group/sent 落账载荷（发送方会话重建群消息用）。 */
+    text?: unknown
+    from?: { id?: unknown; name?: unknown } | null
+    group?: { id?: unknown; name?: unknown } | null
+    clientMsgId?: unknown
   }
 }
 
 /**
  * 事件流 → UI 消息视图模型（纯函数）。
  * thinking-delta 挂回同 step 的 assistant 消息；tool/result 按 callId 回填
- * 工具结果；P2-3 群聊归属：群/peer 输入后的首条有正文回复打 group 标。
+ * 工具结果。群合并流只收真正投递过的流量（群发言注入 / 用户广播）——
+ * agent 未走 send_to_group 的口头回复不打 group 标（对方实例收不到，不能进群视图）。
  */
 export function buildHistoryMessages(
   events: readonly ReplayEvent[],
@@ -59,8 +66,6 @@ export function buildHistoryMessages(
   // step → 消息下标，便于 tool/result 回填工具结果
   const msgIndexByStep = new Map<string, number>()
   let presencePending = false
-  // P2-3 群聊归属：群/peer 输入后的首条助手回复打 group 标（合并流过滤+归属）。
-  let groupPending: { id: string; name: string } | null = null
   for (const ev of events) {
     if (ev.type === 'assistant/chunk') {
       const chunk = ev.data.chunk
@@ -114,26 +119,43 @@ export function buildHistoryMessages(
       messages[idx] = { ...msg, tools: list }
       continue
     }
-    if (ev.type !== 'user/message' && ev.type !== 'assistant/message') continue
+    if (ev.type !== 'user/message' && ev.type !== 'assistant/message' && ev.type !== 'group/sent') continue
     const time = Number(ev.time) || Date.now()
+    if (ev.type === 'group/sent') {
+      // 群发言落账（发送方自己的已投递事实）：与收方副本共享 clientMsgId，
+      // 合并流按 id 去重——只显示一条。
+      const gid = String(ev.data.group?.id ?? '') || 'general'
+      const gname = String(ev.data.group?.name ?? '') || undefined
+      messages.push({
+        id: String(ev.data.clientMsgId ?? '') || `group-sent-${time}`,
+        kind: 'user',
+        content: String(ev.data.text ?? ''),
+        origin: 'peer',
+        from: String(ev.data.from?.id ?? ''),
+        time,
+        group: true,
+        groupId: gid,
+        ...(gname !== undefined ? { groupName: gname } : {}),
+      })
+      continue
+    }
     if (ev.type === 'user/message') {
       const text = textOf(ev.data.content)
       // P2-3 来源标记渲染：peer 消息正文保留（剥壳盖章首行），from 结构化给 UI 徽标。
       const peer = peerSource(ev.data.source)
-      if (peer !== null) {
-        const isGroup = peer.kind === 'group'
-        const gid = peer.group ?? 'general'
-        const gname = groupNameFromMarker(text) ?? undefined
-        messages.push({
-          id: ev.data.id, kind: 'user',
-          content: stripPeerMarker(text),
-          origin: 'peer', from: peer.id, time,
-          // 群发言才进群合并流；实例间私聊留在各自私聊视图。
-          ...(isGroup ? { group: true, groupId: gid, ...(gname ? { groupName: gname } : {}) } : {}),
-        })
-        if (isGroup) groupPending = { id: gid, name: gname ?? '全员群' }
-        continue
-      }
+        if (peer !== null) {
+          const isGroup = peer.kind === 'group'
+          const gid = peer.group ?? 'general'
+          const gname = groupNameFromMarker(text) ?? undefined
+          messages.push({
+            id: ev.data.id, kind: 'user',
+            content: stripPeerMarker(text),
+            origin: 'peer', from: peer.id, time,
+            // 群发言才进群合并流；实例间私聊留在各自私聊视图。
+            ...(isGroup ? { group: true, groupId: gid, ...(gname ? { groupName: gname } : {}) } : {}),
+          })
+          continue
+        }
       // 过滤运行时上下文快照；放行真人消息与已裁决注入
       const injectLabel = injectUiLabel(ev.data.source)
       const injectFrom = injectOrigin(ev.data.source)
@@ -160,7 +182,6 @@ export function buildHistoryMessages(
         const group = isGroupMessage(text)
         const gid = group ? (groupTag(ev.data.source) ?? 'general') : null
         const gname = group ? (groupNameFromMarker(text) ?? undefined) : undefined
-        if (group && gid !== null) groupPending = { id: gid, name: gname ?? '全员群' }
         messages.push({
           id: ev.data.id,
           kind: 'user',
@@ -197,16 +218,10 @@ export function buildHistoryMessages(
         content: text,
         ...(thinking !== '' ? { thinking } : {}),
         ...(tools.length > 0 ? { tools } : {}),
-        // 群聊归属只认「有正文的回复」：空文本工具步不消费标记，
-        // 否则真正想说的那句反而丢标（SSE 端同语义：空文本先 continue）。
-        ...(groupPending && text !== ''
-          ? { group: true, groupId: groupPending.id, groupName: groupPending.name }
-          : {}),
         origin: presencePending ? 'presence' : 'assistant', time,
       })
       msgIndexByStep.set(stepKey, messages.length - 1)
       presencePending = false
-      if (text !== '') groupPending = null
     }
   }
   return messages
@@ -221,11 +236,27 @@ export async function handleHistory(
 ): Promise<boolean> {
   // /api/history —— 当前会话消息历史（重启后恢复界面）
   if (pathname !== '/api/history' || req.method !== 'GET') return false
-  let messages: Array<Record<string, unknown>> = []
+  let all: Array<Record<string, unknown>> = []
   try {
-    const events = deps.ctx.sessionPersistence.prepare(SessionId(SESSION_ID)) ?? []
-    messages = buildHistoryMessages(events as readonly ReplayEvent[])
+    // 事件源优先级：在场 agent 的内存会话日志 > 落盘回放。落盘只在 turn 末
+    // checkpoint，turn 进行中读盘会缺「刚发出的用户消息」——webview 此刻重载
+    // 后按此重建消息池，那条消息就永久消失（SSE 不重放、非空池不补拉）。
+    // 内存日志 turn 中途也完整，且消息 id 与 SSE 广播一致（前端按 id 对账）。
+    // 无 agent（本进程尚未开聊）时不存在未 checkpoint 的尾巴，回退落盘。
+    const liveEvents = deps.state.agent?.session.events
+    const events =
+      liveEvents ?? deps.ctx.sessionPersistence.prepare(SessionId(SESSION_ID)) ?? []
+    all = buildHistoryMessages(events as readonly ReplayEvent[])
   } catch { /* 会话尚不存在 */ }
-  sendJson(res, 200, { messages: messages.slice(-200) })
+  // 分页：rounds=N 尾窗（打开只加载最近几轮）/ before 锚点向前取块（懒加载）。
+  // 无参数保持旧约定（末尾 200 条）。
+  const query = parseHistoryQuery(req.url)
+  const page =
+    query.rounds !== undefined
+      ? roundTail(all, query.rounds)
+      : query.before !== undefined || query.beforeTime !== undefined
+        ? chunkBefore(all, query)
+        : { list: all.slice(-200), hasMore: false }
+  sendJson(res, 200, { messages: page.list, hasMore: page.hasMore })
   return true
 }

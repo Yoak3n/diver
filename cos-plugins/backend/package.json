@@ -19,7 +19,8 @@
     "./session-helpers": "./src/session-helpers.ts"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test src/routes/history-page.test.ts src/routes/history-build.test.ts"
   },
   "dependencies": {
     "@cos/plugin-api": "workspace:*",

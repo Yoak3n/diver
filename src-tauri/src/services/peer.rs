@@ -124,16 +124,21 @@ fn list(state: &ServiceState, instance_id: Option<&str>) -> Result<Value, String
     Ok(peer_roster(&rows, &sender))
 }
 
-/// 向单个实例投递 `/api/inbox`（壳盖章来源，Bearer 过 P2-1 闸）。
-pub(crate) async fn deliver(state: &ServiceState, target: &InstanceRow, body: &Value) -> Result<Value, String> {
-    let url = format!("http://127.0.0.1:{}/api/inbox", target.port);
+/// 向单个实例的指定端点 POST（Bearer 过 P2-1 闸）。
+pub(crate) async fn post_instance(
+    state: &ServiceState,
+    target: &InstanceRow,
+    path: &str,
+    body: &Value,
+) -> Result<Value, String> {
+    let url = format!("http://127.0.0.1:{}{path}", target.port);
     let response = reqwest::Client::new()
         .post(&url)
         .bearer_auth(&state.auth_token)
         .json(body)
         .send()
         .await
-        .map_err(|err| format!("对端投递失败（{}:{}）：{err}", target.id, target.port))?;
+        .map_err(|err| format!("对端请求失败（{}:{}）：{err}", target.id, target.port))?;
     let status = response.status();
     let payload: Value = response
         .json()
@@ -149,6 +154,11 @@ pub(crate) async fn deliver(state: &ServiceState, target: &InstanceRow, body: &V
         ));
     }
     Ok(payload)
+}
+
+/// 向单个实例投递 `/api/inbox`（壳盖章来源，Bearer 过 P2-1 闸）。
+pub(crate) async fn deliver(state: &ServiceState, target: &InstanceRow, body: &Value) -> Result<Value, String> {
+    post_instance(state, target, "/api/inbox", body).await
 }
 
 async fn send(

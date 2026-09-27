@@ -3,7 +3,7 @@
 
 import type { ServerResponse } from 'node:http'
 import type { Agent, AgentHandle } from '@cos/plugin-api'
-import type { PluginInfo } from './plugins.ts'
+import type { PluginInfo } from './plugin-store.ts'
 
 /** HTTP/SSE 传输层共享状态。 */
 export interface WebState {

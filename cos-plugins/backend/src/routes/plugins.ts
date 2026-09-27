@@ -7,15 +7,13 @@ import { broadcastLocal, readBody, sendJson } from '../http.ts'
 import {
   ensureProfile,
   getProfile,
-  installProfilePlugin,
   listPlugins,
   nativeStatus,
   setProfile,
   toggleWithBroadcast,
-  uninstallProfilePlugin,
-  gracefulExitForRestart,
 } from '../plugins.ts'
-import { COMPANION_PROFILE, readActiveProfile, requestRestart } from '../paths.ts'
+import { installProfilePlugin, uninstallProfilePlugin } from '../plugin-install.ts'
+import { COMPANION_PROFILE, gracefulExitForRestart, readActiveProfile, requestRestart } from '../paths.ts'
 import type { WebHandlerDeps } from '../types.ts'
 
 /** 命中并处理返回 true；未命中返回 false 交回分发器。 */

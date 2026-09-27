@@ -105,10 +105,14 @@
 3. ~~**handlers.ts 拆分**（`cos-plugins/backend`，~860 行超限债）~~ **已完成**（`6fb0cae` `cd1190f`）：
    handlers.ts→auth/http/routes/* 纯分发器，plugins.ts→plugin-store/plugin-install/装配面。
    余下超硬限文件：`cos-plugins/memory/src/index.ts`（525）、`cos-plugins/basic-tools/src/fsio.ts`（512）。
-4. **docs 债**（见记忆 675ee77a 清单）：diver-presence（L0 HSM/L1 能力矩阵/L2 ProactiveSpeak）、
-   首启引导（SetupOverlay + setup://progress）、web-tools 插件、TTS 流式合成+双窗播报（配置已迁
-   `config/tts.rs`，旧文档写 `config/tts.json` 过时）、examples/ 与 check-plugin-*.mjs。
-5. roadmap 传统项：代码签名（SmartScreen）、语音输入（STT）、自动更新。
+4. ~~**docs 债**~~ **已清偿**（`4323bed`，2026-09-27）：新页 first-run-setup /
+   presence-crate / web-tools / tts 四份 + distribution/architecture/channels/
+   roadmap/development 陈旧面修正（随包 Node 旧说法纠正、TTS 命令表补齐、
+   development.md 增插件工具链与示例节）。
+5. **roadmap 传统项**（2026-09-27 拍板）：**签名**——等待证书购买，接线步骤见
+   distribution.md「代码签名与自动更新」；**自动更新**——不做骨架，方案仅文档化；
+   **STT**——底座已落（`62f3ef3`，引擎契约 + 录音管线 + ComposerBar 语音按钮），
+   实现 `SttEngine` 后 `setSttEngine` 注册即用。
 6. ~~另一立项：**coding agent 任务委派**~~ **一期已落地**（`a8ff5e5`，2026-09-27，拍板见 daily
    立项文档）：dsh 首发监督闭环（壳层 core/delegate + `@diver/delegate` 工具）。
    **前置**：dsh headless profile 需配有效 key（实测现为占位符 AUTH 401）；

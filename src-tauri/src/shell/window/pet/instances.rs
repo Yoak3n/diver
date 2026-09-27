@@ -94,6 +94,14 @@ pub fn open(app: &AppHandle, id: &str) -> Result<Vec<String>, String> {
             .unwrap_or_default();
         builder.data_directory(data_dir)
     };
+    // 浏览器参数与经典窗同源（wry 默认禁用集漏掉会开 SmartScreen 导航检查）。
+    // DevTools 口 9224：同屏多只只首只绑定成功（纯调试便利）。
+    #[cfg(target_os = "windows")]
+    let builder =
+        builder.additional_browser_args(&crate::shell::window::webview_browser_args(
+            &label,
+            Some(9224),
+        ));
     let window = builder
         .build()
         .map_err(|e| format!("桌宠窗口创建失败：{e}"))?;

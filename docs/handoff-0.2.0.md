@@ -58,7 +58,7 @@
 - **私聊**：agent 调 `send_to_peer`；对端会话收到带来源标记的章；**邀请裁决=被邀实例 agent 自主**，拒绝必须显式告知+理由。
 - **群聊三支柱**：唤醒给机会 / `stay_silent` 不硬回 / inject 收听不吵；章归属按组分章（【群聊「组名」｜来自实例 X】）。
   2026-09-27 拍板：`send_to_group` **缺省 `wake=true`**（成员下一轮获得发言机会，不打断进行中话头）；`wake=false` 才是 inject 收听（对方下次开口才看到，不保证及时）。
-- **群发言显示与领取解耦**（2026-09-27 拍板）：`group::say` fan-out 生成共享 `clientMsgId`，投递成功后在**发送方**会话落 record-only `group/sent` 事件（`deriveMessages` 不投影，不进模型上下文、不唤醒）——群视图在发送时刻即显示，与 wake 档位无关；收方稍后 claim 出的 `user/message` 副本同 id，前端合并流**跨来源按 id 去重**。此前显示绑在收方领取上：空闲收方的群发言谁也看不见、刷新也无（死信投递）。
+- **群发言显示与领取解耦**（2026-09-27 拍板）：`group::say` fan-out 生成共享 `clientMsgId`，投递成功后把本条记进**发送方自己的落账存储**（`$COS_HOME/group-sent.jsonl`，产品自有、**不进 harness 会话日志与 codec**，见 `cos-plugins/backend/src/group-sent.ts`）——群视图在发送时刻即显示，与 wake 档位无关；收方稍后 claim 出的 `user/message` 副本同 id，前端合并流**跨来源按 id 去重**。此前显示绑在收方领取上：空闲收方的群发言谁也看不见、刷新也无（死信投递）。历史重建时落账按时间并入会话日志的重建结果。
 - **多桌宠**：窗口 `pet-<id>`（URL `/#/pet?instance=<id>`），`PETS_CAP=3`，销毁用 `destroy()` 不用 `close()`；点谁互动谁（`pet://focus-instance`）。
 - **模型路由**：`pet://model-changed` payload `{id, instanceId?}`——有 `instanceId` 只进目标实例宠；无则全局广播（经典宠 +「跟随全局」宠响应，钉定宠无视）。
 - **全局模型真源**：`<config>/pet-model.json`（`config::pet_model`）；**localStorage 各窗隔离**（WebView2 每窗 data 目录），任何跨窗共享状态都必须走壳层配置 + IPC。

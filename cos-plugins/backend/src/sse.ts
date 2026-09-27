@@ -105,22 +105,6 @@ export function attachEventListeners(
         }
         break
       }
-      case 'group/sent': {
-        // 群发言落账（发送方自己的已投递事实）：按群消息广播，发送时刻即显示。
-        // 收方稍后 claim 出的副本共享 clientMsgId，由前端合并流按 id 去重。
-        const fromId = String(ev.data.from?.id ?? '')
-        const gid = String(ev.data.group?.id ?? '') || 'general'
-        const gname = String(ev.data.group?.name ?? '') || undefined
-        broadcast({
-          type: 'message', kind: 'user', sessionId: String(session.id),
-          messageId: String(ev.data.clientMsgId ?? ''),
-          content: String(ev.data.text ?? ''),
-          origin: 'peer', from: fromId, time,
-          group: true, groupId: gid,
-          ...(gname !== undefined ? { groupName: gname } : {}),
-        })
-        break
-      }
       case 'assistant/chunk': {
         const chunk = ev.data.chunk
         if (chunk?.type === 'text-delta' && typeof chunk.text === 'string') {

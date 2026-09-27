@@ -1,10 +1,12 @@
 // @diver/backend — 会话历史视图：/api/history 把持久化事件流重建为 UI 消息
 // 视图模型（重启后恢复界面）。事件→消息的合并/归属规则是纯函数，单测友好。
+// 群发言落账不在会话日志里（产品自有存储，见 ../group-sent.ts），重建后按时间并入。
 
 import { SessionId } from '@cos/plugin-api'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 
 import { SESSION_ID } from '../agent.ts'
+import { groupSentPath, mergeGroupSent, readGroupSent } from '../group-sent.ts'
 import { sendJson } from '../http.ts'
 import { textOf, imagesOf } from '../session-helpers.ts'
 import {
@@ -43,11 +45,6 @@ export interface ReplayEvent {
       content?: unknown
       isError?: boolean
     }
-    /** group/sent 落账载荷（发送方会话重建群消息用）。 */
-    text?: unknown
-    from?: { id?: unknown; name?: unknown } | null
-    group?: { id?: unknown; name?: unknown } | null
-    clientMsgId?: unknown
   }
 }
 
@@ -119,26 +116,8 @@ export function buildHistoryMessages(
       messages[idx] = { ...msg, tools: list }
       continue
     }
-    if (ev.type !== 'user/message' && ev.type !== 'assistant/message' && ev.type !== 'group/sent') continue
+    if (ev.type !== 'user/message' && ev.type !== 'assistant/message') continue
     const time = Number(ev.time) || Date.now()
-    if (ev.type === 'group/sent') {
-      // 群发言落账（发送方自己的已投递事实）：与收方副本共享 clientMsgId，
-      // 合并流按 id 去重——只显示一条。
-      const gid = String(ev.data.group?.id ?? '') || 'general'
-      const gname = String(ev.data.group?.name ?? '') || undefined
-      messages.push({
-        id: String(ev.data.clientMsgId ?? '') || `group-sent-${time}`,
-        kind: 'user',
-        content: String(ev.data.text ?? ''),
-        origin: 'peer',
-        from: String(ev.data.from?.id ?? ''),
-        time,
-        group: true,
-        groupId: gid,
-        ...(gname !== undefined ? { groupName: gname } : {}),
-      })
-      continue
-    }
     if (ev.type === 'user/message') {
       const text = textOf(ev.data.content)
       // P2-3 来源标记渲染：peer 消息正文保留（剥壳盖章首行），from 结构化给 UI 徽标。
@@ -246,7 +225,11 @@ export async function handleHistory(
     const liveEvents = deps.state.agent?.session.events
     const events =
       liveEvents ?? deps.ctx.sessionPersistence.prepare(SessionId(SESSION_ID)) ?? []
-    all = buildHistoryMessages(events as readonly ReplayEvent[])
+    // 群发言落账在产品自有存储里（不在会话日志）——按时间并入重建结果。
+    all = mergeGroupSent(
+      buildHistoryMessages(events as readonly ReplayEvent[]),
+      readGroupSent(groupSentPath()),
+    )
   } catch { /* 会话尚不存在 */ }
   // 分页：rounds=N 尾窗（打开只加载最近几轮）/ before 锚点向前取块（懒加载）。
   // 无参数保持旧约定（末尾 200 条）。

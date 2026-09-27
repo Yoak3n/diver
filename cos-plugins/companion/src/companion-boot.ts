@@ -50,6 +50,19 @@ export const CORE_PLUGIN_NAMES = [
   'subagents',
 ] as const
 
+/**
+ * 产品自己的 npm scope。引擎（harness）不认识任何 scope——播种的解析链与
+ * 错误归属的包名限定都从这里注入（harness `BootOptions.pluginScope`）。
+ */
+export const DIVER_PLUGIN_SCOPE = '@diver'
+
+/**
+ * 产品核心插件：其未捕获错误立即 panic（引擎默认清单为空——见 harness
+ * `BootOptions.corePlugins` / error-guard.ts）。backend 是 UI 的 HTTP/SSE 通道，
+ * 挂了产品即死；native-bridge 是插件间共享 RPC 库，坏了会连坐。
+ */
+export const DIVER_CORE_PLUGINS = ['@diver/backend', '@diver/native-bridge'] as const
+
 /** Fail-loud service ids after settle. */
 export const REQUIRED_SERVICES = [
   'agentLoop',
@@ -164,6 +177,8 @@ export function companionBootOptions(cli: CliOptions, paths: CompanionPaths): Pa
       bundles: [],
       pluginPaths: corePluginPaths(paths.harnessDir),
       pluginRoot: paths.pluginsRoot,
+      pluginScope: DIVER_PLUGIN_SCOPE,
+      corePlugins: [...DIVER_CORE_PLUGINS],
       ...(paths.seedDir === undefined ? {} : { seedDir: paths.seedDir }),
       profile: SAFE_PROFILE,
       required: [...REQUIRED_SERVICES],
@@ -186,6 +201,8 @@ export function companionBootOptions(cli: CliOptions, paths: CompanionPaths): Pa
     bundles: bundleOk ? [paths.bundleDir] : [],
     pluginPaths: corePluginPaths(paths.harnessDir),
     pluginRoot: paths.pluginsRoot,
+    pluginScope: DIVER_PLUGIN_SCOPE,
+    corePlugins: [...DIVER_CORE_PLUGINS],
     ...(paths.seedDir === undefined ? {} : { seedDir: paths.seedDir }),
     profile,
     required: [...REQUIRED_SERVICES],

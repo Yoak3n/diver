@@ -6,9 +6,12 @@ import { createUserMessage } from '@cos/plugin-api'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 
 import { userMessage } from '../agent.ts'
+import { appendGroupSent, groupSentEvent, groupSentPath } from '../group-sent.ts'
+import type { GroupSentRecord } from '../group-sent.ts'
 import { groupMarkerLine, inboxMarkerLine } from '../interaction.ts'
 import { readBody, sendJson } from '../http.ts'
 import { readDiverSettings } from '../session-helpers.ts'
+import { createBroadcast } from '../sse.ts'
 import type { WebHandlerDeps } from '../types.ts'
 
 /** 命中并处理返回 true；未命中返回 false 交回分发器。 */
@@ -179,9 +182,10 @@ export async function handleChat(
   }
 
   // /api/group-sent —— 群发言落账（record-only）：壳 group::say fan-out 成功后
-  // 调用，在发送方会话 append 一条 `group/sent` 已投递事实。不进 inbox、不唤醒、
-  // 不进模型上下文（deriveMessages 不投影该类型）——群视图在发送时刻即显示本条
-  // （发送方池子），收方稍后 claim 出的副本共享 clientMsgId，由前端按 id 去重。
+  // 调用，把「本条已投递」记进**产品自有存储**（`$COS_HOME/group-sent.jsonl`，
+  // 见 ../group-sent.ts）——不进会话日志、不进 inbox、不唤醒、不进模型上下文。
+  // 群视图在发送时刻即显示本条（直接广播，不等收方领取）；收方稍后 claim 出的
+  // 副本共享 clientMsgId，由前端按 id 去重。
   // body: { text, from: { id, name }, group: { id, name }, clientMsgId }
   if (pathname === '/api/group-sent' && req.method === 'POST') {
     const body = await readBody(req)
@@ -193,13 +197,21 @@ export async function handleChat(
     }
     const from = (body.from ?? {}) as { id?: string; name?: string }
     const g = (body.group ?? {}) as { id?: string; name?: string }
-    const agent = await deps.ensureAgent()
-    agent.session.append('group/sent', {
+    const record: GroupSentRecord = {
       text,
       from: { id: String(from.id ?? '').trim(), name: String(from.name ?? '').trim() },
       group: { id: String(g.id ?? '').trim() || 'general', name: String(g.name ?? '').trim() || '全员群' },
       clientMsgId,
-    })
+      time: Date.now(),
+    }
+    // 落盘失败不阻断实时显示（壳侧同样只记日志、不影响发言结果）。
+    try {
+      appendGroupSent(groupSentPath(), record)
+    } catch (error) {
+      console.warn(`[group-sent] 落账失败（不影响显示）：${String(error)}`)
+    }
+    const agent = await deps.ensureAgent()
+    createBroadcast(deps.state)(groupSentEvent(record, String(agent.id)))
     sendJson(res, 200, { recorded: true, messageId: clientMsgId })
     return true
   }

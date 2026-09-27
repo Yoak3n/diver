@@ -109,8 +109,9 @@ fn list_json(file: &GroupsFile, rows: &[InstanceRow], sender: &str) -> Vec<Value
 /// 群发言：目标 = 群成员 ∩ 在册实例 − 自己；逐个投递，单败不阻断。
 /// `wake=true`（缺省，拍板 2026-09-27）`next-turn` 唤醒成员给发言机会；
 /// `wake=false` `inject` 只入对方上下文不唤醒（对方下次开口才看到）。
-/// 显示不依赖收方领取：fan-out 成功后在**发送方**会话落一条 `group/sent`
-/// （record-only），收方副本共享 clientMsgId 由前端按 id 去重。
+/// 显示不依赖收方领取：fan-out 成功后把本条记进**发送方自己的落账存储**
+/// （`$COS_HOME/group-sent.jsonl`，产品自有、不进 harness 会话日志），
+/// 收方副本共享 clientMsgId 由前端按 id 去重。
 async fn say(state: &ServiceState, sender: &str, params: &Value) -> Result<Value, String> {
     let text = text_param(params, "text");
     if text.is_empty() {
@@ -147,8 +148,9 @@ pub(crate) fn client_msg_id(sender: &str) -> String {
 }
 
 /// 发送方落账（拍板 2026-09-27）：至少投递成功一人时，向发送方自己的 backend
-/// POST `/api/group-sent`，在其会话 append record-only 的 `group/sent` 事件——
-/// 群视图在发送时刻即显示本条，不等收方领取。落账失败只记日志（不影响发言结果）。
+/// POST `/api/group-sent`，由其写入**产品自有落账存储**（`$COS_HOME/group-sent.jsonl`）
+/// 并即时广播——群视图在发送时刻即显示本条，不等收方领取。
+/// 落账失败只记日志（不影响发言结果）。
 async fn record_group_sent(
     state: &ServiceState,
     sender: &str,

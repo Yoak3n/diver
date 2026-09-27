@@ -111,6 +111,32 @@ crates/
 - `plugins.json` catalog 必须覆盖 `bundle-companion/cordis.patch.yml` 中全部 `@diver/*` insert。
 - harness 的 `@cos/*` / `@deepseek-ai/dsh-*` 不受本节约束。
 
+## harness 分层铁律（产品语义不进引擎）
+
+`harness/` 是**独立仓库**（`github.com/Yoak3n/cos`），以 submodule 挂在 `harness/`。
+引擎不得认识任何产品概念——判断标准：**把 `diver` 换成另一个产品，`harness/` 应当一行都不用改**。
+
+- **禁止**在 `harness/packages/**` 出现：产品插件名（`@diver/*`）、产品 npm scope 硬编码、
+  产品事件类型、产品落盘 role、产品专有字段。
+- **产品事件类型**：在 `cos-plugins/` 侧用 `declare module '@cos/types'` 合并 `SessionEventMap`；
+  不得内联进引擎的 `SessionEventMap`（该接口是 merge-extensible 的，就是为这个留的）。
+- **引擎的持久化 codec 只认核心 role**（`user` / `assistant` / `toolResult`）。产品自己的记录
+  放**产品自己的存储**——如群发言落账 `$COS_HOME/group-sent.jsonl`
+  （见 `cos-plugins/backend/src/group-sent.ts`），不塞进会话日志。
+- **跨层能力只走两条路**：通用扩展点，或启动注入。产品的 scope 与核心插件清单在
+  `cos-plugins/companion/src/companion-boot.ts` 经 `BootOptions.pluginScope` /
+  `BootOptions.corePlugins` 注入；引擎侧默认值必须是中性的（空清单 / 空 scope）。
+- **改 harness 单独提交**：先在 submodule 内提交，再在主仓库提交指针升级；指针提交的
+  message 要写明 harness 侧改了什么（主仓库 diff 里看不到 submodule 内容）。
+
+自查（改 `harness/` 前后各跑一次，必须无命中；README 的规则说明与测试夹具除外）：
+
+```bash
+cd harness && rg -n '@diver|group/sent|groupSent' packages/
+```
+
+命中即分层已破——回到「通用扩展点 / 启动注入」二选一，**不要就地加 if**。
+
 ## 重构节奏
 
 1. **拆超长文件**（行为不变）：超 500 行的文件按职责拆开。

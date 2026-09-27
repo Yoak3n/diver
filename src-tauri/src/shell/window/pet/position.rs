@@ -250,24 +250,23 @@ pub fn clamp_to_current_monitor(app: &AppHandle) {
 }
 
 /// 按目标显示器工作区定位（右下贴边），带过渡动画，并持久化。
+///
+/// `index` 是 canonical 编号（`shell::displays` / 前端 `list_monitors` 同序），
+/// 不是 `available_monitors` 的枚举序——否则会贴错屏。
 pub fn move_to_monitor(app: &AppHandle, index: usize) -> Result<(), String> {
-    let monitors = app
-        .available_monitors()
-        .map_err(|e| format!("PET_MONITOR_LIST_FAILED: {e}"))?;
-    let monitor = monitors
+    let displays = crate::shell::displays::canonical_displays(app);
+    let target = displays
         .get(index)
         .ok_or_else(|| "PET_MONITOR_NOT_FOUND".to_string())?;
-    let area = *monitor.work_area();
+    let area = target.work;
     let window = app
         .get_webview_window(PET_WINDOW_LABEL)
         .ok_or_else(|| "PET_WINDOW_NOT_FOUND".to_string())?;
     let size = window
         .outer_size()
         .map_err(|e| format!("PET_WINDOW_SIZE_FAILED: {e}"))?;
-    let x = (area.position.x + area.size.width as i32 - size.width as i32 - PET_DEFAULT_MARGIN)
-        .max(area.position.x);
-    let y = (area.position.y + area.size.height as i32 - size.height as i32 - PET_DEFAULT_MARGIN)
-        .max(area.position.y);
+    let x = (area.x + area.width as i32 - size.width as i32 - PET_DEFAULT_MARGIN).max(area.x);
+    let y = (area.y + area.height as i32 - size.height as i32 - PET_DEFAULT_MARGIN).max(area.y);
     animate_position(app, &window, x, y);
     Ok(())
 }

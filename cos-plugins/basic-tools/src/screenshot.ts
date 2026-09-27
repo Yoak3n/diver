@@ -40,6 +40,7 @@ export function applyScreenshotTools(ctx: Context, caps: ScreenshotCaps = {}): v
     order: 104,
     text:
       'Desktop screenshots: call list_displays first (screen index → bounds → primary). ' +
+      'Screen numbers quoted in pet-interaction event hints use these same display indices (canonical order: primary first, then left-to-right) — cross-check with resolution/primary when unsure. ' +
       'Prefer the screenshot tool — never dump multi-MB PNGs via sh/PowerShell. ' +
       'Full-screen JPEG is fine for overview (target well under 1MB). ' +
       'To READ text/UI detail, pass a tight region (virtual-screen x,y,width,height) at 1:1 — do not downscale a whole screen until text is blurry. ' +
@@ -58,7 +59,7 @@ export function applyScreenshotTools(ctx: Context, caps: ScreenshotCaps = {}): v
         'Displays (physical pixels, virtual-screen coordinates):',
         ...lines,
         `virtual screen: ${vs.width}x${vs.height} @ (${vs.x},${vs.y})`,
-        'Use screenshot display=N for a full screen, or region={x,y,width,height} for a crop.',
+        'Indices are canonical (primary first, then left-to-right) and match screen numbers quoted in event hints. Use screenshot display=N for a full screen, or region={x,y,width,height} for a crop.',
       ].join('\n'),
     }
   }, {

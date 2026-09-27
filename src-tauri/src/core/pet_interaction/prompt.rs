@@ -73,7 +73,15 @@ fn context_lines(ctx: &Option<Value>, mode: InteractionMode) -> String {
             (Some(w), Some(h)) => format!("{w}x{h}"),
             _ => "分辨率未知".into(),
         };
-        lines.push(format!("上下文: 屏幕 {id} 为 {size}（{primary}）。"));
+        // 位置随行给出：即便编号一时对不上，模型也能按「分辨率 + 主副屏 + 坐标」核对。
+        let at = match (
+            d.get("x").and_then(|v| v.as_i64()),
+            d.get("y").and_then(|v| v.as_i64()),
+        ) {
+            (Some(x), Some(y)) => format!("，位于 ({x},{y})"),
+            _ => String::new(),
+        };
+        lines.push(format!("上下文: 屏幕 {id} 为 {size}（{primary}{at}）。"));
     }
     if mode == InteractionMode::Context {
         if let Some(apps) = ctx.get("apps").and_then(|v| v.as_array()) {
@@ -103,9 +111,11 @@ pub fn build_interaction_prompt(ev: &super::PetGestureEvent, mode: InteractionMo
         });
     let display_hint = match display_id {
         Some(id) => {
-            format!("如果你想看看那边有什么，可以对 display {id} 截屏（不要截错屏幕）。")
+            format!(
+                "如果你想看看那边有什么，可以对 display {id} 截屏（该编号与 list_displays 的 display index 同源；也可按分辨率与主副屏核对，不要截错屏幕）。"
+            )
         }
-        None => "如果你想看看现场，可以截取对应显示器的画面（注意截对屏幕）。".into(),
+        None => "如果你想看看现场，可以截取对应显示器的画面（先 list_displays 按分辨率/主副屏对准，注意截对屏幕）。".into(),
     };
     let mut parts = vec![
         "[pet-interaction] 用户在你空闲时和你的桌宠互动了。".to_string(),
@@ -142,13 +152,16 @@ mod tests {
                 m
             },
             context: Some(json!({
-                "display": { "id": 1, "width": 1920, "height": 1080, "primary": true }
+                "display": { "id": 1, "width": 1920, "height": 1080, "x": 0, "y": 0, "primary": true }
             })),
         };
         let p = build_interaction_prompt(&ev, InteractionMode::Events);
         assert!(p.contains("pet.drag.screen_changed"));
         assert!(p.contains("屏幕 0"));
         assert!(p.contains("display 1"));
+        // 编号契约：事件里的 display 号与工具 list_displays 同源，且给出坐标供核对。
+        assert!(p.contains("list_displays"));
+        assert!(p.contains("主屏，位于 (0,0)"));
         assert!(!p.contains("应用概览"));
         let p2 = build_interaction_prompt(&ev, InteractionMode::Context);
         // context 模式无 apps 也不应崩

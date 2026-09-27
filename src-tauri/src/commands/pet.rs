@@ -77,23 +77,11 @@ pub fn get_cursor_screen_point() -> Option<(i32, i32)> {
 }
 
 /// 列出所有显示器（物理像素，相对虚拟屏幕原点）。
+/// 编号为 canonical 序（主屏在前再按几何）：与截屏工具 `list_displays` 同源，
+/// 桌宠互动事件引用的「屏幕 N」必须等于工具的 `display N`。
 #[tauri::command]
 pub fn list_monitors(app: AppHandle) -> Vec<serde_json::Value> {
-    app.available_monitors()
-        .unwrap_or_default()
-        .into_iter()
-        .map(|m| {
-            let p = *m.position();
-            let s = *m.size();
-            serde_json::json!({
-                "name": m.name().cloned().unwrap_or_default(),
-                "x": p.x,
-                "y": p.y,
-                "width": s.width,
-                "height": s.height,
-            })
-        })
-        .collect()
+    crate::shell::displays::list_monitors_json(&app)
 }
 
 /// 把桌宠窗口转移到指定显示器（贴其工作区右下角，并持久化位置）。

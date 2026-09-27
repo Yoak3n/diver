@@ -63,11 +63,15 @@ export async function setPetDragging(active: boolean): Promise<void> {
 
 /** 列出所有显示器（物理像素坐标）。 */
 export interface MonitorInfo {
+  /** canonical 编号（与截屏工具 list_displays 的 display index 同序同号）。 */
+  index?: number;
   name: string;
   x: number;
   y: number;
   width: number;
   height: number;
+  /** 是否主屏（壳端给出；旧版无此字段时前端退回「包含 (0,0)」近似）。 */
+  primary?: boolean;
 }
 
 /** 列出所有显示器（用于把桌宠转移到指定屏幕）。 */

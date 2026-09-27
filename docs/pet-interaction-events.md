@@ -17,7 +17,7 @@
 
 1. **闲时才触发** —— agent 输出中或刚聊过 → 丢弃，不打断、不 `steer` 挤进当前回合。
 2. **语义事件，不是原始输入** —— 上报「拖到另一块屏幕了」「拖着很久没松手」，不上报每帧坐标。
-3. **壳给粗略，模型自取精** —— 壳端随事件附轻量上下文（屏幕 id、分辨率、窗口应用名摘要）；文案里**明确提醒**模型可调用截屏工具亲自查看，且**必须截对屏幕**。
+3. **壳给粗略，模型自取精** —— 壳端随事件附轻量上下文（屏幕 id、分辨率、窗口应用名摘要）；文案里**明确提醒**模型可调用截屏工具亲自查看，且**必须截对屏幕**。屏幕 id 必须与截屏工具 `list_displays` 的 display index **同源同号**（见 §5.3），否则模型会按错编号截屏。
 4. **用户可选** —— 「互动感知」分档开关；默认轻量。
 5. **可惊喜，不可吵** —— 一次闲时窗口限量触发；重复同类合并；手势必须「有意」。
 
@@ -348,7 +348,7 @@ hint: If you want to see what is on that screen, take a screenshot of display 1 
 要点：
 
 - 粗略上下文由**壳端**随事件采集，backend 原样嵌入，不二次猜。
-- **hint 固定提醒截对屏幕**（写明 `display N`）；模型若无需看图可以不调工具。
+- **hint 固定提醒截对屏幕**（写明 `display N`，并说明该编号与 `list_displays` 同源）；模型若无需看图可以不调工具。
 - 语气约束写在 hint：要像搭话，不要像传感器汇报。
 
 ### 5.2 会话与 UI 可见性
@@ -363,7 +363,7 @@ hint: If you want to see what is on that screen, take a screenshot of display 1 
 
 | 能力 | 建议形态 | 说明 |
 |---|---|---|
-| 列屏 | 工具 `list_displays` 或复用壳已有 monitor 列表 | 返回 id、分辨率、是否主屏、工作区 |
+| 列屏 | 工具 `list_displays`（壳端 `list_monitors` 已同源：同用 `diver_shot::canonicalize_displays` 的 canonical 序，「屏幕 N」≡工具 `display N`） | 返回 id、分辨率、是否主屏、工作区 |
 | 截屏 | 工具 `screenshot`，参数 **必须** `display: number` | 经通道 C `/rpc`（或 backend 代理 invoke）调 Rust 捕获；返回图给多模态，或失败时降级为描述/OCR |
 | 窗口列表 | 工具 `list_windows`（可选） | `EnumWindows` → 应用名/标题 |
 
@@ -429,7 +429,7 @@ hint: If you want to see what is on that screen, take a screenshot of display 1 
 | 步骤 | 位置 | 做什么 |
 |---|---|---|
 | 1. 手势/语义识别 | **PetApp 前端发起**（`src/pet/` pointer/hitbox；拖动会话已有 `set_pet_dragging`） | 去抖、阈值、主事件择一；**不**上报坐标流。理由：语义在手势层，且仅桌宠存活时存在交互。跨屏判定若不稳，可后续下沉 Rust 辅助，事件源仍在前端 |
-| 2. 粗略上下文 | `src/tauri.ts` 已有 `list_monitors`；窗口应用摘要需 Rust 新命令 | 只取事件需要的最小字段 |
+| 2. 粗略上下文 | `src/tauri.ts` 已有 `list_monitors`（canonical 序，与截屏工具同号）；窗口应用摘要需 Rust 新命令 | 只取事件需要的最小字段 |
 | 3. HTTP 上行 | 新 `src/api.ts` → `POST /api/event` | 与 `/api/chat` 并列；失败静默（可 debug 日志） |
 | 4. 路由 | `cos-plugins/backend/src/handlers.ts` 新增 `/api/event` 分支 | 校验 type/payload；读档位设置 |
 | 5. Idle Gate | 新 `idle-gate.ts`；状态更新挂在 `sse.ts` 的 session 监听上 | 不过则 `{accepted:false, reason}` |
@@ -455,7 +455,7 @@ Content-Type: application/json
     "dragging": true
   },
   "context": {
-    "display": { "id": 1, "width": 2560, "height": 1440, "primary": false },
+    "display": { "id": 1, "width": 2560, "height": 1440, "x": 2560, "y": 0, "primary": false },
     "apps": ["Chrome×3", "Code×1", "Explorer×2"]
   }
 }

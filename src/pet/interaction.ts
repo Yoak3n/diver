@@ -22,7 +22,14 @@ export interface PetGestureEventPayload {
   source?: string;
   payload?: Record<string, unknown>;
   context?: {
-    display?: { id?: number | string; width?: number; height?: number; primary?: boolean };
+    display?: {
+      id?: number | string;
+      width?: number;
+      height?: number;
+      x?: number;
+      y?: number;
+      primary?: boolean;
+    };
     apps?: string[];
   };
 }
@@ -59,8 +66,10 @@ export function monitorIndexAt(
   return -1;
 }
 
-/** 主屏近似：包含 (0,0) 的显示器；否则取第一块。 */
+/** 主屏：优先用壳端给的 `primary` 标记；缺省退回「包含 (0,0)」近似。 */
 export function primaryMonitorIndex(monitors: MonitorInfo[]): number {
+  const flagged = monitors.findIndex((m) => m.primary === true);
+  if (flagged >= 0) return flagged;
   const hit = monitorIndexAt(monitors, 0, 0);
   return hit >= 0 ? hit : 0;
 }
@@ -101,12 +110,16 @@ export function createPetInteractionTracker(
     const monitors = await getMonitors();
     const m = monitors[index];
     if (!m) return undefined;
-    const primary = primaryMonitorIndex(monitors) === index;
+    const primary = m.primary ?? (primaryMonitorIndex(monitors) === index);
     return {
       display: {
-        id: index,
+        // canonical 编号：与截屏工具 list_displays 的 display index 同源，
+        // 事件里说「屏幕 N」即工具的 display N（禁止用枚举原序）。
+        id: m.index ?? index,
         width: m.width,
         height: m.height,
+        x: m.x,
+        y: m.y,
         primary,
       },
     };

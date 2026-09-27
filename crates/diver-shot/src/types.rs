@@ -10,7 +10,7 @@ pub struct Rect {
     pub height: u32,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DisplayInfo {
     pub index: u32,
     pub name: String,

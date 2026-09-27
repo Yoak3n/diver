@@ -82,10 +82,9 @@ pub fn list_displays() -> Result<ListDisplaysResult, ShotError> {
     unsafe {
         EnumDisplayMonitors(ptr::null_mut(), ptr::null(), Some(proc), &mut list as *mut _ as LPARAM);
     }
-    list.sort_by_key(|d| (!d.primary, d.x, d.y));
-    for (i, d) in list.iter_mut().enumerate() {
-        d.index = i as u32;
-    }
+    // 统一编号：主屏在前再按几何排序（见 displays::canonicalize_displays）。
+    // 事件上下文（壳 list_monitors）必须同用此序，否则事件引用的 display 号会对不上。
+    let list = crate::displays::canonicalize_displays(list);
     let vs = virtual_screen();
     Ok(ListDisplaysResult { displays: list, virtual_screen: vs })
 }

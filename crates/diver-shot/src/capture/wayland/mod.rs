@@ -39,7 +39,10 @@ pub fn list_displays() -> Result<ListDisplaysResult, ShotError> {
         ));
     }
     match list_wayland_outputs() {
-        Ok(list) if !list.displays.is_empty() => Ok(list),
+        Ok(list) if !list.displays.is_empty() => Ok(ListDisplaysResult {
+            displays: crate::displays::canonicalize_displays(list.displays),
+            virtual_screen: list.virtual_screen,
+        }),
         _ => {
             // 退化：单块未知屏。capture 仍可经 portal 工作；region 用图像坐标。
             Ok(ListDisplaysResult {

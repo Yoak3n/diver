@@ -5,11 +5,13 @@
 //! 无 Tauri / HTTP / 进程依赖；`services/screenshot` 薄适配调用。
 
 pub mod capture;
+pub mod displays;
 pub mod encode;
 pub mod geometry;
 pub mod types;
 
 pub use capture::{capture_rect, find_window, list_displays};
+pub use displays::canonicalize_displays;
 pub use encode::encode_jpeg_ladder;
 pub use types::{
     CaptureFileResult, DisplayInfo, EncodePlan, ListDisplaysResult, Rect, ShotError, ShotErrorCode,

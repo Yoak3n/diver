@@ -431,7 +431,7 @@ hint: If you want to see what is on that screen, take a screenshot of display 1 
 | 1. 手势/语义识别 | **PetApp 前端发起**（`src/pet/` pointer/hitbox；拖动会话已有 `set_pet_dragging`） | 去抖、阈值、主事件择一；**不**上报坐标流。理由：语义在手势层，且仅桌宠存活时存在交互。跨屏判定若不稳，可后续下沉 Rust 辅助，事件源仍在前端 |
 | 2. 粗略上下文 | `src/tauri.ts` 已有 `list_monitors`（canonical 序，与截屏工具同号）；窗口应用摘要需 Rust 新命令 | 只取事件需要的最小字段 |
 | 3. HTTP 上行 | 新 `src/api.ts` → `POST /api/event` | 与 `/api/chat` 并列；失败静默（可 debug 日志） |
-| 4. 路由 | `cos-plugins/backend/src/handlers.ts` 新增 `/api/event` 分支 | 校验 type/payload；读档位设置 |
+| 4. 路由 | `cos-plugins/backend/src/routes/` 新增事件路由文件（handlers.ts 已拆为纯分发器，各域自管匹配） | 校验 type/payload；读档位设置 |
 | 5. Idle Gate | 新 `idle-gate.ts`；状态更新挂在 `sse.ts` 的 session 监听上 | 不过则 `{accepted:false, reason}` |
 | 6. 组消息 | 对齐 `agent.ts` 的 `userMessage` / presence 的 `[presence]` 模式 | `createUserMessage(..., { kind:'plugin', detail:'pet-interaction' })` |
 | 7. 注入 | `agent.followup(msg)` → `Agent.send(..., 'next-turn', true)` | **只用 followup**；不用 `steer` / `inject` |

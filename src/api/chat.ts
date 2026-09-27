@@ -30,9 +30,10 @@ export function sendChat(
   content: string,
   images?: ChatImage[],
   instanceId?: string,
-  opts?: { queue?: boolean; group?: boolean },
+  opts?: { queue?: boolean; group?: { id: string; name: string } },
 ): Promise<{ sessionId: string; messageId: string; queued?: boolean | string }> {
-  // P2-3：queue=忙时排队不插话（群聊广播用）；group=群聊标记（后端注入在场提示首行）。
+  // P2-3/P2-4：queue=忙时排队不插话（群聊广播用）；group={id,name} 群聊归属
+  // （后端注入在场提示首行 + groupId 归属）。
   return json(
     "/chat",
     {
@@ -41,7 +42,7 @@ export function sendChat(
         content,
         ...(images && images.length > 0 ? { images } : {}),
         ...(opts?.queue === true ? { queue: true } : {}),
-        ...(opts?.group === true ? { group: true } : {}),
+        ...(opts?.group ? { group: opts.group } : {}),
       }),
     },
     instanceId,

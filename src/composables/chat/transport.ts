@@ -127,9 +127,9 @@ export function createChatTransport(state: ChatState, instanceId: string) {
     content?: string;
     images?: ChatImage[];
     queue?: boolean;
-    group?: boolean;
+    group?: { id: string; name: string };
   }) {
-    // 显式参数 = 群聊广播外发（P2-3）：纯投递，不动本地 composer/busy；
+    // 显式参数 = 群聊广播外发（P2-3/P2-4）：纯投递，不动本地 composer/busy；
     // SSE 回声带 group 标，由合并流去重只渲染一条。
     if (opts?.content !== undefined) {
       const text = opts.content.trim();
@@ -137,7 +137,7 @@ export function createChatTransport(state: ChatState, instanceId: string) {
       if (!text && images.length === 0) return;
       await sendChat(text, images, instanceId, {
         queue: opts.queue === true,
-        group: opts.group === true,
+        ...(opts.group ? { group: opts.group } : {}),
       });
       return;
     }

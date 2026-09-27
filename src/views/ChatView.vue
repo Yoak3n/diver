@@ -10,6 +10,7 @@ import { setChrome } from "../composables/useChrome";
 import { filesToAttachments } from "../imageAttach";
 import { setInstanceRuntimes } from "../api";
 import { listInstanceRuntimes, tauriAvailable } from "../tauri";
+import { listGroups, type GroupRow } from "../ipc/group";
 import type { ChatMessage } from "../types";
 import ChatArea from "../components/ChatArea.vue";
 import ComposerBar from "../components/ComposerBar.vue";
@@ -20,11 +21,26 @@ const settings = useSettings();
 const { state, doRestartSidecar } = settings;
 const instancesState = useInstances();
 
-const GROUP_ID = "@group";
+// 群聊（P2-4 多群）：侧栏群行 id = '@group:<gid>'，缺省全员群 general。
+const GROUP_PREFIX = "@group:";
 const currentId = ref("default");
-const isGroup = computed(() => currentId.value === GROUP_ID);
-// 群聊模式借 default 会话当「输入框载体」（不新建 @group 会话）；群发走 fan-out。
+const isGroup = computed(() => currentId.value.startsWith(GROUP_PREFIX));
+const selectedGroupId = computed(() =>
+  isGroup.value ? currentId.value.slice(GROUP_PREFIX.length) : "general",
+);
+// 群聊模式借 default 会话当「输入框载体」（不新建会话）；群发走 fan-out。
 const chat = computed(() => useChat(isGroup.value ? "default" : currentId.value));
+
+// 群清单（壳层 groups.json）：侧栏群行 + 归属流分桶数据源。
+const groups = ref<GroupRow[]>([]);
+async function refreshGroups() {
+  if (!tauriAvailable()) return;
+  try {
+    groups.value = await listGroups();
+  } catch {
+    /* 群清单未就绪：侧栏降级只显示实例行 */
+  }
+}
 
 // 会话池喂 API 寻址 + 清单/注册表轮询（侧栏在线点 / 端口映射）。
 const runtimes = ref<Record<string, { online: boolean; busy: boolean }>>({});
@@ -46,7 +62,11 @@ async function refreshRuntimes() {
 onMounted(() => {
   void instancesState.refresh();
   void refreshRuntimes();
-  window.setInterval(() => void refreshRuntimes(), 5000);
+  void refreshGroups();
+  window.setInterval(() => {
+    void refreshRuntimes();
+    void refreshGroups();
+  }, 5000);
 });
 
 // 委托解包：模板顶层 ref 语义不变，底下按当前实例取值。
@@ -79,17 +99,19 @@ function send() {
   void chat.value.send();
 }
 
-// 群聊广播（P2-3）：发给全部在线实例（queue 忙不插话 + group 标记）；不强制回复。
+// 群聊广播（P2-4 多群）：发给当前群的在线成员（queue 忙不插话 + group 归属）；不强制回复。
 function sendGroup() {
   const text = composer.value.trim();
   if (!text) return;
-  const targets = instancesState.instances.value
-    .map((m) => m.id)
-    .filter((id) => runtimes.value[id]?.online === true);
+  const g = groups.value.find((x) => x.id === selectedGroupId.value);
+  const members =
+    !g || g.system ? instancesState.instances.value.map((m) => m.id) : g.members;
+  const targets = members.filter((id) => runtimes.value[id]?.online === true);
   if (targets.length === 0) return;
+  const groupRef = { id: g?.id ?? "general", name: g?.name ?? "全员群" };
   composer.value = "";
   for (const id of targets) {
-    void getChat(id)?.send({ content: text, queue: true, group: true });
+    void getChat(id)?.send({ content: text, queue: true, group: groupRef });
   }
 }
 function reconnect() {
@@ -150,8 +172,8 @@ const nameOf = computed<Record<string, string>>(() => {
   return map;
 });
 
-// 群聊合并流（P2-3）：只收挂 group 标的流量（用户群广播、实例群发言及其回复）；
-// 纯私聊流量（含实例间私聊）不进群视图。同一消息的多实例副本按内容+来源+3s 去重。
+// 群聊合并流（P2-3/P2-4）：只收挂 group 标的流量（用户群广播、实例群发言及其回复）；
+// 纯私聊流量（含实例间私聊）不进群视图。同一消息的多实例副本按归属群+内容+来源+3s 去重。
 const mergedMessages = computed<ChatMessage[]>(() => {
   const items: ChatMessage[] = [];
   for (const m of instancesState.instances.value) {
@@ -159,12 +181,13 @@ const mergedMessages = computed<ChatMessage[]>(() => {
     if (!c) continue;
     for (const msg of c.messages.value) {
       if (msg.group !== true) continue;
+      const withGroup = { ...msg, groupId: msg.groupId ?? "general" };
       if (msg.origin === "peer" && msg.from) {
-        items.push({ ...msg, from: nameOf.value[msg.from] ?? msg.from });
+        items.push({ ...withGroup, from: nameOf.value[msg.from] ?? msg.from });
       } else if (msg.kind === "assistant") {
-        items.push({ ...msg, from: nameOf.value[m.id] ?? m.id });
+        items.push({ ...withGroup, from: nameOf.value[m.id] ?? m.id });
       } else {
-        items.push({ ...msg });
+        items.push({ ...withGroup });
       }
     }
   }
@@ -176,6 +199,7 @@ const mergedMessages = computed<ChatMessage[]>(() => {
         (k) =>
           k.origin === m.origin &&
           k.from === m.from &&
+          k.groupId === m.groupId &&
           k.content === m.content &&
           Math.abs(k.time - m.time) <= 3000,
       );
@@ -184,6 +208,17 @@ const mergedMessages = computed<ChatMessage[]>(() => {
     out.push(m);
   }
   return out;
+});
+
+// 合并流按归属群分桶：侧栏群行预览 + 当前群视图共用。
+const mergedByGroup = computed<Map<string, ChatMessage[]>>(() => {
+  const map = new Map<string, ChatMessage[]>();
+  for (const m of mergedMessages.value) {
+    const arr = map.get(m.groupId ?? "general");
+    if (arr) arr.push(m);
+    else map.set(m.groupId ?? "general", [m]);
+  }
+  return map;
 });
 
 const railRows = computed<RailRow[]>(() => {
@@ -202,21 +237,26 @@ const railRows = computed<RailRow[]>(() => {
       busy: c?.busy.value ?? false,
     };
   });
-  // 首位固定「群聊」虚拟行（P2-3）。
-  const merged = mergedMessages.value;
-  const lastMerged = merged.length > 0 ? merged[merged.length - 1] : undefined;
-  rows.unshift({
-    id: GROUP_ID,
-    name: "群聊",
-    avatar: null,
-    preview: lastMerged
-      ? lastMerged.content.replace(/\s+/g, " ").slice(0, 30)
-      : "多实例共同会话",
-    timeText: lastMerged ? fmtClock(lastMerged.time) : "",
-    online: rows.some((r) => r.online),
-    busy: rows.some((r) => r.busy),
+  // 群行置顶（P2-4 多群）：按群清单逐行，预览取该群合并流最后一条。
+  const groupRail: RailRow[] = groups.value.map((g) => {
+    const msgs = mergedByGroup.value.get(g.id) ?? [];
+    const last = msgs.length > 0 ? msgs[msgs.length - 1] : undefined;
+    const members = g.system ? list.map((m) => m.id) : g.members;
+    return {
+      id: `${GROUP_PREFIX}${g.id}`,
+      name: g.name,
+      avatar: null,
+      preview: last
+        ? last.content.replace(/\s+/g, " ").slice(0, 30)
+        : g.system
+          ? "多实例共同会话"
+          : "群聊",
+      timeText: last ? fmtClock(last.time) : "",
+      online: members.some((id) => runtimes.value[id]?.online === true),
+      busy: false,
+    };
   });
-  return rows;
+  return [...groupRail, ...rows];
 });
 
 function fmtClock(ts: number): string {
@@ -226,7 +266,7 @@ function fmtClock(ts: number): string {
 
 // 来源徽标解析实例名（peer 消息 from=id → 展示名）；id 保留不可解析时兜底。
 const displayMessages = computed<ChatMessage[]>(() => {
-  if (isGroup.value) return mergedMessages.value;
+  if (isGroup.value) return mergedByGroup.value.get(selectedGroupId.value) ?? [];
   return messages.value.map((m) =>
     m.origin === "peer" && m.from ? { ...m, from: nameOf.value[m.from] ?? m.from } : m,
   );

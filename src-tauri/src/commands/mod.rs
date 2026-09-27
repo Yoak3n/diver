@@ -5,6 +5,7 @@
 
 mod avatar;
 mod config_cmds;
+mod groups;
 mod instances;
 mod pet;
 mod plugins;
@@ -16,6 +17,7 @@ mod tts_player;
 
 pub use avatar::*;
 pub use config_cmds::*;
+pub use groups::*;
 pub use instances::*;
 pub use pet::*;
 pub use plugins::*;

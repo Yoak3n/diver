@@ -4,6 +4,11 @@
 import { computed, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import { getChat, useChat } from "../composables/chat";
+import {
+  createUnreadTracker,
+  isIncomingMessage,
+  type ConvSignal,
+} from "../composables/chat/unread";
 import { useSettings } from "../composables/useSettings";
 import { useInstances } from "../composables/useInstances";
 import { setChrome } from "../composables/useChrome";
@@ -228,6 +233,24 @@ const mergedByGroup = computed<Map<string, ChatMessage[]>>(() => {
   return map;
 });
 
+// ---------- 未读计数（侧栏收尾）：实例行 + 群行 ----------
+const unread = createUnreadTracker(currentId);
+const convSignals = computed<Record<string, ConvSignal>>(() => {
+  const out: Record<string, ConvSignal> = {};
+  for (const m of instancesState.instances.value) {
+    const msgs = getChat(m.id)?.messages.value ?? [];
+    const last = msgs[msgs.length - 1];
+    if (last) out[m.id] = { sid: last.id, incoming: isIncomingMessage(last) };
+  }
+  for (const [gid, bucket] of mergedByGroup.value) {
+    const last = bucket[bucket.length - 1];
+    if (last) out[`${GROUP_PREFIX}${gid}`] = { sid: last.id, incoming: isIncomingMessage(last) };
+  }
+  return out;
+});
+watch(convSignals, (signals) => unread.observe(signals));
+watch(currentId, (id) => unread.clear(id));
+
 const railRows = computed<RailRow[]>(() => {
   const list = instancesState.instances.value;
   const rows: RailRow[] = list.map((m) => {
@@ -242,6 +265,7 @@ const railRows = computed<RailRow[]>(() => {
       timeText: last ? fmtClock(last.time) : "",
       online: runtimes.value[m.id]?.online ?? false,
       busy: c?.busy.value ?? false,
+      unread: unread.counts.value[m.id] ?? 0,
     };
   });
   // 群行置顶（P2-4 多群）：按群清单逐行，预览取该群合并流最后一条。
@@ -261,6 +285,7 @@ const railRows = computed<RailRow[]>(() => {
       timeText: last ? fmtClock(last.time) : "",
       online: members.some((id) => runtimes.value[id]?.online === true),
       busy: false,
+      unread: unread.counts.value[`${GROUP_PREFIX}${g.id}`] ?? 0,
     };
   });
   return [...groupRail, ...rows];
@@ -290,6 +315,7 @@ const onlineMap = computed<Record<string, boolean>>(() => {
   return map;
 });
 function onGroupDissolved() {
+  unread.clear(`${GROUP_PREFIX}${selectedGroupId.value}`);
   void refreshGroups();
   // 解散的群若是当前会话，退回默认私聊视图。
   if (isGroup.value) currentId.value = "default";

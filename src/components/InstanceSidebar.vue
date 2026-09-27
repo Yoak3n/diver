@@ -10,6 +10,8 @@ export interface RailRow {
   timeText: string;
   online: boolean;
   busy: boolean;
+  /** 未读数（0 = 无；>0 显示徽标）。 */
+  unread: number;
 }
 
 defineProps<{ rows: RailRow[] }>();
@@ -31,6 +33,7 @@ const model = defineModel<string>({ required: true });
         <div class="line1">
           <span class="name">{{ row.name }}</span>
           <span class="time">{{ row.timeText }}</span>
+          <span v-if="row.unread > 0" class="badge">{{ row.unread > 99 ? "99+" : row.unread }}</span>
         </div>
         <div class="line2">
           <span class="preview">{{ row.preview }}</span>
@@ -107,6 +110,20 @@ const model = defineModel<string>({ required: true });
   font-size: 10px;
   color: var(--muted, #999);
   flex-shrink: 0;
+}
+.badge {
+  flex-shrink: 0;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: #e5484d;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 .line2 {
   display: flex;

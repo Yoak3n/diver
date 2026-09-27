@@ -103,13 +103,15 @@ where
 /// 从 `base` 目录下的文件读取并反序列化指定类型的配置。
 ///
 /// 文件不存在或内容解析失败时返回 `T::default()`，保证应用始终可用。
+/// 容忍 UTF-8 BOM 前缀：PowerShell 5.1 `-Encoding UTF8` 等外部工具会写 BOM，
+/// `serde_json` 不认——不剥会解析失败而静默重播种（实测丢过实例登记行）。
 pub fn load_at<T>(base: &Path, file_name: &str) -> T
 where
     T: DeserializeOwned + Default,
 {
     std::fs::read_to_string(base.join(file_name))
         .ok()
-        .and_then(|content| serde_json::from_str(&content).ok())
+        .and_then(|content| serde_json::from_str(content.trim_start_matches('\u{FEFF}')).ok())
         .unwrap_or_default()
 }
 
@@ -163,5 +165,17 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("diver-cfg-miss-{}", std::process::id()));
         let loaded: Demo = load_at(&dir, "nope.json");
         assert_eq!(loaded, Demo::default());
+    }
+
+    #[test]
+    fn load_at_tolerates_utf8_bom() {
+        let dir = std::env::temp_dir().join(format!("diver-cfg-bom-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let raw = "\u{FEFF}{\"n\":7,\"s\":\"你好\"}";
+        std::fs::write(dir.join("demo.json"), raw).unwrap();
+        let loaded: Demo = load_at(&dir, "demo.json");
+        assert_eq!(loaded.n, 7);
+        assert_eq!(loaded.s, "你好");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

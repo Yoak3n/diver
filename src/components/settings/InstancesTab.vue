@@ -4,6 +4,7 @@
 import { onMounted, ref } from "vue";
 import { tauriAvailable, type InstanceMeta } from "../../tauri";
 import { useInstances } from "../../composables/useInstances";
+import { closeInstancePet, listInstancePets, openInstancePet } from "../../ipc/petInstances";
 
 const { instances, loading, error, notice, refresh, create, rename, clearName, toggle, remove } =
   useInstances();
@@ -13,8 +14,42 @@ const creating = ref(false);
 const editingId = ref("");
 const editingName = ref("");
 
+// P2-5 多桌宠：实例行召唤/收起桌宠（同屏上限 3 只）。
+const pets = ref<string[]>([]);
+const petBusy = ref("");
+const petMsg = ref("");
+
+async function refreshPets(): Promise<void> {
+  try {
+    pets.value = await listInstancePets();
+  } catch {
+    pets.value = [];
+  }
+}
+
+function petOn(inst: InstanceMeta): boolean {
+  return pets.value.includes(inst.id);
+}
+
+async function togglePet(inst: InstanceMeta): Promise<void> {
+  petBusy.value = inst.id;
+  petMsg.value = "";
+  try {
+    pets.value = petOn(inst)
+      ? await closeInstancePet(inst.id)
+      : await openInstancePet(inst.id);
+    petMsg.value = petOn(inst) ? `已召唤 ${inst.name || inst.id} 的桌宠（点谁互动谁）。` : "已收起。";
+  } catch (err) {
+    petMsg.value = err instanceof Error ? err.message : String(err);
+  } finally {
+    petBusy.value = "";
+    void refreshPets();
+  }
+}
+
 onMounted(() => {
   void refresh();
+  void refreshPets();
 });
 
 async function onCreate(): Promise<void> {
@@ -127,6 +162,13 @@ function formatDate(unix: number): string {
         <button class="btn small" @click="cancelRename">取消</button>
       </template>
       <template v-else>
+        <button
+          class="btn small"
+          :disabled="!tauriAvailable() || petBusy === inst.id"
+          @click="togglePet(inst)"
+        >
+          {{ petOn(inst) ? "收起桌宠" : "召唤桌宠" }}
+        </button>
         <button class="btn small" :disabled="!tauriAvailable()" @click="startRename(inst)">改名</button>
         <button
           v-if="inst.name"
@@ -146,6 +188,7 @@ function formatDate(unix: number): string {
       </template>
     </div>
     <p v-if="!loading && instances.length === 0 && !error" class="hint">暂无实例登记。</p>
+    <p v-if="petMsg" class="hint">{{ petMsg }}</p>
   </div>
 
   <p class="hint">

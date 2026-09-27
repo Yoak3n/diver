@@ -1,27 +1,42 @@
 <script setup lang="ts">
-import { nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { onBeforeUnmount, onMounted, ref, watch } from "vue";
 import type { ChatMessage, ToolActivity, UserQuestion, UserQuestionAnswerItem } from "../types";
 import { tauriAvailable } from "../tauri";
-import { isNearBottom } from "../scroll";
 import { onTtsSpeakingChange, speakMessageText, stopSpeaking } from "../tts";
 import MessageBubble from "./MessageBubble.vue";
 import ActivitySummary from "./ActivitySummary.vue";
 import WelcomeCard from "./WelcomeCard.vue";
 import QuestionCard from "./QuestionCard.vue";
 import JumpToBottom from "./JumpToBottom.vue";
+import MessageNav from "./MessageNav.vue";
+import { createChatScroller } from "../composables/chat/useChatScroller";
 
-const props = defineProps<{
-  messages: ChatMessage[];
-  tools: ToolActivity[];
-  busy: boolean;
-  connecting: boolean;
-  error: string | null;
-  healthOk: boolean;
-  modelConfigured: boolean;
-  ttsEnabled: boolean;
-  ttsVoice: string;
-  pendingQuestion: { requestId: string; questions: UserQuestion[] } | null;
-}>();
+const props = withDefaults(
+  defineProps<{
+    messages: ChatMessage[];
+    tools: ToolActivity[];
+    busy: boolean;
+    connecting: boolean;
+    error: string | null;
+    healthOk: boolean;
+    modelConfigured: boolean;
+    ttsEnabled: boolean;
+    ttsVoice: string;
+    pendingQuestion: { requestId: string; questions: UserQuestion[] } | null;
+    /** 视图语境：群聊视图 true——他方实例发言靠左、名字在气泡上方；私聊 false */
+    groupView?: boolean;
+    /**
+     * 列表 key 前缀（视图命名空间）。不同实例/会话池的消息 id 由各自 sidecar
+     * 生成，短编号会跨池撞号；不加前缀时切换会话会按 key 复用旧组件（头像张冠李戴）。
+     */
+    keyPrefix?: string;
+    /** 还有更早的历史没加载（打开只取最近几轮，其余懒加载） */
+    hasMoreHistory?: boolean;
+    /** 正在懒加载更早消息 */
+    loadingOlder?: boolean;
+  }>(),
+  { groupView: false, keyPrefix: "" },
+);
 
 const emit = defineEmits<{
   retry: [];
@@ -30,6 +45,7 @@ const emit = defineEmits<{
   suggestion: [text: string];
   answerQuestion: [answers: UserQuestionAnswerItem[]];
   toggleActivity: [groupId: string];
+  loadOlder: [];
 }>();
 
 function isActivityExpanded(groupId: string): boolean {
@@ -41,7 +57,6 @@ function isActivityExpanded(groupId: string): boolean {
 
 const scrollEl = ref<HTMLElement | null>(null);
 const ttsSpeaking = ref(false);
-const stickToBottom = ref(true);
 let offTtsSpeaking: (() => void) | null = null;
 
 function bindTtsSpeaking() {
@@ -54,25 +69,19 @@ function bindTtsSpeaking() {
 onMounted(bindTtsSpeaking);
 onBeforeUnmount(() => offTtsSpeaking?.());
 
-function onScroll() {
-  const el = scrollEl.value;
-  if (!el) return;
-  stickToBottom.value = isNearBottom(el.scrollTop, el.scrollHeight, el.clientHeight);
-}
+// 滚动控制（贴底跟随 / 首屏贴底 / 前插锚定 / 懒加载触发 / 时间线导航）
+const { stickToBottom, currentMid, onScroll, scrollToBottom, jumpToMessage } =
+  createChatScroller({
+    scrollEl,
+    count: () => props.messages.length,
+    firstId: () => props.messages[0]?.id,
+    hasMore: () => props.hasMoreHistory === true,
+    loadingOlder: () => props.loadingOlder === true,
+    requestOlder: () => emit("loadOlder"),
+  });
 
 function stopTts() {
   stopSpeaking();
-}
-
-/** force：按钮点击 / 需要贴底的场景；默认仅贴近底部时跟随。 */
-function scrollToBottom(force = false) {
-  nextTick(() => {
-    const el = scrollEl.value;
-    if (!el) return;
-    if (!force && !stickToBottom.value) return;
-    el.scrollTop = el.scrollHeight;
-    stickToBottom.value = true;
-  });
 }
 
 watch(
@@ -109,6 +118,18 @@ async function speak(msg: ChatMessage) {
           <button class="btn small" @click="emit('restart')">重启 sidecar</button>
         </div>
 
+        <div v-if="hasMoreHistory || loadingOlder" class="history-older">
+          <button
+            v-if="hasMoreHistory && !loadingOlder"
+            class="history-older-btn"
+            type="button"
+            @click="emit('loadOlder')"
+          >
+            查看更早的消息
+          </button>
+          <span v-else class="history-older-hint">正在加载更早的消息…</span>
+        </div>
+
         <WelcomeCard
           v-if="messages.length === 0"
           :model-configured="modelConfigured"
@@ -116,7 +137,7 @@ async function speak(msg: ChatMessage) {
           @suggestion="emit('suggestion', $event)"
         />
 
-        <template v-for="msg in messages" :key="msg.id">
+        <template v-for="msg in messages" :key="keyPrefix + msg.id">
           <ActivitySummary
             v-if="msg.kind === 'activity-summary'"
             :msg="msg"
@@ -131,6 +152,7 @@ async function speak(msg: ChatMessage) {
               isActivityExpanded(msg.activityGroupId)
             "
             :msg="msg"
+            :group-view="groupView"
             :tts-voice="ttsVoice"
             :tauri="tauriAvailable()"
             @speak="speak"
@@ -151,6 +173,12 @@ async function speak(msg: ChatMessage) {
     </div>
 
     <JumpToBottom :visible="!stickToBottom" @jump="scrollToBottom(true)" />
+    <MessageNav
+      :visible="messages.length > 0"
+      :messages="messages"
+      :current="currentMid"
+      @jump="jumpToMessage"
+    />
   </main>
 </template>
 
@@ -176,6 +204,13 @@ async function speak(msg: ChatMessage) {
   width: 100%;
   margin-left: auto;
   margin-right: auto;
+}
+/* 相邻的纯过程步骤行（思考/工具、无正文无图）：抵消 18px 段距，使跨行行距
+   与行内工具记录行距一致（行内 padding 4px×2 + 行高 ≈27px）。活跃 turn 的
+   步骤行尚未折叠、无 activityGroupId，靠相邻兄弟选择器命中；带正文的气泡、
+   摘要条、user/system 行不打折，保持段距作呼吸位。 */
+.chat-scroll > .msg-row.meta-only + .msg-row.meta-only {
+  margin-top: -18px;
 }
 .center-hint {
   margin: auto;
@@ -216,6 +251,35 @@ async function speak(msg: ChatMessage) {
   color: var(--ink-muted);
   font-size: 13px;
   padding-left: 36px;
+}
+
+.history-older {
+  display: flex;
+  justify-content: center;
+  padding: 2px 0 8px;
+}
+.history-older-btn {
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius-pill);
+  background: var(--paper-raised);
+  color: var(--ink-soft);
+  font-size: 12px;
+  padding: 4px 14px;
+  cursor: pointer;
+  transition:
+    background var(--dur-hover) ease,
+    color var(--dur-hover) ease,
+    border-color var(--dur-hover) ease;
+}
+@media (hover: hover) and (pointer: fine) {
+  .history-older-btn:hover {
+    background: var(--paper-hover);
+    color: var(--ink);
+  }
+}
+.history-older-hint {
+  color: var(--ink-muted);
+  font-size: 12px;
 }
 
 .tts-stop-bar {

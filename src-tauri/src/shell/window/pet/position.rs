@@ -77,6 +77,49 @@ pub fn place_at_default(window: &WebviewWindow) {
     persist_position(app, x, y);
 }
 
+/// 池内新窗落点：与已有桌宠同屏，工作区内右下**向内**错位；不写盘。
+///
+/// - 锚点显示器 = 经典窗（`pet`）当前所在的那块，无经典窗则主屏——多只宠物
+///   才会落在同一块屏上，「同屏错位」才有意义。
+/// - 错位向内 + 夹进工作区（[`pet_slot_position`]）：向外加会把已经贴右的窗推过
+///   屏幕边界，右侧还有显示器时半只宠物挂在两屏之间。
+/// - 不落 `pet-window.json`：那是经典窗的位置真源，实例宠借用会把它的记忆写花。
+pub fn place_pool_window(window: &WebviewWindow, slot: usize) {
+    let app = window.app_handle();
+    let anchor = app
+        .get_webview_window(PET_WINDOW_LABEL)
+        .and_then(|w| w.outer_position().ok())
+        .and_then(|p| monitor_containing(app, p.x, p.y))
+        .or_else(|| app.primary_monitor().ok().flatten());
+    let Some(monitor) = anchor else {
+        return;
+    };
+    let Ok(size) = window.outer_size() else {
+        return;
+    };
+    let area = *monitor.work_area();
+    let (x, y) = pet_slot_position(
+        (
+            area.position.x,
+            area.position.y,
+            area.size.width,
+            area.size.height,
+        ),
+        (size.width, size.height),
+        slot,
+    );
+    let _ = window.set_position(PhysicalPosition::new(x, y));
+}
+
+/// 命中点所在显示器（物理坐标）；不在任何屏上返回 None（调用方兜底主屏）。
+fn monitor_containing(app: &AppHandle, x: i32, y: i32) -> Option<tauri::Monitor> {
+    app.available_monitors().ok()?.into_iter().find(|m| {
+        let p = m.position();
+        let s = m.size();
+        x >= p.x && x < p.x + s.width as i32 && y >= p.y && y < p.y + s.height as i32
+    })
+}
+
 /// 创建/显示后：恢复持久化位置，无效（屏幕外）则默认右下角。
 pub fn restore_or_default_position(window: &WebviewWindow) {
     let app = window.app_handle();

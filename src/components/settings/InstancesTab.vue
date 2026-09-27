@@ -1,10 +1,11 @@
 <script setup lang="ts">
 // 设置页「实例」页：实例清单增删改（壳层元配置 instances.json）。
 // P0 边界：只登记不启动；实例内设置（人格/模型/插件集）不在此编辑。
-import { onMounted, ref } from "vue";
+import { onBeforeUnmount, onMounted, ref } from "vue";
 import { tauriAvailable, type InstanceMeta } from "../../tauri";
 import { useInstances } from "../../composables/useInstances";
 import { useInstancePet } from "../../composables/useInstancePet";
+import InstanceAvatar from "./children/InstanceAvatar.vue";
 
 const { instances, loading, error, notice, refresh, create, rename, clearName, toggle, remove } =
   useInstances();
@@ -26,10 +27,20 @@ const {
   onModelChange,
 } = useInstancePet();
 
+// 桌宠在屏状态也会被本页之外的动作改动（启动自动开经典窗等）：停留期间定时重读，
+// 按钮跟实际状态一致，而不是停在进页面那一刻的快照上。
+let petTimer: number | null = null;
+
 onMounted(() => {
   void refresh();
   void refreshPets();
   void loadCatalog();
+  petTimer = window.setInterval(() => void refreshPets(), 4000);
+});
+
+onBeforeUnmount(() => {
+  if (petTimer !== null) window.clearInterval(petTimer);
+  petTimer = null;
 });
 
 async function onCreate(): Promise<void> {
@@ -87,7 +98,8 @@ function formatDate(unix: number): string {
   <p class="hint">
     每个实例拥有独立的记忆 / 会话 / 人格 / 插件配置。命名可选：名字通常由你与它聊天后经人格卡片回填，
     创建时也可直接命名；人格 / 插件集在各自的实例设置里配置。此处可为每个实例指定桌宠模型
-    （默认跟随全局，选定后该实例的桌宠钉定用它）。
+    （默认跟随全局，选定后该实例的桌宠钉定用它）；点击实例头像可单独更换，
+    悬停角标 × 恢复默认（群聊按发送实例显示）。
   </p>
 
   <div class="create-row">
@@ -109,7 +121,7 @@ function formatDate(unix: number): string {
 
   <div class="instance-list">
     <div v-for="inst in instances" :key="inst.id" class="instance-card">
-      <div class="avatar" :class="{ unnamed: !inst.name }">{{ (inst.name || "·").slice(0, 1) }}</div>
+      <InstanceAvatar :instance-id="inst.id" :name="inst.name" />
       <div class="meta">
         <template v-if="editingId === inst.id">
           <input
@@ -233,18 +245,6 @@ function formatDate(unix: number): string {
   background: var(--paper-sunken);
   border: 1px solid var(--rule);
   border-radius: var(--radius);
-}
-.avatar {
-  width: 36px;
-  height: 36px;
-  flex-shrink: 0;
-  border-radius: 50%;
-  background: var(--paper-active);
-  color: var(--ink-soft);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 15px;
 }
 .meta {
   flex: 1;

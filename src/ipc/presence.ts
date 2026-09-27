@@ -35,6 +35,8 @@ export interface PresenceSnapshot {
   regime: PresenceRegime | string;
   user_input_active: boolean;
   booted_at: number;
+  /** FSM 归属实例 id（多实例：每实例一份状态机，展示标注来源）。 */
+  instance?: string;
   proactive: ProactiveSnapshot;
 }
 
@@ -79,11 +81,15 @@ export async function getPresencePhase(): Promise<PresencePhase | null> {
   }
 }
 
-/** 存在感调试快照（相位 + 上下文 + ProactiveSpeak 记账）。 */
-export async function getPresenceSnapshot(): Promise<PresenceSnapshot | null> {
+/** 存在感调试快照（相位 + 上下文 + ProactiveSpeak 记账）。`instanceId` 缺省读 active 实例。 */
+export async function getPresenceSnapshot(
+  instanceId?: string | null,
+): Promise<PresenceSnapshot | null> {
   if (!tauriAvailable()) return null;
   try {
-    return await invoke<PresenceSnapshot>("presence_snapshot");
+    return await invoke<PresenceSnapshot>("presence_snapshot", {
+      instance: instanceId ?? null,
+    });
   } catch {
     return null;
   }

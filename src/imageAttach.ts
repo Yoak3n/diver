@@ -45,6 +45,40 @@ export async function filesToAttachments(files: File[], max = 8): Promise<Compos
   return out;
 }
 
+/**
+ * 头像/图标入库预处理：中心方裁 + 缩到 size×size 的 PNG。
+ * 展示面最大 48px×2DPR≈96 设备px，256 足够；原尺寸直出会把缩比拉到 20:1+，
+ * 触发浏览器 mipmap 级跳（源图 640px 时落在 20px 档再放大），气泡里出像素格。
+ */
+export async function fileToSquareImage(
+  file: File,
+  size = 256,
+): Promise<{ mime: string; data: string } | null> {
+  if (!file.type.startsWith("image/")) return null;
+  try {
+    const bitmap = await createImageBitmap(file);
+    const side = Math.min(bitmap.width, bitmap.height);
+    const sx = (bitmap.width - side) / 2;
+    const sy = (bitmap.height - side) / 2;
+    const canvas = document.createElement("canvas");
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "high";
+    ctx.drawImage(bitmap, sx, sy, side, side, 0, 0, size, size);
+    bitmap.close();
+    const dataUrl = canvas.toDataURL("image/png");
+    const comma = dataUrl.indexOf(",");
+    const data = comma >= 0 ? dataUrl.slice(comma + 1) : "";
+    if (!data) return null;
+    return { mime: "image/png", data };
+  } catch {
+    return null;
+  }
+}
+
 export function imageFilesFromDataTransfer(dt: DataTransfer | null): File[] {
   if (!dt) return [];
   return Array.from(dt.files ?? []).filter((f) => f.type.startsWith("image/"));

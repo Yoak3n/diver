@@ -73,6 +73,8 @@ export interface ChatMessage {
   origin: "user" | "assistant" | "presence" | "interaction" | "proactive" | "peer";
   /** origin=peer：来源实例 id（P2-3 来源徽标，名字由实例清单解析）。 */
   from?: string;
+  /** 来源实例 id（合并流/私聊渲染时随 from 名字一并保留，供按实例取头像）。 */
+  fromId?: string;
   /** 群聊归属消息（P2-3/P2-4）：进群合并流，按内容+来源+时间窗去重。 */
   group?: boolean;
   /** 归属群 id/名（多群聊，缺省 general）。 */

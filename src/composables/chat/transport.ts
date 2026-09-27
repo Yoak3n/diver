@@ -5,9 +5,15 @@
 import { answerQuestion, getHistory, getSettings, health, sendChat, streamEvents } from "../../api";
 import { onTauriEvent, tauriAvailable, waitForSidecarReady } from "../../tauri";
 import type { ChatImage, SidecarStatus, UserQuestionAnswerItem } from "../../types";
+import { mergeHistoryIntoPool, stripActivityFolds } from "./reconcile";
 import type { createChatState } from "./state";
 
 export type ChatState = ReturnType<typeof createChatState>;
+
+/** 打开时只加载最近几轮对话（用户拍板：最后一两轮，更早的懒加载）。 */
+const INITIAL_ROUNDS = 2;
+/** 上翻懒加载的单块条数。 */
+const OLDER_CHUNK_LIMIT = 60;
 
 export function createChatTransport(state: ChatState, instanceId: string) {
   let closeStream: (() => void) | null = null;
@@ -17,23 +23,73 @@ export function createChatTransport(state: ChatState, instanceId: string) {
   let historyLoaded = false;
 
   /**
-   * 拉取当前会话历史（幂等）。
+   * 拉取当前会话历史（幂等）：只取最近 INITIAL_ROUNDS 轮，更早的靠 loadOlder 补。
    * 首次 Dev 启动时 WebView 可能先于 sidecar 就绪，单次拉取会静默失败；
    * 这里由三路信号重试：SSE hello、sidecar://status running、健康轮询恢复。
    */
   async function loadHistory() {
     if (historyLoaded) return;
     try {
-      const data = await getHistory(instanceId);
+      const data = await getHistory(instanceId, { rounds: INITIAL_ROUNDS });
       // 仅当本地还没有消息时填充，避免覆盖正在进行的会话
       if (state.messages.value.length === 0) {
         state.messages.value = data.messages.map((m) => ({ ...m, streaming: false }));
         // 历史里的完整轮次同样默认折叠过程活动
         state.collapseTurnActivity();
+        state.historyHasMore.value = data.hasMore === true;
       }
       historyLoaded = true;
     } catch {
       /* sidecar 尚未就绪：由 hello / sidecar://status / 健康轮询重试 */
+    }
+  }
+
+  /**
+   * hello 对账（SSE 每次建立都会触发，含断线自动重连）：
+   * 空池走常规历史填充；非空池只补最近几轮里 SSE 断缝漏掉的消息（按 id/内容
+   * 时间去重），闲时拆掉旧折叠重建（缺口可能正卡在折叠组的轮次边界上），
+   * 忙时只补不重排，避免打断正在流式的占位气泡。
+   * 更早区间的缺口不在此补：用户上翻懒加载时服务端会按锚点重建，缺口自愈。
+   */
+  async function reconcileOnHello() {
+    if (state.messages.value.length === 0) {
+      await loadHistory();
+      return;
+    }
+    try {
+      const data = await getHistory(instanceId, { rounds: INITIAL_ROUNDS });
+      const { merged, added } = mergeHistoryIntoPool(state.messages.value, data.messages);
+      state.historyHasMore.value = data.hasMore === true;
+      if (added === 0) return;
+      state.messages.value = state.busy.value ? merged : stripActivityFolds(merged);
+      if (!state.busy.value) state.collapseTurnActivity();
+    } catch {
+      /* 历史暂不可得：下次 hello / 健康轮询再试 */
+    }
+  }
+
+  /**
+   * 懒加载更早的消息（滚动到顶 / 导航触发）：以池内最旧一条为锚点向前取一块，
+   * 按时间原位前插（复用对账合并的去重）。并发与重复触发由 loadingOlder 挡住。
+   */
+  async function loadOlder() {
+    if (state.loadingOlder.value || !state.historyHasMore.value) return;
+    const anchor = state.messages.value[0];
+    if (!anchor || anchor.id.startsWith("local-")) return;
+    state.loadingOlder.value = true;
+    try {
+      const data = await getHistory(instanceId, {
+        before: anchor.id,
+        beforeTime: anchor.time,
+        limit: OLDER_CHUNK_LIMIT,
+      });
+      const { merged, added } = mergeHistoryIntoPool(state.messages.value, data.messages);
+      if (added > 0) state.messages.value = merged;
+      state.historyHasMore.value = data.hasMore === true;
+    } catch {
+      /* 拉取失败：保留锚点，下次触发再试 */
+    } finally {
+      state.loadingOlder.value = false;
     }
   }
 
@@ -102,8 +158,8 @@ export function createChatTransport(state: ChatState, instanceId: string) {
     closeStream?.();
     closeStream = streamEvents(
       (e) => {
-        // SSE 流建立（hello）说明 sidecar HTTP 已就绪：补拉历史（幂等）
-        if (e.type === "hello") void loadHistory();
+        // SSE 流建立（hello）说明 sidecar HTTP 已就绪：对账补缺（幂等，含空池首拉）
+        if (e.type === "hello") void reconcileOnHello();
         state.handleStreamEvent(e);
       },
       (err) => {
@@ -128,6 +184,7 @@ export function createChatTransport(state: ChatState, instanceId: string) {
     images?: ChatImage[];
     queue?: boolean;
     group?: { id: string; name: string };
+    clientMsgId?: string;
   }) {
     // 显式参数 = 群聊广播外发（P2-3/P2-4）：纯投递，不动本地 composer/busy；
     // SSE 回声带 group 标，由合并流去重只渲染一条。
@@ -138,6 +195,7 @@ export function createChatTransport(state: ChatState, instanceId: string) {
       await sendChat(text, images, instanceId, {
         queue: opts.queue === true,
         ...(opts.group ? { group: opts.group } : {}),
+        ...(opts.clientMsgId ? { clientMsgId: opts.clientMsgId } : {}),
       });
       return;
     }
@@ -167,7 +225,13 @@ export function createChatTransport(state: ChatState, instanceId: string) {
     });
     state.busy.value = true;
     try {
-      await sendChat(content, images, instanceId);
+      const res = await sendChat(content, images, instanceId);
+      // 发送成功即用服务端消息 id 原地改名：中途发送走 steer/队列，正式
+      // user/message 事件可能远晚于 3s 回声窗口——靠 id 才能原地替换不重发。
+      if (res?.messageId) {
+        const idx = state.messages.value.findIndex((m) => m.id === localId);
+        if (idx >= 0) state.messages.value[idx] = { ...state.messages.value[idx], id: res.messageId };
+      }
     } catch (err) {
       state.error.value = err instanceof Error ? err.message : String(err);
       const idx = state.messages.value.findIndex((m) => m.id === localId);
@@ -204,6 +268,7 @@ export function createChatTransport(state: ChatState, instanceId: string) {
     openStream,
     reconnect,
     send,
+    loadOlder,
     submitQuestionAnswer,
     dispose,
     instanceId,

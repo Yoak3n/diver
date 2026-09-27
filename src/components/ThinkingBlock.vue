@@ -48,9 +48,9 @@ const paragraphs = computed(() =>
 .thinking-block {
   max-width: 100%;
   min-width: 0;
-  margin: 2px 0 6px;
+  margin: 0;
   font-size: 12px;
-  line-height: 1.65;
+  line-height: 1.55;
   color: var(--ink-muted);
 }
 .row {

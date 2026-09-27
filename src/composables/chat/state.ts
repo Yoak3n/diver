@@ -30,6 +30,9 @@ export function createChatState() {
   const composer = ref("");
   const attachments = ref<ComposerAttachment[]>([]);
   const pendingQuestion = ref<{ requestId: string; questions: UserQuestion[] } | null>(null);
+  // 历史分页：打开只取最近几轮，更早消息按锚点懒加载
+  const historyHasMore = ref(false);
+  const loadingOlder = ref(false);
 
   // ---------- 派生 ----------
   const personaName = computed(() => healthInfo.value?.persona || "");
@@ -91,6 +94,8 @@ export function createChatState() {
     composer,
     attachments,
     pendingQuestion,
+    historyHasMore,
+    loadingOlder,
     personaName,
     modelConfigured,
     currentModelLabel,

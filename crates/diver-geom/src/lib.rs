@@ -18,6 +18,8 @@ pub const PET_SIZE_DEFAULT_PERCENT: f64 = 100.0;
 pub const PET_WINDOW_MIN_WIDTH: f64 = 400.0;
 /// 默认贴边边距（工作区右下角）。
 pub const PET_DEFAULT_MARGIN: i32 = 24;
+/// 同屏多宠的横向错位步长（物理像素；单只 600 逻辑宽时约 1/4 体宽）。
+pub const PET_POOL_STAGGER: i32 = 160;
 /// 拖动后位置写盘的节流（毫秒）。
 pub const PET_POSITION_SAVE_DEBOUNCE_MS: u64 = 400;
 
@@ -35,6 +37,23 @@ pub fn pet_window_logical_size(percent: f64) -> (f64, f64) {
     let width = (PET_BASE_WIDTH * scale).max(PET_WINDOW_MIN_WIDTH);
     let height = PET_BASE_HEIGHT * scale;
     (width, height)
+}
+
+/// 同屏多宠落点（物理像素）：工作区右下角，按 `slot` **向内**错位，并夹进工作区。
+///
+/// `work` = 目标显示器工作区 `(x, y, 宽, 高)`；`size` = 窗口物理尺寸。
+///
+/// 错位必须向内（减 x）：向外加会把已经贴右的窗口推过屏幕边界——右侧还有显示器时
+/// 半只宠物就挂在两屏之间，没有显示器时干脆出界（实测 2560 主屏 + 右侧竖屏）。
+/// 夹进工作区保证任何一侧都不越界；工作区比窗口还小时贴左上角。
+pub fn pet_slot_position(work: (i32, i32, u32, u32), size: (u32, u32), slot: usize) -> (i32, i32) {
+    let (wx, wy, ww, wh) = work;
+    let (sw, sh) = (size.0 as i32, size.1 as i32);
+    let max_x = (wx + ww as i32 - sw).max(wx);
+    let max_y = (wy + wh as i32 - sh).max(wy);
+    let x = (wx + ww as i32 - sw - PET_DEFAULT_MARGIN - PET_POOL_STAGGER * slot as i32).clamp(wx, max_x);
+    let y = (wy + wh as i32 - sh - PET_DEFAULT_MARGIN).clamp(wy, max_y);
+    (x, y)
 }
 
 #[cfg(test)]
@@ -60,5 +79,34 @@ mod tests {
         assert_eq!(clamp_size_percent(10.0), PET_SIZE_MIN_PERCENT);
         assert_eq!(clamp_size_percent(999.0), PET_SIZE_MAX_PERCENT);
         assert_eq!(clamp_size_percent(f64::NAN), PET_SIZE_DEFAULT_PERCENT);
+    }
+
+    /// 实测布局：主屏 2560×1440 @(0,0)，右侧竖屏接在 x=2560。
+    /// 第二只宠物必须仍整个落在主屏内（旧行为：+160 向外 → 2016..2616 跨屏）。
+    #[test]
+    fn slot_position_stays_inside_work_area() {
+        let work = (0, 0, 2560, 1440);
+        let size = (600, 560);
+        let (x0, y0) = pet_slot_position(work, size, 0);
+        assert_eq!((x0, y0), (2560 - 600 - PET_DEFAULT_MARGIN, 1440 - 560 - PET_DEFAULT_MARGIN));
+        let (x1, _) = pet_slot_position(work, size, 1);
+        assert_eq!(x1, x0 - PET_POOL_STAGGER);
+        assert!(x1 + 600 <= 2560, "第二只越出主屏右边界：{}", x1 + 600);
+    }
+
+    /// 窗口比工作区还大时贴左上角（不出界、不 panic）。
+    #[test]
+    fn slot_position_clamps_when_window_larger_than_work_area() {
+        assert_eq!(pet_slot_position((100, 50, 400, 300), (600, 560), 0), (100, 50));
+        assert_eq!(pet_slot_position((100, 50, 400, 300), (600, 560), 2), (100, 50));
+    }
+
+    /// 非零原点的副屏（含负坐标）：错位后仍留在该屏工作区内。
+    #[test]
+    fn slot_position_handles_offset_work_area() {
+        let work = (2560, -424, 1440, 2560);
+        let (x, y) = pet_slot_position(work, (600, 560), 2);
+        assert!(x >= 2560 && x + 600 <= 2560 + 1440, "x={x}");
+        assert!(y >= -424 && y + 560 <= -424 + 2560, "y={y}");
     }
 }

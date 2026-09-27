@@ -130,11 +130,12 @@ export function usePetDrag(opts: {
         }
         const p = pos as unknown as { x?: number; y?: number } | undefined;
         if (p && typeof p.x === "number" && typeof p.y === "number") {
-          interactionTracker.noteMoved(p.x + 40, p.y + 40);
+          // 原始物理坐标直传；归屏（含中心点规则）在 interactionTracker 内做。
+          interactionTracker.noteMoved(p.x, p.y);
         } else {
           void getCurrentWindow()
             .outerPosition()
-            .then((wp) => interactionTracker.noteMoved(wp.x + 40, wp.y + 40))
+            .then((wp) => interactionTracker.noteMoved(wp.x, wp.y))
             .catch(() => {});
         }
         armDragIdleRecovery();

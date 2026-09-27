@@ -34,8 +34,8 @@ export function usePetModel(opts: {
   getBubbleSide: () => "left" | "right";
   getBubbleVisible: () => boolean;
   layoutSpeechBubble: () => void;
-  /** P2-5：实例桌宠的模型覆盖（null = 跟随全局 localStorage 选择）。 */
-  getInstancePetModel?: () => string | null;
+  /** P2-5：实例桌宠的模型覆盖（null = 跟随全局模型选择；可返回 Promise = 元数据还在 IPC 路上）。 */
+  getInstancePetModel?: () => string | null | Promise<string | null>;
   /** P2-5：实例桌宠换装持久化到实例元配置（不写全局）。 */
   persistModelId?: (id: string) => void;
 }) {
@@ -124,8 +124,10 @@ export function usePetModel(opts: {
     try {
       const catalog = await loadModelCatalog();
       modelProfiles.value = catalog.models;
-      // 未钉定的实例宠/经典宠都从全局真源起步（localStorage 各窗隔离，不可作真源）
-      const slot = opts.getInstancePetModel?.() ?? null;
+      // 未钉定的实例宠/经典宠都从全局真源起步（localStorage 各窗隔离，不可作真源）。
+      // 实例宠等元数据到位再取槽位：冷启动时它还在 IPC 路上，先读会拿到 null，
+      // 而 null 的语义是「跟随全局」——钉定模型会静默失效。
+      const slot = (await opts.getInstancePetModel?.()) ?? null;
       const profile = pickModelProfile(catalog, slot ?? (await loadGlobalModelId()));
       await mountPetModel(profile);
     } catch (err) {

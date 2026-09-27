@@ -1,11 +1,17 @@
 <script setup lang="ts">
 // 实例会话侧栏（P2-3 私聊，QQ 式）：头像 + 名称 + 最后消息预览 + 时间 + 在线点。
 // 纯展示 + 选择；行数据由 ChatView 汇总（清单 + 注册表 + 会话池预览）。
+// 私聊行 = 实例头像（随实例头像变更即时刷新）；群行 = 群头像（首字渐变块回退）。
+import AssistantAvatar from "./AssistantAvatar.vue";
+import GroupAvatarMark from "./GroupAvatarMark.vue";
 
 export interface RailRow {
   id: string;
   name: string;
-  avatar: string | null;
+  /** 私聊行 = 实例 id（按实例取头像）；群行 = null */
+  instanceId: string | null;
+  /** 群行 = 群 id（按群取头像）；私聊行 = null */
+  groupId: string | null;
   preview: string;
   timeText: string;
   online: boolean;
@@ -28,7 +34,20 @@ const model = defineModel<string>({ required: true });
       :class="{ active: row.id === model }"
       @click="model = row.id"
     >
-      <div class="avatar">{{ row.avatar || row.name.slice(0, 1) }}</div>
+      <AssistantAvatar
+        v-if="row.instanceId"
+        :size="38"
+        variant="rail"
+        :instance-id="row.instanceId"
+      />
+      <GroupAvatarMark
+        v-else-if="row.groupId"
+        :group-id="row.groupId"
+        :name="row.name"
+        :size="38"
+        :radius="8"
+      />
+      <div v-else class="avatar">{{ row.name.slice(0, 1) }}</div>
       <div class="col">
         <div class="line1">
           <span class="name">{{ row.name }}</span>

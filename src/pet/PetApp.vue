@@ -29,11 +29,12 @@ const runtimeErrors = ref<string[]>([]);
 let emotionMapReady = false;
 // P2-5 多桌宠：窗口绑定实例（URL ?instance=；null = 经典窗跟随 active）。
 const petInstance = usePetInstance();
-void petInstance.loadMeta();
+void petInstance.ready();
 const {
   messages, busy, connected, composer, attachments, isReady, canSend,
   addAttachments, removeAttachment, connect, send, startAutoRefresh,
   pendingQuestion, submitQuestionAnswer,
+  historyHasMore, loadingOlder, loadOlder,
 } = usePetChat(() => petInstance.instanceId.value ?? undefined);
 
 const click = useClickthrough({ getPet: () => petModel.getPet() });
@@ -65,8 +66,11 @@ const petModel = reactive(usePetModel({
   getBubbleSide: () => panel.bubbleSide,
   getBubbleVisible: () => bubble.bubbleVisible,
   layoutSpeechBubble: () => bubble.layoutSpeechBubble(),
-  // P2-5：实例桌宠按实例模型启动；本宠面板换装只改该实例。
-  getInstancePetModel: () => petInstance.petModelId.value,
+  // P2-5：实例桌宠按实例模型启动（等元数据到位再取槽位）；本宠面板换装只改该实例。
+  getInstancePetModel: async () => {
+    await petInstance.ready();
+    return petInstance.petModelId.value;
+  },
   persistModelId: (id) => void petInstance.setPetModel(id),
 }));
 watch(modelHost, (el) => {
@@ -236,6 +240,10 @@ function onContextMenu(e: MouseEvent) {
           :drag-over="panel.panelDragOver"
           :more-menu-open="panel.moreMenuOpen"
           :switching-model="petModel.switchingModel"
+          :has-more="historyHasMore"
+          :loading-older="loadingOlder"
+          :instance-id="petInstance.instanceId.value ?? undefined"
+          @load-older="loadOlder"
           @update:composer="setComposer"
           @send="send"
           @attach-input="panel.onAttachFileInput($event, addAttachments)"
@@ -274,13 +282,6 @@ function onContextMenu(e: MouseEvent) {
       />
     </Transition>
     <div v-if="!connected" class="conn-dot" title="离线"></div>
-    <div
-      v-if="petInstance.instanceName.value"
-      class="instance-badge"
-      title="点击切到该实例会话"
-      @pointerdown.stop
-      @click.stop="petInstance.instanceId.value && focusInstanceChat(petInstance.instanceId.value)"
-    >{{ petInstance.instanceName.value }}</div>
     <Transition name="panel">
       <PetQuestionCard
         v-if="pendingQuestion"

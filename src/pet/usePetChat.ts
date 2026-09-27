@@ -12,8 +12,15 @@ import type {
 } from "../types";
 import { onTauriEvent, tauriAvailable, waitForSidecarReady } from "../tauri";
 import { hasVisibleMessageBody } from "../markdown";
+import { sameUserEcho } from "../composables/chat/echo";
+import { mergeHistoryIntoPool } from "../composables/chat/reconcile";
 
-const MAX_MESSAGES = 8;
+/** 打开时只加载最近几轮对话（与主窗口一致，更早的懒加载）。 */
+const INITIAL_ROUNDS = 2;
+/** 懒加载单块条数。 */
+const OLDER_CHUNK_LIMIT = 60;
+/** 活跃会话池硬上限（长时间挂机不无限增长）。 */
+const MAX_MESSAGES = 60;
 const HEALTH_POLL_MS = 8000;
 
 export function usePetChat(getInstanceId?: () => string | undefined) {
@@ -29,6 +36,9 @@ export function usePetChat(getInstanceId?: () => string | undefined) {
   const ttsVoice = ref("");
   /** 模型通过 ask_user_question 提出的问题（待用户回答）。 */
   const pendingQuestion = ref<{ requestId: string; questions: UserQuestion[] } | null>(null);
+  // 历史分页：打开只取最近几轮，更早消息按锚点懒加载
+  const historyHasMore = ref(false);
+  const loadingOlder = ref(false);
   let closeStream: (() => void) | null = null;
   let streamOpen = false;
   let healthTimer: number | null = null;
@@ -73,26 +83,51 @@ export function usePetChat(getInstanceId?: () => string | undefined) {
   }
 
   /**
-   * 拉取最近会话历史（幂等）。
+   * 拉取最近会话历史（幂等）：只取最近 INITIAL_ROUNDS 轮，更早的靠 loadOlder 补。
    * 首次启动时桌宠页面可能先于 sidecar 就绪，单次拉取会静默失败；
    * 这里由三路信号重试：SSE hello、sidecar://status running、健康轮询恢复。
    */
   async function loadHistory() {
     if (historyLoaded) return;
     try {
-      const data = await getHistory(getInstanceId?.());
+      const data = await getHistory(getInstanceId?.(), { rounds: INITIAL_ROUNDS });
       // 仅当本地还没有消息时填充，避免覆盖正在进行的会话
       if (messages.value.length === 0) {
         // 历史消息标记 fromHistory：气泡/朗读等"新消息到达提示"不得重放上次会话末尾。
-        // 先滤掉无正文/无图的工具·思考步骤，避免空气泡挤掉可见消息名额。
+        // 先滤掉无正文/无图的工具·思考步骤与他方实例来讯（peer），避免空气泡与误标「我」。
         messages.value = data.messages
-          .filter(hasVisibleMessageBody)
-          .slice(-MAX_MESSAGES)
+          .filter((m) => m.origin !== "peer" && hasVisibleMessageBody(m))
           .map((m) => ({ ...m, streaming: false, fromHistory: true }));
+        historyHasMore.value = data.hasMore === true;
       }
       historyLoaded = true;
     } catch {
       /* sidecar 尚未就绪：由 hello / sidecar://status / 健康轮询重试 */
+    }
+  }
+
+  /** 懒加载更早的消息：以池内最旧一条为锚点向前取一块（去重后按时间前插）。 */
+  async function loadOlder() {
+    if (loadingOlder.value || !historyHasMore.value) return;
+    const anchor = messages.value[0];
+    if (!anchor || anchor.id.startsWith("local-")) return;
+    loadingOlder.value = true;
+    try {
+      const data = await getHistory(getInstanceId?.(), {
+        before: anchor.id,
+        beforeTime: anchor.time,
+        limit: OLDER_CHUNK_LIMIT,
+      });
+      const { merged, added } = mergeHistoryIntoPool(
+        messages.value,
+        data.messages.filter((m) => m.origin !== "peer" && hasVisibleMessageBody(m)),
+      );
+      if (added > 0) messages.value = merged;
+      historyHasMore.value = data.hasMore === true;
+    } catch {
+      /* 拉取失败：保留锚点，下次触发再试 */
+    } finally {
+      loadingOlder.value = false;
     }
   }
 
@@ -115,14 +150,18 @@ export function usePetChat(getInstanceId?: () => string | undefined) {
         void loadHistory();
         break;
       case "message":
+        // 他方实例来讯（群聊投递 / 实例间私信）不进桌宠私聊面板：
+        // kind 虽是 user，但发言者不是本地用户，贴「我」标签是误标。
+        if (e.kind === "user" && e.origin === "peer") break;
         if (e.kind === "user") {
           // 去重：send() 已本地 push 一条 local- 前缀消息，服务端回传同一条时
           // 替换本地消息（拿到服务端 id），而不是再 push 一条造成重复。
+          // 纯图片消息本地是空文、服务端是「（图片）」占位——按回声判定匹配。
           const localIdx = messages.value.findIndex(
             (m) =>
               m.id.startsWith("local-") &&
               m.kind === "user" &&
-              m.content === e.content &&
+              sameUserEcho(m, e) &&
               (m.images?.length ?? 0) === (e.images?.length ?? 0) &&
               // 只匹配 3 秒内发送的本地消息，避免误合并历史同文消息
               Date.now() - m.time < 3000,
@@ -136,14 +175,18 @@ export function usePetChat(getInstanceId?: () => string | undefined) {
               ...(e.images !== undefined && e.images.length > 0 ? { images: e.images } : {}),
             };
           } else {
-            push({
+            // 本地回显已在发送时改名成服务端 id（steer/队列路径）：原地替换，不 push
+            const idx = messages.value.findIndex((m) => m.id === e.messageId);
+            const next: ChatMessage = {
               id: e.messageId,
               kind: "user",
               content: e.content,
               origin: e.origin ?? "user",
               time: e.time,
               ...(e.images !== undefined && e.images.length > 0 ? { images: e.images } : {}),
-            });
+            };
+            if (idx >= 0) messages.value[idx] = { ...messages.value[idx], ...next };
+            else push(next);
           }
         } else if (e.kind === "system") {
           // presence / 桌宠互动痕迹：折叠行（「（互动）」/ 日程原文）
@@ -317,8 +360,9 @@ export function usePetChat(getInstanceId?: () => string | undefined) {
     if (!isReady.value) return;
     composer.value = "";
     clearAttachments();
+    const localId = `local-${Date.now()}`;
     push({
-      id: `local-${Date.now()}`,
+      id: localId,
       kind: "user",
       content,
       origin: "user",
@@ -327,7 +371,13 @@ export function usePetChat(getInstanceId?: () => string | undefined) {
     });
     busy.value = true;
     try {
-      await sendChat(content, images, getInstanceId?.());
+      const res = await sendChat(content, images, getInstanceId?.());
+      // 发送成功即绑定服务端消息 id：中途发送走 steer，正式 user/message 事件
+      // 可能远晚于 3s 回声窗口——靠 id 原地替换才不会渲染两条。
+      if (res?.messageId) {
+        const idx = messages.value.findIndex((m) => m.id === localId);
+        if (idx >= 0) messages.value[idx] = { ...messages.value[idx], id: res.messageId };
+      }
     } catch (err) {
       error.value = err instanceof Error ? err.message : String(err);
       busy.value = false;
@@ -360,5 +410,8 @@ export function usePetChat(getInstanceId?: () => string | undefined) {
     ttsVoice,
     pendingQuestion,
     submitQuestionAnswer,
+    historyHasMore,
+    loadingOlder,
+    loadOlder,
   };
 }

@@ -4,16 +4,24 @@ import type { ChatMessage, ToolActivity } from "../types";
 import ThinkingBlock from "./ThinkingBlock.vue";
 import AssistantAvatar from "./AssistantAvatar.vue";
 import { renderMarkdownHtml } from "../markdown";
+import { isImagePlaceholder } from "../composables/chat/echo";
 
-const props = defineProps<{
-  msg: ChatMessage;
-  ttsVoice: string;
-  tauri: boolean;
-}>();
+const props = withDefaults(
+  defineProps<{
+    msg: ChatMessage;
+    ttsVoice: string;
+    tauri: boolean;
+    /** 视图语境：群聊视图 = true（他方实例发言靠左、名字在气泡上方）；私聊 = false（与用户消息同侧靠右） */
+    groupView?: boolean;
+  }>(),
+  { groupView: false },
+);
 
 defineEmits<{ speak: [msg: ChatMessage] }>();
 
 const hasContent = computed(() => (props.msg.content ?? "").trim() !== "");
+// 纯图片消息的「（图片）」占位只给模型上下文用，图已在气泡里，不重复渲染
+const hideBody = computed(() => isImagePlaceholder(props.msg));
 const contentHtml = computed(() => renderMarkdownHtml(props.msg.content ?? ""));
 const hasThinking = computed(() => (props.msg.thinking ?? "") !== "");
 // 静默痕迹在气泡层隐藏（拍板：UI 隐 + 可追溯）——完整记录仍在活动面板与会话日志。
@@ -29,6 +37,15 @@ const metaOnly = computed(
     (hasThinking.value || hasTools.value),
 );
 const showBubble = computed(() => hasContent.value);
+/** 他方实例的发言。展示按视图语境：群聊视图靠左、名字在气泡上方；私聊视图与用户消息同侧靠右。 */
+const isPeer = computed(() => props.msg.origin === "peer");
+const peerLeft = computed(() => isPeer.value && props.groupView);
+const showSenderName = computed(() => {
+  if (!props.groupView) return false;
+  if (isPeer.value) return !!props.msg.from;
+  // 群合并流里的 assistant 消息：按所属实例标注
+  return props.msg.group === true && !!props.msg.from && props.msg.kind === "assistant";
+});
 
 /** 工具行展开态：key = callId ?? name#index */
 const openTools = ref<Set<string>>(new Set());
@@ -66,13 +83,27 @@ function toolDetail(t: ToolActivity): string {
 </script>
 
 <template>
-  <div class="msg-row" :class="[msg.kind, { 'meta-only': metaOnly }]">
+  <div
+    class="msg-row"
+    :data-mid="msg.id"
+    :data-origin="msg.origin"
+    :class="[
+      msg.kind,
+      {
+        'meta-only': metaOnly,
+        // 群聊视图：他方实例发言与其他 agent 消息统一靠左；私聊视图与用户消息同侧
+        'from-peer': peerLeft,
+      },
+    ]"
+  >
     <AssistantAvatar
-      v-if="msg.kind === 'assistant' && !metaOnly"
+      v-if="(msg.kind === 'assistant' || peerLeft) && !metaOnly"
       :size="26"
       variant="avatar"
+      :instance-id="msg.fromId"
     />
     <div class="bubble-wrap" :class="{ 'with-thinking': hasThinking, 'with-tools': hasTools }">
+      <div v-if="showSenderName" class="sender-name">{{ msg.from }}</div>
       <ThinkingBlock
         v-if="hasThinking"
         :text="msg.thinking!"
@@ -118,9 +149,9 @@ function toolDetail(t: ToolActivity): string {
           <span v-if="msg.origin === 'presence'" class="origin-tag">主动</span>
           <span v-else-if="msg.origin === 'interaction'" class="origin-tag">互动</span>
           <span v-else-if="msg.origin === 'proactive'" class="origin-tag">主动</span>
-          <span v-else-if="msg.origin === 'peer'" class="origin-tag peer-tag">来自 {{ msg.from ?? "实例" }}</span>
-          <span v-else-if="msg.from" class="origin-tag peer-tag">{{ msg.from }}</span>
-          <div class="md-body" v-html="contentHtml"></div>
+          <!-- 私聊视图：他方实例的消息与用户消息同侧，用「来自 X」区分；群聊视图用气泡上方名字 -->
+          <span v-else-if="isPeer && !groupView" class="origin-tag peer-tag">来自 {{ msg.from ?? "实例" }}</span>
+          <div v-if="!hideBody" class="md-body" v-html="contentHtml"></div>
           <span v-if="msg.streaming" class="cursor">▍</span>
         </div>
         <div class="bubble-foot">
@@ -149,6 +180,10 @@ function toolDetail(t: ToolActivity): string {
 }
 .msg-row.user {
   flex-direction: row-reverse;
+}
+/* 群/实例间来讯：kind 虽是 user，发言者是他方实例——与其他 agent 消息统一靠左。 */
+.msg-row.user.from-peer {
+  flex-direction: row;
 }
 .msg-row.system {
   justify-content: center;
@@ -181,6 +216,9 @@ function toolDetail(t: ToolActivity): string {
 .msg-row.user .bubble-wrap {
   align-items: flex-end;
 }
+.msg-row.user.from-peer .bubble-wrap {
+  align-items: flex-start;
+}
 .msg-images {
   display: flex;
   flex-wrap: wrap;
@@ -189,6 +227,9 @@ function toolDetail(t: ToolActivity): string {
 }
 .msg-row.user .msg-images {
   justify-content: flex-end;
+}
+.msg-row.user.from-peer .msg-images {
+  justify-content: flex-start;
 }
 .msg-image {
   max-width: min(220px, 48vw);
@@ -218,6 +259,12 @@ function toolDetail(t: ToolActivity): string {
   color: var(--user-ink);
   border: 1px solid transparent;
 }
+/* 他方实例来讯：气泡样式随 agent 消息（纸面浅起），来源由徽标注明。 */
+.msg-row.user.from-peer .bubble {
+  background: var(--paper-raised);
+  border: 1px solid var(--rule);
+  color: var(--ink);
+}
 .bubble.streaming {
   border-color: var(--rule-strong);
 }
@@ -245,6 +292,13 @@ function toolDetail(t: ToolActivity): string {
   margin-right: 6px;
   vertical-align: 1px;
 }
+/* 群聊发言人名：气泡上方独立一行（头像右侧，QQ 式） */
+.sender-name {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--ink-soft);
+  padding: 0 2px 4px;
+}
 .peer-tag {
   color: #4080ff;
   border-color: rgba(64, 128, 255, 0.45);
@@ -252,14 +306,13 @@ function toolDetail(t: ToolActivity): string {
 }
 .tool-records {
   min-width: 0;
-  margin: 2px 0 6px;
+  margin: 0;
   font-size: 12px;
   line-height: 1.55;
   color: var(--ink-muted);
 }
 .tool-record {
   min-width: 0;
-  padding: 2px 0;
 }
 .tool-row {
   display: flex;
@@ -268,7 +321,7 @@ function toolDetail(t: ToolActivity): string {
   gap: 6px;
   min-width: 0;
   width: 100%;
-  padding: 2px 0;
+  padding: 4px 0;
   background: none;
   border: none;
   color: inherit;
@@ -317,7 +370,7 @@ function toolDetail(t: ToolActivity): string {
   transform: rotate(90deg);
 }
 .tool-detail {
-  margin: 2px 0 6px;
+  margin: 0;
   padding: 8px 10px;
   border: 1px solid var(--rule);
   border-radius: var(--radius);
@@ -333,6 +386,12 @@ function toolDetail(t: ToolActivity): string {
   white-space: pre-wrap;
   word-break: break-word;
   color: var(--ink-muted);
+}
+/* 步骤块（思考/工具）与正文气泡之间补一口气的间距：meta 行本身零外距，
+   行距节奏全部由行内 padding 提供（4px 上/下），保证相邻行等距。 */
+.bubble-wrap > .thinking-block + .bubble,
+.bubble-wrap > .tool-records + .bubble {
+  margin-top: 8px;
 }
 .bubble-foot {
   display: flex;

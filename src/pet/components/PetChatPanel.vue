@@ -1,6 +1,8 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, nextTick, onMounted, ref, watch } from "vue";
 import { renderMarkdownHtml } from "../../markdown";
+import { isImagePlaceholder } from "../../composables/chat/echo";
+import { isNearBottom } from "../../scroll";
 import type { ChatMessage, ComposerAttachment } from "../../types";
 import AssistantAvatar from "../../components/AssistantAvatar.vue";
 
@@ -14,6 +16,12 @@ const props = defineProps<{
   dragOver: boolean;
   moreMenuOpen: boolean;
   switchingModel: boolean;
+  /** 还有更早的历史没加载（打开只取最近几轮，其余懒加载） */
+  hasMore?: boolean;
+  /** 正在懒加载更早消息 */
+  loadingOlder?: boolean;
+  /** 本桌宠归属实例：非用户消息按实例取头像（peer 消息优先按发送方 from） */
+  instanceId?: string;
 }>();
 
 const emit = defineEmits<{
@@ -28,10 +36,72 @@ const emit = defineEmits<{
   toggleMore: [];
   openModelPicker: [];
   closePanel: [];
+  loadOlder: [];
 }>();
 
 const attachFileInput = ref<HTMLInputElement | null>(null);
 const visibleMessages = computed(() => props.messages);
+
+// ---------- 滚动控制：贴底跟随 / 顶到头懒加载 / 前插锚定 / 回底按钮 ----------
+const chatMessagesEl = ref<HTMLElement | null>(null);
+const stickToBottom = ref(true);
+let olderRequestedAt = 0;
+
+function onScroll() {
+  const el = chatMessagesEl.value;
+  if (!el) return;
+  stickToBottom.value = isNearBottom(el.scrollTop, el.scrollHeight, el.clientHeight, 40);
+  if (
+    el.scrollTop <= 32 &&
+    props.hasMore &&
+    !props.loadingOlder &&
+    Date.now() - olderRequestedAt > 1200
+  ) {
+    olderRequestedAt = Date.now();
+    emit("loadOlder");
+  }
+}
+
+function scrollToBottom() {
+  const el = chatMessagesEl.value;
+  if (el) el.scrollTop = el.scrollHeight;
+}
+
+// 面板打开 / 消息变化：贴底跟随（面板无消息时也可能刚装载，双帧复贴防晚到布局）
+onMounted(() => {
+  nextTick(() => {
+    scrollToBottom();
+    requestAnimationFrame(scrollToBottom);
+  });
+});
+watch(
+  () => props.messages.length,
+  (n, old) => {
+    if (n === 0 || old === 0) {
+      // 首批消息到达：强制贴底（修复打开时停在最顶部）
+      nextTick(() => {
+        scrollToBottom();
+        requestAnimationFrame(scrollToBottom);
+      });
+      return;
+    }
+    if (stickToBottom.value) nextTick(scrollToBottom);
+  },
+);
+
+// 前插锚定：懒加载的更早消息并入后按高度差补偿，视口不跳屏
+watch(
+  () => props.messages[0]?.id,
+  async (_next, prev) => {
+    if (prev === undefined) return;
+    const el = chatMessagesEl.value;
+    if (!el) return;
+    const prevHeight = el.scrollHeight;
+    await nextTick();
+    const grew = el.scrollHeight - prevHeight;
+    if (grew > 0) el.scrollTop += grew;
+  },
+);
 
 function pickAttachImages() {
   attachFileInput.value?.click();
@@ -48,7 +118,19 @@ function pickAttachImages() {
     @dragleave.prevent="emit('leaveDrag')"
     @drop="emit('drop', $event)"
   >
-    <div class="chat-messages">
+    <div ref="chatMessagesEl" class="chat-messages" @scroll.passive="onScroll">
+      <div v-if="hasMore || loadingOlder" class="panel-history-older">
+        <button
+          v-if="hasMore && !loadingOlder"
+          class="panel-history-older-btn"
+          type="button"
+          @pointerdown.stop
+          @click="emit('loadOlder')"
+        >
+          查看更早的消息
+        </button>
+        <span v-else class="panel-history-older-hint">正在加载更早的消息…</span>
+      </div>
       <div
         v-for="(m, i) in visibleMessages"
         :key="m.id + '-' + i"
@@ -60,7 +142,7 @@ function pickAttachImages() {
         </template>
         <template v-else>
           <span v-if="m.kind === 'user'" class="msg-label">我</span>
-          <AssistantAvatar v-else :size="20" variant="label" />
+          <AssistantAvatar v-else :size="20" variant="label" :instance-id="m.from ?? props.instanceId" />
           <span class="msg-text">
             <span v-if="(m.images?.length ?? 0) > 0" class="msg-images">
               <img
@@ -71,13 +153,35 @@ function pickAttachImages() {
                 :alt="img.name || '图片'"
               />
             </span>
-            <span class="md-body" v-html="renderMarkdownHtml(m.content)"></span>
+            <span v-if="!isImagePlaceholder(m)" class="md-body" v-html="renderMarkdownHtml(m.content)"></span>
             <span v-if="m.streaming" class="cursor">▍</span>
           </span>
         </template>
       </div>
       <div v-if="!visibleMessages.length" class="chat-empty">说点什么吧…</div>
     </div>
+    <Transition name="panel">
+      <button
+        v-if="!stickToBottom && visibleMessages.length"
+        type="button"
+        class="panel-jump-bottom"
+        title="回到底部"
+        aria-label="回到底部"
+        @pointerdown.stop
+        @click="scrollToBottom"
+      >
+        <svg width="12" height="12" viewBox="0 0 14 14" aria-hidden="true">
+          <path
+            d="M7 2.5v8M3.5 7.5 7 11l3.5-3.5"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.5"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+        </svg>
+      </button>
+    </Transition>
     <div v-if="attachments.length" class="panel-attach-strip">
       <div v-for="a in attachments" :key="a.id" class="panel-attach-item">
         <img :src="a.previewUrl" :alt="a.name || '图片'" class="panel-attach-thumb" />

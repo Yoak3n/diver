@@ -1,16 +1,18 @@
 <script setup lang="ts">
 // 群管理面板（P2-4 二期）：成员列表 / 改名 / 移出成员（拍板「用户事后可撤人」）/
-// 解散群 / 邀请记录。系统全员群只读（成员动态跟随实例增删，纯展示）。
-// 管理动作由壳层发起，群系统事件统一 inject（收听不吵）；失败不回滚，仅提示。
+// 群头像 / 解散群 / 邀请记录（只读子组件）。系统全员群只读（成员动态跟随实例增删，
+// 纯展示；头像仍可设置）。管理动作由壳层发起，群系统事件统一 inject（收听不吵）；
+// 失败不回滚，仅提示。
 import { computed, ref, watch } from "vue";
 import {
   deleteGroup,
-  listGroupInvites,
   removeGroupMember,
   renameGroup,
-  type GroupInvite,
   type GroupRow,
 } from "../ipc/group";
+import GroupAvatarEditor from "./GroupAvatarEditor.vue";
+import GroupAvatarMark from "./GroupAvatarMark.vue";
+import GroupInvites from "./GroupInvites.vue";
 
 const props = defineProps<{
   group: GroupRow;
@@ -25,14 +27,12 @@ const emit = defineEmits<{ changed: []; dissolved: [] }>();
 
 const open = ref(false);
 const nameInput = ref("");
-const invites = ref<GroupInvite[]>([]);
 const notice = ref("");
 const working = ref(false);
 
 watch(
   () => [props.group.id, open.value] as const,
   () => {
-    void refreshInvites();
     if (open.value) {
       nameInput.value = props.group.name;
       notice.value = "";
@@ -40,14 +40,6 @@ watch(
   },
   { immediate: true },
 );
-
-async function refreshInvites() {
-  try {
-    invites.value = await listGroupInvites(props.group.id);
-  } catch {
-    invites.value = [];
-  }
-}
 
 const memberRows = computed(() => {
   if (props.group.system) {
@@ -115,22 +107,12 @@ function dissolve() {
     emit("dissolved");
   });
 }
-
-const STATUS_TEXT: Record<string, string> = {
-  pending: "待回应",
-  accepted: "已加入",
-  declined: "已婉拒",
-};
-
-function fmtTime(ts: number): string {
-  const d = new Date(ts * 1000);
-  return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
-}
 </script>
 
 <template>
   <div class="gm" :class="{ open }">
     <button class="gm-bar" @click="open = !open">
+      <GroupAvatarMark :group-id="group.id" :name="group.name" :size="20" :radius="5" />
       <span class="gm-name">{{ group.name }}</span>
       <span class="gm-meta">{{ memberRows.length }} 名成员</span>
       <span class="gm-toggle">{{ open ? "收起" : "群管理" }}</span>
@@ -138,6 +120,11 @@ function fmtTime(ts: number): string {
 
     <div v-if="open" class="gm-panel">
       <p v-if="notice" class="gm-notice">{{ notice }}</p>
+
+      <section class="gm-sec">
+        <h4>群头像</h4>
+        <GroupAvatarEditor :group-id="group.id" :name="group.name" :disabled="working" />
+      </section>
 
       <section class="gm-sec">
         <h4>成员</h4>
@@ -175,20 +162,7 @@ function fmtTime(ts: number): string {
 
       <section class="gm-sec">
         <h4>邀请记录</h4>
-        <p v-if="invites.length === 0" class="gm-hint">暂无邀请记录。</p>
-        <ul class="gm-invites">
-          <li v-for="inv in invites" :key="inv.id" class="gm-invite">
-            <span class="iline">
-              {{ names[inv.from] ?? inv.from }} → {{ names[inv.to] ?? inv.to }}
-              <span class="chip" :class="inv.status">{{ STATUS_TEXT[inv.status] ?? inv.status }}</span>
-            </span>
-            <span class="iline dim">
-              {{ inv.message || "（无留言）" }}
-              <template v-if="inv.status === 'declined' && inv.reason">· 理由：{{ inv.reason }}</template>
-              · {{ fmtTime(inv.at) }}
-            </span>
-          </li>
-        </ul>
+        <GroupInvites :group-id="group.id" :names="names" />
       </section>
 
       <section v-if="!group.system" class="gm-sec gm-danger">
@@ -256,8 +230,7 @@ function fmtTime(ts: number): string {
   font-size: 11px;
   color: var(--muted, #999);
 }
-.gm-members,
-.gm-invites {
+.gm-members {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -324,35 +297,6 @@ function fmtTime(ts: number): string {
 .gm-rename button:disabled {
   opacity: 0.4;
   cursor: default;
-}
-.iline {
-  display: block;
-  font-size: 12px;
-  color: var(--fg, #333);
-}
-.iline.dim {
-  color: var(--muted, #999);
-  font-size: 11px;
-}
-.chip {
-  display: inline-block;
-  margin-left: 6px;
-  font-size: 10px;
-  padding: 0 6px;
-  border-radius: 8px;
-  background: rgba(0, 0, 0, 0.06);
-}
-.chip.pending {
-  background: rgba(255, 170, 0, 0.18);
-  color: #9a6700;
-}
-.chip.accepted {
-  background: rgba(52, 199, 89, 0.15);
-  color: #1a7f37;
-}
-.chip.declined {
-  background: rgba(229, 72, 77, 0.12);
-  color: #c22a2f;
 }
 .dissolve {
   border: 1px solid rgba(229, 72, 77, 0.5);

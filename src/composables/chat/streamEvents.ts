@@ -8,6 +8,7 @@ import type {
   ToolActivity,
   UserQuestion,
 } from "../../types";
+import { sameUserEcho } from "./echo";
 
 type Deps = {
   healthInfo: Ref<HealthInfo | null>;
@@ -57,13 +58,24 @@ export function createStreamHandler(deps: Deps) {
         busy.value = e.busy;
         error.value = null;
         break;
-      case "message":
+      case "message": {
+        // 群归属随事件透传进会话池（合并流按 msg.group 过滤，丢了标群视图就不显示）
+        const groupFields =
+          e.type === "message" && e.group
+            ? {
+                group: true,
+                groupId: e.groupId,
+                ...(e.groupName !== undefined ? { groupName: e.groupName } : {}),
+              }
+            : {};
         if (e.kind === "user") {
+          // 去重：本地 local- 回显与服务端回传同一条时原地替换；纯图片消息
+          // 本地空文、服务端「（图片）」占位——按回声判定匹配（见 chat/echo.ts）。
           const localIdx = messages.value.findIndex(
             (m) =>
               m.kind === "user" &&
-              m.content === e.content &&
               m.id.startsWith("local-") &&
+              sameUserEcho(m, e) &&
               (m.images?.length ?? 0) === (e.images?.length ?? 0) &&
               Date.now() - m.time < 3000,
           );
@@ -71,18 +83,23 @@ export function createStreamHandler(deps: Deps) {
             messages.value[localIdx] = {
               ...messages.value[localIdx],
               id: e.messageId,
+              ...groupFields,
               ...(e.images !== undefined && e.images.length > 0 ? { images: e.images } : {}),
             };
-          } else {
-            upsertMessage({
-              id: e.messageId,
-              kind: "user",
-              content: e.content,
-              origin: e.origin ?? "user",
-              time: e.time,
-              ...(e.images !== undefined && e.images.length > 0 ? { images: e.images } : {}),
-            });
-          }
+        } else {
+          upsertMessage({
+            id: e.messageId,
+            kind: "user",
+            content: e.content,
+            origin: e.origin ?? "user",
+            // SSE 事件携带的来源实例 id（origin=peer）：群视图名字标签、
+            // 私聊「来自 X」徽标都靠它——丢了实时消息就只剩匿名头像。
+            ...(e.from !== undefined && e.from !== "" ? { from: e.from } : {}),
+            time: e.time,
+            ...groupFields,
+            ...(e.images !== undefined && e.images.length > 0 ? { images: e.images } : {}),
+          });
+        }
         } else if (e.kind === "system") {
           upsertMessage({
             id: e.messageId,
@@ -104,6 +121,7 @@ export function createStreamHandler(deps: Deps) {
               origin: e.origin,
               time: e.time,
               streaming: false,
+              ...groupFields,
               ...(existingThinking !== undefined && existingThinking !== ""
                 ? { thinking: existingThinking, thinkingStreaming: false }
                 : {}),
@@ -113,7 +131,7 @@ export function createStreamHandler(deps: Deps) {
             };
             stepIdAlias.set(e.turnMessageId, e.messageId);
           } else if (e.content !== "") {
-            upsertMessage({ id: e.messageId, kind: "assistant" as const, content: e.content, origin: e.origin, time: e.time });
+            upsertMessage({ id: e.messageId, kind: "assistant" as const, content: e.content, origin: e.origin, time: e.time, ...groupFields });
           }
           maybeSpeak(messages.value[messages.value.length - 1]);
         } else {
@@ -130,6 +148,7 @@ export function createStreamHandler(deps: Deps) {
             content: e.content,
             origin: e.origin,
             time: e.time,
+            ...groupFields,
             ...(thinking !== undefined && thinking !== ""
               ? { thinking, thinkingStreaming: false }
               : {}),
@@ -139,6 +158,7 @@ export function createStreamHandler(deps: Deps) {
           maybeSpeak(msg);
         }
         break;
+      }
       case "chunk":
         appendChunk(e.messageId, e.delta);
         break;

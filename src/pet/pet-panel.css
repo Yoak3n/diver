@@ -72,6 +72,54 @@
   padding: 24px 0;
 }
 
+/* 历史懒加载入口（打开只取最近几轮，更早的按锚点补） */
+.panel-history-older {
+  display: flex;
+  justify-content: center;
+  padding: 2px 0 4px;
+}
+.panel-history-older-btn {
+  background: rgba(28, 29, 44, 0.75);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  color: #b9b5cc;
+  font-size: 11px;
+  padding: 3px 12px;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.panel-history-older-btn:hover {
+  background: rgba(58, 56, 92, 0.85);
+  color: #eceaf5;
+}
+.panel-history-older-hint {
+  color: #8d89a1;
+  font-size: 11px;
+}
+
+/* 回到底部浮动按钮（输入行上方右侧） */
+.panel-jump-bottom {
+  position: absolute;
+  right: 10px;
+  bottom: 62px;
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  background: rgba(28, 29, 44, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: #b9b5cc;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.panel-jump-bottom:hover {
+  background: rgba(58, 56, 92, 0.9);
+  color: #eceaf5;
+}
+
 .speech-bubble {
   position: absolute;
   display: flex;

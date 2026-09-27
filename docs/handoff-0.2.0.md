@@ -8,10 +8,10 @@
 - 仓库 `E:\Project\RustProject\diver`，Tauri 2 + Vue 3 + Node sidecar 桌面陪伴 agent。
 - 当前分支 **`feat/multi-instance-interop`**（基线 dev=v0.1.0 `a97ee70`）：
   0.2.0「多实例互联」**P0~P2-5 全部一期落地**，Rust 测试 121 全绿 + CDP 冒烟全链通过。
-- 工作树有一条**别的会话已完成、尚未提交**的「显示器 canonical 编号 + 截屏契约」线
-  （`crates/diver-shot/displays.rs`、`src-tauri/shell/displays.rs`、`pet/position.rs`、
-  `prompt.rs`、`interaction.ts`、`petWindow.ts`、`screenshot.ts`、两个 docs）+ `harness`
-  子模块指针。**提交时按文件归属拆清，绝不 `git add -A`**（共享工作树常有并行流）。
+- ~~工作树有一条别的会话尚未提交的「显示器 canonical 编号 + 截屏契约」线~~
+  **已接手提交完毕**（2026-09-27）：crate 层 `8e52a20`、贯通层 `50db5e8`，测试闸全绿
+  （`cargo test --workspace` + `vue-tsc --noEmit`）；工作树仅剩 `harness` 子模块指针
+  （引擎独立流，**不进 diver 提交**）。共享工作树提交仍须**按文件归属拆清，绝不 `git add -A`**。
 - 计划与决策账本在 daily 仓库：`E:\GitVault\daily\Project\Tauri\diver\开发计划\0.2.0\`
   （`多实例互联.md` 为全量设计+排查记录，`codingagent任务委派.md` 为并行立项）。
 
@@ -50,6 +50,7 @@
 | P2-4 | 群组自治一期：groups.json、`group::` RPC 五方法、章带组名、工具五件、多群 UI | `89f982b` `26d178b` `7665060` `ffc7ec7` `110ac75` `8cf5970` |
 | P2-5 | 多桌宠一期：实例桌宠窗池（`pet-<id>`，同屏 3 只 160px 错位）、hash 实例绑定+名牌、召唤入口 | `8dbb313` `26c4fd2` `64d258f` `b1aedd5` |
 | P2-5 收尾 | 换装定向路由 + 全局模型真源、webview_args 收口、设置页每实例模型选择器 | `ed6c527` `9effec9` `c9a0b80` |
+| 收尾 | 显示器 canonical 编号唯一真源 + 事件/截屏编号同源（修「截错屏」） | `8e52a20` `50db5e8` |
 
 关键机制约定（细节以代码注释与 daily 文档为准）：
 

@@ -4,7 +4,7 @@
 import { onMounted, ref } from "vue";
 import { tauriAvailable, type InstanceMeta } from "../../tauri";
 import { useInstances } from "../../composables/useInstances";
-import { closeInstancePet, listInstancePets, openInstancePet } from "../../ipc/petInstances";
+import { useInstancePet } from "../../composables/useInstancePet";
 
 const { instances, loading, error, notice, refresh, create, rename, clearName, toggle, remove } =
   useInstances();
@@ -14,42 +14,22 @@ const creating = ref(false);
 const editingId = ref("");
 const editingName = ref("");
 
-// P2-5 多桌宠：实例行召唤/收起桌宠（同屏上限 3 只）。
-const pets = ref<string[]>([]);
-const petBusy = ref("");
-const petMsg = ref("");
-
-async function refreshPets(): Promise<void> {
-  try {
-    pets.value = await listInstancePets();
-  } catch {
-    pets.value = [];
-  }
-}
-
-function petOn(inst: InstanceMeta): boolean {
-  return pets.value.includes(inst.id);
-}
-
-async function togglePet(inst: InstanceMeta): Promise<void> {
-  petBusy.value = inst.id;
-  petMsg.value = "";
-  try {
-    pets.value = petOn(inst)
-      ? await closeInstancePet(inst.id)
-      : await openInstancePet(inst.id);
-    petMsg.value = petOn(inst) ? `已召唤 ${inst.name || inst.id} 的桌宠（点谁互动谁）。` : "已收起。";
-  } catch (err) {
-    petMsg.value = err instanceof Error ? err.message : String(err);
-  } finally {
-    petBusy.value = "";
-    void refreshPets();
-  }
-}
+// P2-5 多桌宠：召唤/收起 + 每实例模型槽（逻辑收口在 useInstancePet）。
+const {
+  petBusy,
+  petMsg,
+  modelProfiles,
+  loadCatalog,
+  refreshPets,
+  petOn,
+  togglePet,
+  onModelChange,
+} = useInstancePet();
 
 onMounted(() => {
   void refresh();
   void refreshPets();
+  void loadCatalog();
 });
 
 async function onCreate(): Promise<void> {
@@ -105,9 +85,9 @@ function formatDate(unix: number): string {
 <template>
   <label class="group-title">实例清单</label>
   <p class="hint">
-    每个实例拥有独立的记忆 / 会话 / 人格 / 插件配置。当前版本只登记实例，
-    <strong>多实例运行即将支持</strong>。命名可选：名字通常由你与它聊天后经人格卡片回填，
-    创建时也可直接命名；人格 / 模型 / 插件集在各自的实例设置里配置，不在此登记。
+    每个实例拥有独立的记忆 / 会话 / 人格 / 插件配置。命名可选：名字通常由你与它聊天后经人格卡片回填，
+    创建时也可直接命名；人格 / 插件集在各自的实例设置里配置。此处可为每个实例指定桌宠模型
+    （默认跟随全局，选定后该实例的桌宠钉定用它）。
   </p>
 
   <div class="create-row">
@@ -148,6 +128,16 @@ function formatDate(unix: number): string {
           <div class="id-row">id：{{ inst.id }} · 登记于 {{ formatDate(inst.createdAt) }}</div>
         </template>
       </div>
+      <select
+        class="model-select"
+        :value="inst.petModel ?? ''"
+        :disabled="!tauriAvailable()"
+        title="桌宠模型：跟随全局或为该实例固定"
+        @change="onModelChange(inst, ($event.target as HTMLSelectElement).value)"
+      >
+        <option value="">跟随全局模型</option>
+        <option v-for="m in modelProfiles" :key="m.id" :value="m.id">{{ m.label }}</option>
+      </select>
       <label class="toggle">
         <input
           type="checkbox"
@@ -295,6 +285,17 @@ function formatDate(unix: number): string {
   font-size: 11px;
   color: var(--ink-muted);
   flex-shrink: 0;
+}
+.model-select {
+  flex-shrink: 0;
+  max-width: 128px;
+  background: var(--paper-sunken);
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius);
+  color: var(--ink);
+  font-size: 11px;
+  padding: 4px 6px;
+  font-family: inherit;
 }
 .btn.danger {
   color: var(--ink-muted);

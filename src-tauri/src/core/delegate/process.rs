@@ -73,9 +73,9 @@ impl ChildProc {
     }
 }
 
-/// argv 直启 + 双管后台收集。`argv[0]` 为程序名（Windows 的 cmd shim 形态
-/// 由适配器表显式给出，此处不做字符串拼接）。
-pub fn spawn(argv: &[String], cwd: &Path) -> Result<ChildProc, String> {
+/// argv 直启 + 双管后台收集 + 定制 env。`argv[0]` 为程序名（探测链产出的
+/// `cmd /C shim`、`node + bin.js`、用户显式命令等形态都直接表达在 argv 里）。
+pub fn spawn(argv: &[String], cwd: &Path, envs: &[(String, String)]) -> Result<ChildProc, String> {
     let (program, args) = argv.split_first().ok_or("适配器 argv 为空")?;
     let mut command = Command::new(program);
     command
@@ -84,6 +84,9 @@ pub fn spawn(argv: &[String], cwd: &Path) -> Result<ChildProc, String> {
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    for (key, value) in envs {
+        command.env(key, value);
+    }
     let mut child = command.spawn().map_err(|e| format!("spawn {program} 失败：{e}"))?;
     let job = SidecarJob::assign(&mut child);
 

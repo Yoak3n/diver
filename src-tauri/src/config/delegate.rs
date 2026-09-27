@@ -63,7 +63,10 @@ fn seeded() -> DelegateConfig {
     agents.insert(
         "dsh".to_string(),
         AgentAdapter {
-            // Windows 经 cmd shim（dsh.cmd 自解析 DSH_NODE/DSH_HOME）；正文走 stdin。
+            // 首项裸 `dsh` = 启动方式由壳层探测链解析（PATH shim → Harness
+            // Desktop → 捆绑 CLI 直启；见 core::delegate::resolve）。
+            // 用户把首项换成任何明确启动形式（node+bin.js / pnpm --dir /
+            // 绝对路径 shim）即视为显式指定，探测跳过。
             argv: dsh_argv(),
             enabled: true,
             text_via: TextVia::Stdin,
@@ -94,18 +97,12 @@ fn seeded() -> DelegateConfig {
     }
 }
 
+/// dsh 首发参数（平台无关：`-` = 从 stdin 读任务正文）。
 fn dsh_argv() -> Vec<String> {
-    if cfg!(windows) {
-        ["cmd", "/C", "dsh", "--profile", "headless", "--json", "-"]
-            .iter()
-            .map(|s| s.to_string())
-            .collect()
-    } else {
-        ["dsh", "--profile", "headless", "--json", "-"]
-            .iter()
-            .map(|s| s.to_string())
-            .collect()
-    }
+    ["dsh", "--profile", "headless", "--json", "-"]
+        .iter()
+        .map(|s| s.to_string())
+        .collect()
 }
 
 /// 读取适配器表；缺文件/空表时播种出厂表（幂等）。

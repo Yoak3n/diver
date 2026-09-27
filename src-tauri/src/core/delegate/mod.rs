@@ -7,6 +7,7 @@
 
 pub mod digest;
 pub mod process;
+pub mod resolve;
 pub mod supervise;
 
 use std::collections::HashMap;
@@ -140,18 +141,28 @@ fn spawn(paths: &Paths, instance: &str, params: &Value) -> Result<Value, String>
 
     let workspace = home.join("workspace");
     let _ = std::fs::create_dir_all(&workspace);
+    // argv 首项为裸 `dsh` 时走探测链解析启动前缀（PATH shim → Harness Desktop →
+    // 捆绑 CLI 直启）；用户显式填写的其它形式原样使用（兜底）。
+    let (full_argv, spawn_envs) = if resolve::needs_resolution(&adapter.argv) {
+        let resolved = resolve::resolve()?;
+        let mut full = resolved.launcher;
+        full.extend(adapter.argv.iter().skip(1).cloned());
+        (full, resolved.envs)
+    } else {
+        (adapter.argv.clone(), Vec::new())
+    };
     let mut file = tasks::load_at(&home);
     let record = tasks::create(
         &mut file,
         instance,
         &agent,
         &task_text,
-        &adapter.argv.join(" "),
+        &full_argv.join(" "),
         Some(timeout_secs),
     );
     tasks::save_at(&home, &file);
 
-    let proc = match process::spawn(&adapter.argv, &workspace) {
+    let proc = match process::spawn(&full_argv, &workspace, &spawn_envs) {
         Ok(proc) => proc,
         Err(err) => {
             // spawn 失败留痕（queued → failed），并把失败直接还给工头。

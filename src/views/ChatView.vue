@@ -14,6 +14,7 @@ import { listGroups, type GroupRow } from "../ipc/group";
 import type { ChatMessage } from "../types";
 import ChatArea from "../components/ChatArea.vue";
 import ComposerBar from "../components/ComposerBar.vue";
+import GroupManage from "../components/GroupManage.vue";
 import InstanceSidebar, { type RailRow } from "../components/InstanceSidebar.vue";
 
 const router = useRouter();
@@ -277,12 +278,37 @@ const displayMessages = computed<ChatMessage[]>(() => {
     m.origin === "peer" && m.from ? { ...m, from: nameOf.value[m.from] ?? m.from } : m,
   );
 });
+
+// 群管理面板（P2-4 二期）：当前群行 + 成员/改名/移出/解散/邀请记录。
+const currentGroup = computed(() => groups.value.find((g) => g.id === selectedGroupId.value));
+const instanceRows = computed(() =>
+  instancesState.instances.value.map((m) => ({ id: m.id, name: nameOf.value[m.id] ?? m.id })),
+);
+const onlineMap = computed<Record<string, boolean>>(() => {
+  const map: Record<string, boolean> = {};
+  for (const [id, r] of Object.entries(runtimes.value)) map[id] = r.online === true;
+  return map;
+});
+function onGroupDissolved() {
+  void refreshGroups();
+  // 解散的群若是当前会话，退回默认私聊视图。
+  if (isGroup.value) currentId.value = "default";
+}
 </script>
 
 <template>
   <div class="chat-shell">
     <InstanceSidebar v-model="currentId" :rows="railRows" />
     <div class="chat-main">
+      <GroupManage
+        v-if="isGroup && currentGroup"
+        :group="currentGroup"
+        :names="nameOf"
+        :instances="instanceRows"
+        :online="onlineMap"
+        @changed="refreshGroups"
+        @dissolved="onGroupDissolved"
+      />
       <ChatArea
         :messages="displayMessages"
         :tools="tools"

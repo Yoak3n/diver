@@ -39,7 +39,7 @@ fn text_param(params: &Value, key: &str) -> String {
 }
 
 /// 群消息请求体：`group` 供收方盖 `【群聊「组名」｜…】` 章并挂归属标。
-fn group_body(text: &str, sender_name: &str, sender: &str, target: &str, group: &Group) -> Value {
+pub(crate) fn group_body(text: &str, sender_name: &str, sender: &str, target: &str, group: &Group) -> Value {
     json!({
         "text": text,
         "from": { "id": sender, "name": sender_name },
@@ -254,7 +254,7 @@ fn find_group<'a>(file: &'a GroupsFile, key: &str) -> Result<&'a Group, String> 
 }
 
 /// 群投递目标（纯函数）：成员 ∩ 在册实例 − 自己。
-fn group_targets(group: &Group, rows: &[InstanceRow], sender: &str) -> Vec<InstanceRow> {
+pub(crate) fn group_targets(group: &Group, rows: &[InstanceRow], sender: &str) -> Vec<InstanceRow> {
     let all: Vec<String> = rows.iter().map(|r| r.id.clone()).collect();
     let members = groups::members_of(group, &all);
     rows.iter()
@@ -286,7 +286,7 @@ async fn invite_member(
 }
 
 /// 逐个投递（纯副作用），单败不阻断。
-async fn fan_out(state: &ServiceState, targets: &[InstanceRow], body: &Value) -> Result<Value, String> {
+pub(crate) async fn fan_out(state: &ServiceState, targets: &[InstanceRow], body: &Value) -> Result<Value, String> {
     let mut delivered = Vec::new();
     let mut failed = Vec::new();
     for row in targets {

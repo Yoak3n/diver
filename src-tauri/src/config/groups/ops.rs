@@ -138,6 +138,63 @@ pub fn apply_response(
     Ok(file.invites[idx].clone())
 }
 
+/// 群改名（用户面板 / 二期）：系统群不可改（「全员群」名是身份一部分）；
+/// 新名去空、非空、不与其它群重名。历史邀请的 `group_name` 快照不改（留痕语义）。
+pub fn rename_group(file: &mut GroupsFile, key: &str, new_name: &str) -> Result<Group, String> {
+    let new_name = new_name.trim();
+    if new_name.is_empty() {
+        return Err("群名不能为空".to_string());
+    }
+    let group = find(file, key).ok_or_else(|| format!("未知群「{key}」"))?;
+    if group.system {
+        return Err("系统全员群不可改名".to_string());
+    }
+    if group.name == new_name {
+        return Ok(group.clone());
+    }
+    if file.groups.iter().any(|g| g.name == new_name) {
+        return Err(format!("群「{new_name}」已存在"));
+    }
+    let id = group.id.clone();
+    let g = file.groups.iter_mut().find(|g| g.id == id).expect("id 已解析");
+    g.name = new_name.to_string();
+    Ok(g.clone())
+}
+
+/// 移出成员（用户面板 / 二期，拍板「用户事后可撤人」）：系统群成员动态跟随
+/// 实例增删、不可移；目标必须在册。
+pub fn remove_member(file: &mut GroupsFile, key: &str, member: &str) -> Result<Group, String> {
+    let member = member.trim();
+    if member.is_empty() {
+        return Err("成员 id 必填".to_string());
+    }
+    let group = find(file, key).ok_or_else(|| format!("未知群「{key}」"))?;
+    if group.system {
+        return Err("系统全员群成员跟随实例增删，不能移出".to_string());
+    }
+    if !group.members.iter().any(|m| m == member) {
+        return Err(format!("「{member}」不在群「{}」里", group.name));
+    }
+    let id = group.id.clone();
+    let g = file.groups.iter_mut().find(|g| g.id == id).expect("id 已解析");
+    g.members.retain(|m| m != member);
+    Ok(g.clone())
+}
+
+/// 解散群（用户面板 / 二期；用户侧「退群」的唯一形态——用户不是成员）：
+/// 系统群不可解散；邀请记录保留（留痕）。
+pub fn delete_group(file: &mut GroupsFile, key: &str) -> Result<Group, String> {
+    let idx = file
+        .groups
+        .iter()
+        .position(|g| g.id == key.trim() || g.name == key.trim())
+        .ok_or_else(|| format!("未知群「{key}」"))?;
+    if file.groups[idx].system {
+        return Err("系统全员群不可解散".to_string());
+    }
+    Ok(file.groups.remove(idx))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -201,5 +258,58 @@ mod tests {
         assert_eq!(done2.status, "declined");
         assert_eq!(done2.reason, "在忙");
         assert!(!find(&f, &g.id).unwrap().members.contains(&"gamma".to_string()));
+    }
+
+    #[test]
+    fn rename_group_guards_and_applies() {
+        let mut f = GroupsFile::default();
+        ensure_general(&mut f);
+        let g = create_group(&mut f, "工作台", &[], "default", 1).unwrap();
+        // 系统群 / 空名 / 重名 / 未知群全拒
+        assert!(rename_group(&mut f, GENERAL_ID, "大群").is_err());
+        assert!(rename_group(&mut f, &g.id, "  ").is_err());
+        assert!(create_group(&mut f, "小圈", &[], "beta", 2).is_ok());
+        assert!(rename_group(&mut f, &g.id, "小圈").is_err());
+        assert!(rename_group(&mut f, "无此群", "随便").is_err());
+        // 正常改名；同名幂等；按旧名也能找到直到改名后
+        assert_eq!(rename_group(&mut f, "工作台", "作战室").unwrap().name, "作战室");
+        assert_eq!(find(&f, &g.id).unwrap().name, "作战室");
+        assert_eq!(rename_group(&mut f, &g.id, "作战室").unwrap().name, "作战室");
+        assert!(find(&f, "工作台").is_none(), "旧名不再命中");
+    }
+
+    #[test]
+    fn remove_member_guards_and_applies() {
+        let mut f = GroupsFile::default();
+        ensure_general(&mut f);
+        let g = create_group(&mut f, "工作台", &[], "default", 1).unwrap();
+        // 正常移出；重复移出报不在群
+        let inv = add_invite(&mut f, &g, "default", "beta", "", 2).unwrap();
+        apply_response(&mut f, &inv.id, true, "", 3).unwrap();
+        // 系统群 / 非成员 / 空参全拒
+        assert!(remove_member(&mut f, GENERAL_ID, "default").is_err());
+        assert!(remove_member(&mut f, &g.id, "gamma").is_err());
+        assert!(remove_member(&mut f, &g.id, " ").is_err());
+        assert!(remove_member(&mut f, "无此群", "beta").is_err());
+        // 正常移出；重复移出报不在群
+        let after = remove_member(&mut f, &g.id, "beta").unwrap();
+        assert_eq!(after.members, vec!["default".to_string()]);
+        assert!(remove_member(&mut f, &g.id, "beta").is_err());
+    }
+
+    #[test]
+    fn delete_group_keeps_invites_and_guards_system() {
+        let mut f = GroupsFile::default();
+        ensure_general(&mut f);
+        let g = create_group(&mut f, "临时", &[], "default", 1).unwrap();
+        add_invite(&mut f, &g, "default", "beta", "来", 2).unwrap();
+        assert!(delete_group(&mut f, GENERAL_ID).is_err(), "系统群不可解散");
+        let removed = delete_group(&mut f, "临时").unwrap();
+        assert_eq!(removed.id, g.id);
+        assert!(find(&f, "临时").is_none());
+        // 邀请记录保留（留痕），且指向已不存在的群 id
+        assert_eq!(f.invites.len(), 1);
+        assert_eq!(f.invites[0].group_id, g.id);
+        assert!(delete_group(&mut f, "临时").is_err());
     }
 }

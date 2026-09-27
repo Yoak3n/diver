@@ -9,6 +9,7 @@
 mod auth;
 mod grep;
 mod groups;
+mod groups_manage;
 mod memory;
 mod notify;
 mod peer;
@@ -19,6 +20,7 @@ mod screenshot;
 mod server;
 mod state;
 
+pub use groups_manage::{user_delete_group, user_remove_group_member, user_rename_group};
 pub use memory::{clear_card_name_at, set_card_name_at};
 pub use server::start;
 pub use state::{CardNameFn, NotifyFn, PresenceDispatchFn, RegistryListFn, ServiceState};

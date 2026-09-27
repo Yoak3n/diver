@@ -76,6 +76,9 @@ pub fn start(
         registry_list,
         groups_dir,
     };
+    // 群管理面板等用户 IPC（commands 层）消费同一份服务状态：
+    // 改名/踢人/解散的群系统事件经同一注册表与投递面发出（State<ServiceState> 取用）。
+    app.manage(state.clone());
 
     // 统一 RPC 入口 + 鉴权中间件（P2-1）；未来服务继续在 rpc::dispatch 中扩展。
     let app = Router::new()

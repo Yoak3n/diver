@@ -1,15 +1,16 @@
 <script setup lang="ts">
-import { onMounted, ref, toRef } from "vue";
-import type { HealthInfo, PetInteractionSettings, SettingsInfo } from "../../types";
+// 系统设置页：应用图标 / 启动窗口 / 桌宠形象 / 互动感知 / Sidecar / 关于。
+// 分层：AppIconSection.vue 应用图标 | PetInteractionSection.vue 互动感知；
+// 本文件保留启动窗口、桌宠形象、Sidecar 状态与关于。
+import type { HealthInfo, SettingsInfo } from "../../types";
 import type { SettingsState } from "../../composables/useSettings";
 import { tauriAvailable } from "../../tauri";
-import { useAppIcon } from "../../composables/useAppIcon";
-import AppIconMark from "../AppIconMark.vue";
 import PetModelPicker from "../PetModelPicker.vue";
-import { usePetInteraction } from "./composables/usePetInteraction";
+import AppIconSection from "./AppIconSection.vue";
+import PetInteractionSection from "./PetInteractionSection.vue";
 import { usePetModelSelect } from "./composables/usePetModelSelect";
 
-const props = defineProps<{
+defineProps<{
   state: SettingsState;
   healthInfo: HealthInfo | null;
   settingsInfo: SettingsInfo | null;
@@ -21,10 +22,6 @@ defineEmits<{
   changePetSize: [percent: number];
 }>();
 
-const settingsInfoRef = toRef(props, "settingsInfo");
-const { interactionForm, interactionMode, onInteractionModeChange, onInteractionNum } =
-  usePetInteraction(settingsInfoRef);
-
 const {
   petModels,
   activePetModelId,
@@ -33,86 +30,10 @@ const {
   activePetModelLabel,
   onPickPetModel,
 } = usePetModelSelect();
-
-const { appIconUrl, appIconPath, loadAppIcon, setAppIconFromFile, resetAppIcon } = useAppIcon();
-const appIconMsg = ref("");
-const appIconBusy = ref(false);
-const appIconInput = ref<HTMLInputElement | null>(null);
-
-onMounted(() => {
-  void loadAppIcon(true);
-});
-
-async function onPickAppIcon(ev: Event) {
-  const input = ev.target as HTMLInputElement;
-  const file = input.files?.[0];
-  input.value = "";
-  if (!file) return;
-  if (!tauriAvailable()) {
-    appIconMsg.value = "仅桌面端可保存应用图标";
-    return;
-  }
-  appIconBusy.value = true;
-  appIconMsg.value = "";
-  try {
-    await setAppIconFromFile(file);
-    appIconMsg.value = "应用图标已保存";
-  } catch (e) {
-    appIconMsg.value = e instanceof Error ? e.message : String(e);
-  } finally {
-    appIconBusy.value = false;
-  }
-}
-
-async function onResetAppIcon() {
-  if (!tauriAvailable()) return;
-  appIconBusy.value = true;
-  try {
-    await resetAppIcon();
-    appIconMsg.value = "已恢复默认应用图标";
-  } catch (e) {
-    appIconMsg.value = e instanceof Error ? e.message : String(e);
-  } finally {
-    appIconBusy.value = false;
-  }
-}
 </script>
 
 <template>
-  <label class="group-title">应用图标</label>
-  <div class="avatar-row">
-    <AppIconMark :size="48" :radius="8" />
-    <div class="avatar-actions">
-      <button
-        class="btn small"
-        type="button"
-        :disabled="!tauriAvailable() || appIconBusy"
-        @click="appIconInput?.click()"
-      >
-        {{ appIconBusy ? "处理中…" : "上传图片" }}
-      </button>
-      <button
-        class="btn small"
-        type="button"
-        :disabled="!tauriAvailable() || appIconBusy || !appIconUrl"
-        @click="onResetAppIcon"
-      >
-        恢复默认
-      </button>
-    </div>
-  </div>
-  <input
-    ref="appIconInput"
-    class="hidden-input"
-    type="file"
-    accept="image/png,image/jpeg,image/webp,image/gif"
-    @change="onPickAppIcon"
-  />
-  <p v-if="appIconMsg" class="hint">{{ appIconMsg }}</p>
-  <p class="hint">
-    应用级品牌位（窗口标题栏等），与实例无关；各实例头像在「实例」页单独设置。
-    文件路径：<code>{{ appIconPath || "应用配置目录/app-icon.png" }}</code>
-  </p>
+  <AppIconSection />
 
   <label class="group-title">启动窗口</label>
   <div class="sidecar-row">
@@ -179,65 +100,7 @@ async function onResetAppIcon() {
 
   <p class="hint">配置保存在本机；桌宠位置与大小会记住，下次启动恢复。</p>
 
-  <label class="group-title">桌宠互动感知</label>
-  <div class="sidecar-row">
-    <span>模式</span>
-    <select
-      class="interaction-mode"
-      :value="interactionMode"
-      @change="onInteractionModeChange(($event.target as HTMLSelectElement).value as PetInteractionSettings['mode'])"
-    >
-      <option value="off">关</option>
-      <option value="events">仅事件</option>
-      <option value="context">带上下文</option>
-    </select>
-  </div>
-  <details class="interaction-debug">
-    <summary>互动调试参数</summary>
-    <div class="debug-grid">
-      <label>
-        <span>静默闲时（ms）</span>
-        <input
-          type="number"
-          min="500"
-          step="500"
-          :value="interactionForm.quietMs"
-          @change="onInteractionNum('quietMs', ($event.target as HTMLInputElement).value)"
-        />
-      </label>
-      <label>
-        <span>触发冷却（ms）</span>
-        <input
-          type="number"
-          min="1000"
-          step="1000"
-          :value="interactionForm.cooldownMs"
-          @change="onInteractionNum('cooldownMs', ($event.target as HTMLInputElement).value)"
-        />
-      </label>
-      <label>
-        <span>闲时最多次数</span>
-        <input
-          type="number"
-          min="1"
-          step="1"
-          :value="interactionForm.maxTriggers"
-          @change="onInteractionNum('maxTriggers', ($event.target as HTMLInputElement).value)"
-        />
-      </label>
-      <label>
-        <span>长拖阈值（ms）</span>
-        <input
-          type="number"
-          min="500"
-          step="500"
-          :value="interactionForm.longHoldMs"
-          @change="onInteractionNum('longHoldMs', ($event.target as HTMLInputElement).value)"
-        />
-      </label>
-    </div>
-    <p class="hint">拖动切屏 / 长拖未松手等事件，仅在 agent 闲时才可能触发搭话。</p>
-  </details>
+  <PetInteractionSection :settings-info="settingsInfo" />
 
   <label class="group-title">Sidecar（agent 大脑）</label>
   <div class="sidecar-row">
@@ -257,20 +120,6 @@ async function onResetAppIcon() {
 </template>
 
 <style scoped>
-.avatar-row {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  margin-bottom: 8px;
-}
-.avatar-actions {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-.hidden-input {
-  display: none;
-}
 .group-title {
   display: block;
   font-size: 12px;
@@ -316,38 +165,6 @@ details summary {
   color: var(--ink-dim);
   margin: 0;
   line-height: 1.7;
-}
-.interaction-mode {
-  margin-left: auto;
-  font-family: inherit;
-}
-.interaction-debug {
-  margin: 4px 0 8px;
-}
-.interaction-debug summary {
-  font-size: 12px;
-  color: var(--ink-muted);
-  cursor: pointer;
-}
-.debug-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 6px 12px;
-  margin-top: 8px;
-}
-.debug-grid label {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  color: var(--ink-soft);
-}
-.debug-grid input {
-  margin-left: auto;
-  width: 88px;
-  padding: 3px 6px;
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
 }
 .pet-size-val {
   margin-left: auto;

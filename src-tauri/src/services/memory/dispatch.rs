@@ -1,52 +1,9 @@
-//! memory 服务的 RPC handler：把方法名路由到 `diver-memory` SQLite 存储。
-//!
-//! 双库语义（P1-1）：`append_event` 的 `shared: true` 写共享库，events 读取
-//! 私有∪共享合并（见 `diver_memory::db::DualDb`）；其余能力经解引用直达私有库。
+//! `memory::*` 方法路由：把方法名分发到 `diver-memory` SQLite 存储。
 
-use diver_memory::db::{MemoryDb, RelationSpec};
 use serde_json::{json, Value};
 
-use super::state::ServiceState;
-
-fn parse_attrs(v: Option<&Value>) -> Vec<(String, String)> {
-    let Some(Value::Object(map)) = v else {
-        return vec![];
-    };
-    map.iter()
-        .filter_map(|(k, val)| {
-            val.as_str()
-                .map(|s| (k.clone(), s.to_string()))
-                .filter(|(_, s)| !s.trim().is_empty())
-        })
-        .collect()
-}
-
-fn parse_relations(v: Option<&Value>) -> Vec<RelationSpec> {
-    let Some(Value::Array(items)) = v else {
-        return vec![];
-    };
-    items
-        .iter()
-        .filter_map(|item| {
-            let to_name = item.get("to").and_then(|x| x.as_str())?.trim().to_string();
-            let relation = item.get("relation").and_then(|x| x.as_str())?.trim().to_string();
-            if to_name.is_empty() || relation.is_empty() {
-                return None;
-            }
-            let to_type = item
-                .get("toType")
-                .and_then(|x| x.as_str())
-                .map(str::trim)
-                .filter(|s| !s.is_empty())
-                .map(str::to_string);
-            Some(RelationSpec {
-                to_name,
-                relation,
-                to_type,
-            })
-        })
-        .collect()
-}
+use super::params::{err, parse_attrs, parse_relations, req_str, to_value};
+use crate::services::state::ServiceState;
 
 /// `instance_id`：`X-Diver-Instance` 身份头（P1-2 路由）；无头/未知回退 active 实例。
 pub fn dispatch(
@@ -233,43 +190,6 @@ pub fn dispatch(
     };
 
     Ok(result)
-}
-
-fn to_value<T: serde::Serialize>(value: T) -> Value {
-    serde_json::to_value(value).unwrap_or(Value::Null)
-}
-
-/// 直接写某实例私有库的人格卡片 name（设置面板改名走这里；空串/缺省 = 不修改）。
-///
-/// 不经 RPC 分发，故不触发 `on_card_name` 写回——实例清单（回显层）由调用方自己写，
-/// 保证「卡片 + 清单」双写在同一处编排。
-pub fn set_card_name_at(db_path: &std::path::Path, name: &str) -> Result<(), String> {
-    if name.trim().is_empty() {
-        return Ok(());
-    }
-    let db = MemoryDb::open(db_path).map_err(err)?;
-    db.update_card(&json!({ "name": name })).map_err(err)
-}
-
-/// 清空某实例私有库的人格卡片名字（「清空名字」手动入口专用，见 [`clear_card_name_at`]）。
-///
-/// 与 [`set_card_name_at`] 同属壳层编排入口：不经 RPC 分发、不触发 `on_card_name`
-/// 写回，实例清单由调用方同步清空（双写清空）。
-pub fn clear_card_name_at(db_path: &std::path::Path) -> Result<(), String> {
-    let db = MemoryDb::open(db_path).map_err(err)?;
-    db.clear_card_name().map_err(err)
-}
-
-fn req_str(params: &Value, key: &str) -> Result<String, String> {
-    params
-        .get(key)
-        .and_then(|v| v.as_str())
-        .map(|s| s.to_string())
-        .ok_or_else(|| format!("missing param: {key}"))
-}
-
-fn err(e: diver_memory::Error) -> String {
-    e.to_string()
 }
 
 #[cfg(test)]

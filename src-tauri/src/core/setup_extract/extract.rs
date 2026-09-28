@@ -1,53 +1,12 @@
-//! 依赖归档并行解压：`*.tar.zst` / `*.tar` → 目录。
-//!
-//! 只做 IO，不依赖 Tauri；进度经回调上抛（调用方负责 emit）。
-//! 解读顺序读、写盘扇出到工作线程 —— 首启瓶颈是上万小文件的写入而非解压流本身。
+//! 并行解压与写盘（tar 顺序读 → 写盘扇出到工作线程）。
 
-use std::fs::{self, File};
-use std::io::{Read, Seek, SeekFrom};
-use std::path::{Component, Path, PathBuf};
+use std::fs;
+use std::io::Read;
+use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 
-/// zstd 帧魔数（`28 B5 2F FD`）。
-fn is_zstd_magic(head: &[u8]) -> bool {
-    head.len() >= 4 && head[0] == 0x28 && head[1] == 0xB5 && head[2] == 0x2F && head[3] == 0xFD
-}
-
-/// 归档条目路径消毒：只保留普通相对路径，拒绝绝对路径 / 盘符 / `..` 穿越
-/// （与 tar crate `unpack_in` 的防护语义一致）。
-fn sanitize_entry_path(raw: &Path) -> Option<PathBuf> {
-    let mut out = PathBuf::new();
-    for comp in raw.components() {
-        match comp {
-            Component::Normal(c) => out.push(c),
-            Component::CurDir => {}
-            _ => return None,
-        }
-    }
-    if out.as_os_str().is_empty() {
-        None
-    } else {
-        Some(out)
-    }
-}
-
-/// 按魔数选择解码器：zstd 帧 → 解压流；否则原样（未压缩 tar）。
-fn open_reader(archive: &Path) -> Result<Box<dyn Read + Send>, String> {
-    let mut file = File::open(archive).map_err(|e| format!("打开 {}: {e}", archive.display()))?;
-    let mut head = [0u8; 4];
-    let n = file
-        .read(&mut head)
-        .map_err(|e| format!("读取 {}: {e}", archive.display()))?;
-    file.seek(SeekFrom::Start(0))
-        .map_err(|e| format!("重置 {}: {e}", archive.display()))?;
-    if is_zstd_magic(&head[..n]) {
-        let dec = zstd::Decoder::new(file).map_err(|e| format!("zstd 解码 {}: {e}", archive.display()))?;
-        Ok(Box::new(dec))
-    } else {
-        Ok(Box::new(file))
-    }
-}
+use super::read::{open_reader, sanitize_entry_path};
 
 struct WriteJob {
     rel: PathBuf,
@@ -189,26 +148,6 @@ mod tests {
         h.set_cksum();
         builder.append_data(&mut h, "pkg/hello.txt", &b"abc"[..]).unwrap();
         builder.into_inner().unwrap()
-    }
-
-    #[test]
-    fn zstd_magic_detection() {
-        assert!(is_zstd_magic(&[0x28, 0xB5, 0x2F, 0xFD, 0x00]));
-        assert!(!is_zstd_magic(&[0x1F, 0x8B, 0x08, 0x00]));
-        assert!(!is_zstd_magic(&[0x28]));
-    }
-
-    #[test]
-    fn sanitize_rejects_traversal() {
-        assert_eq!(
-            sanitize_entry_path(Path::new("a/b.txt")),
-            Some(PathBuf::from("a").join("b.txt"))
-        );
-        assert_eq!(sanitize_entry_path(Path::new("./a")), Some(PathBuf::from("a")));
-        assert_eq!(sanitize_entry_path(Path::new("../evil")), None);
-        assert_eq!(sanitize_entry_path(Path::new("a/../../evil")), None);
-        assert_eq!(sanitize_entry_path(Path::new("/abs")), None);
-        assert_eq!(sanitize_entry_path(Path::new("")), None);
     }
 
     #[test]

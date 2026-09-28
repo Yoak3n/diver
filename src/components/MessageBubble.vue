@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
-import type { ChatMessage, ToolActivity } from "../types";
+import { computed } from "vue";
+import type { ChatMessage } from "../types";
 import ThinkingBlock from "./ThinkingBlock.vue";
+import MessageToolRecords from "./MessageToolRecords.vue";
 import AssistantAvatar from "./AssistantAvatar.vue";
 import { renderMarkdownHtml } from "../markdown";
 import { isImagePlaceholder } from "../composables/chat/echo";
@@ -47,38 +48,9 @@ const showSenderName = computed(() => {
   return props.msg.group === true && !!props.msg.from && props.msg.kind === "assistant";
 });
 
-/** 工具行展开态：key = callId ?? name#index */
-const openTools = ref<Set<string>>(new Set());
-
-function toolKey(t: ToolActivity, i: number): string {
-  return t.callId ?? `${t.name}#${i}`;
-}
-
-function toggleTool(key: string) {
-  const next = new Set(openTools.value);
-  if (next.has(key)) next.delete(key);
-  else next.add(key);
-  openTools.value = next;
-}
-
 function fmtTime(ts: number): string {
   const d = new Date(ts);
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
-}
-
-function toolLabel(t: ToolActivity): string {
-  if (t.status === "call") return "调用中";
-  return t.isError ? "失败" : "完成";
-}
-
-function toolPreview(t: ToolActivity): string {
-  const s = (t.summary ?? "").replace(/\s+/g, " ").trim();
-  if (s === "") return "";
-  return s.length > 80 ? `${s.slice(0, 80)}…` : s;
-}
-
-function toolDetail(t: ToolActivity): string {
-  return (t.summary ?? "").trim();
 }
 </script>
 
@@ -109,32 +81,7 @@ function toolDetail(t: ToolActivity): string {
         :text="msg.thinking!"
         :streaming="msg.thinkingStreaming"
       />
-      <div v-if="hasTools" class="tool-records">
-        <div
-          v-for="(t, i) in toolList"
-          :key="toolKey(t, i)"
-          class="tool-record"
-          :class="[t.status, { error: t.isError, open: openTools.has(toolKey(t, i)) }]"
-        >
-          <button
-            class="tool-row"
-            type="button"
-            :title="toolDetail(t) ? '点击展开/收起结果' : undefined"
-            @click="toggleTool(toolKey(t, i))"
-          >
-            <span class="tool-icon" aria-hidden="true">⚙</span>
-            <span class="tool-name">{{ t.name }}</span>
-            <span class="sep">·</span>
-            <span class="tool-status">{{ toolLabel(t) }}</span>
-            <span v-if="toolPreview(t)" class="sep">·</span>
-            <span v-if="toolPreview(t)" class="tool-summary">{{ toolPreview(t) }}</span>
-            <span v-if="toolDetail(t)" class="tool-chevron" :class="{ open: openTools.has(toolKey(t, i)) }">›</span>
-          </button>
-          <div v-if="openTools.has(toolKey(t, i)) && toolDetail(t)" class="tool-detail">
-            <pre>{{ toolDetail(t) }}</pre>
-          </div>
-        </div>
-      </div>
+      <MessageToolRecords v-if="hasTools" :tools="toolList" />
       <template v-if="showBubble || (msg.images?.length ?? 0) > 0">
         <div v-if="(msg.images?.length ?? 0) > 0" class="msg-images">
           <img
@@ -304,91 +251,9 @@ function toolDetail(t: ToolActivity): string {
   border-color: rgba(64, 128, 255, 0.45);
   background: rgba(64, 128, 255, 0.08);
 }
-.tool-records {
-  min-width: 0;
-  margin: 0;
-  font-size: 12px;
-  line-height: 1.55;
-  color: var(--ink-muted);
-}
-.tool-record {
-  min-width: 0;
-}
-.tool-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 6px;
-  min-width: 0;
-  width: 100%;
-  padding: 4px 0;
-  background: none;
-  border: none;
-  color: inherit;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-.tool-icon {
-  flex-shrink: 0;
-  font-size: 11px;
-  color: var(--ink-dim);
-}
-.tool-name {
-  flex-shrink: 0;
-  font-weight: 500;
-  color: var(--ink-soft);
-}
-.tool-record .sep {
-  flex-shrink: 0;
-  color: var(--ink-faint);
-}
-.tool-status {
-  flex-shrink: 0;
-  color: var(--ink-dim);
-}
-.tool-record.call .tool-status {
-  color: var(--warn);
-}
-.tool-record.error .tool-status {
-  color: var(--err);
-}
-.tool-summary {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--ink-dim);
-  flex: 1;
-}
-.tool-chevron {
-  flex-shrink: 0;
-  color: var(--ink-faint);
-  transition: transform var(--dur-ui) var(--ease-out);
-}
-.tool-chevron.open {
-  transform: rotate(90deg);
-}
-.tool-detail {
-  margin: 0;
-  padding: 8px 10px;
-  border: 1px solid var(--rule);
-  border-radius: var(--radius);
-  background: var(--paper-sunken);
-  max-height: 240px;
-  overflow: auto;
-}
-.tool-detail pre {
-  margin: 0;
-  font-family: ui-monospace, "Cascadia Code", "Consolas", monospace;
-  font-size: 11px;
-  line-height: 1.5;
-  white-space: pre-wrap;
-  word-break: break-word;
-  color: var(--ink-muted);
-}
 /* 步骤块（思考/工具）与正文气泡之间补一口气的间距：meta 行本身零外距，
-   行距节奏全部由行内 padding 提供（4px 上/下），保证相邻行等距。 */
+   行距节奏全部由行内 padding 提供（4px 上/下），保证相邻行等距。
+   （tool-records 是 MessageToolRecords 子组件根节点，仍带本组件 scope id） */
 .bubble-wrap > .thinking-block + .bubble,
 .bubble-wrap > .tool-records + .bubble {
   margin-top: 8px;

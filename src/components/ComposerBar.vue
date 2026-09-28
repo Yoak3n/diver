@@ -1,9 +1,13 @@
 <script setup lang="ts">
-// 输入框：文本 + 图片附件（拖入文件 / 粘贴截图 / 文件选择）。
+// 输入框：文本 + 图片附件（拖入文件 / 粘贴截图 / 文件选择）+ 语音输入。
 // 图片压到最长边 1600px 的 JPEG，避免 base64 撑爆请求。
-import { onBeforeUnmount, ref, watch } from "vue";
+// 分层：ComposerAttachments.vue 附件条 | ComposerSendButton.vue 发送按钮
+// | useComposerStt.ts 语音输入胶水；本文件只做输入壳与文件交互。
+import { computed, onBeforeUnmount, ref, watch } from "vue";
 import type { ComposerAttachment } from "../types";
-import { useSttRecorder } from "../composables/useSttRecorder";
+import ComposerAttachments from "./ComposerAttachments.vue";
+import ComposerSendButton from "./ComposerSendButton.vue";
+import { useComposerStt } from "../composables/useComposerStt";
 
 const composer = defineModel<string>({ default: "" });
 
@@ -28,26 +32,11 @@ const fileInput = ref<HTMLInputElement | null>(null);
 const dragOver = ref(false);
 
 // ---------- 语音输入（STT 底座，拍板 2026-09-27：引擎后接） ----------
-// 点击开始/结束录音；结束 → 当前引擎转写 → 文本追加进输入框（状态机见 useSttRecorder）。
-const sttNotice = ref<string | null>(null);
-let noticeTimer: number | null = null;
-const { state: sttState, seconds: sttSeconds, level: sttLevel, toggle: toggleStt, cancel: cancelStt } =
-  useSttRecorder({
-    onTranscribed: (text) => {
-      composer.value = composer.value ? `${composer.value} ${text}` : text;
-    },
-    onNotice: (message) => {
-      sttNotice.value = message;
-      if (noticeTimer !== null) clearTimeout(noticeTimer);
-      noticeTimer = window.setTimeout(() => {
-        sttNotice.value = null;
-      }, 6000);
-    },
-  });
-
-function fmtStt(seconds: number): string {
-  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
-}
+const { sttNotice, sttState, sttSeconds, sttLevel, toggleStt, cancelStt, fmtStt } = useComposerStt(
+  (text) => {
+    composer.value = composer.value ? `${composer.value} ${text}` : text;
+  },
+);
 
 watch(composer, () => {
   const el = ta.value;
@@ -58,8 +47,10 @@ watch(composer, () => {
 
 onBeforeUnmount(() => {
   if (ta.value) ta.value.style.height = "";
-  if (noticeTimer !== null) clearTimeout(noticeTimer);
 });
+
+/** 本次草稿可发送（文本或至少一张图）。 */
+const hasDraft = computed(() => composer.value.trim() !== "" || props.attachments.length > 0);
 
 function onEnter(e: KeyboardEvent) {
   if (e.isComposing) return;
@@ -122,19 +113,7 @@ function onDragOver(e: DragEvent) {
     <div v-if="error" class="composer-error">{{ error }}</div>
     <div v-if="sttNotice" class="composer-error">{{ sttNotice }}</div>
 
-    <div v-if="attachments.length" class="attach-strip">
-      <div v-for="a in attachments" :key="a.id" class="attach-item">
-        <img :src="a.previewUrl" :alt="a.name || '图片'" class="attach-thumb" />
-        <button
-          class="attach-remove"
-          type="button"
-          title="移除"
-          @click="emit('removeAttachment', a.id)"
-        >
-          ×
-        </button>
-      </div>
-    </div>
+    <ComposerAttachments :attachments="attachments" @remove-attachment="emit('removeAttachment', $event)" />
 
     <div class="composer-shell">
       <button
@@ -208,24 +187,7 @@ function onDragOver(e: DragEvent) {
         <button class="stt-cancel" type="button" title="取消本次录音" @click="cancelStt">×</button>
       </span>
       <span v-else-if="sttState === 'transcribing'" class="stt-live">转写中…</span>
-      <button
-        class="send-btn"
-        :disabled="!canSend || (!composer.trim() && attachments.length === 0)"
-        title="发送"
-        @click="emit('send')"
-      >
-        <svg v-if="!busy" width="15" height="15" viewBox="0 0 16 16" aria-hidden="true">
-          <path
-            d="M2.5 8h10M8.5 3.5L13 8l-4.5 4.5"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.6"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          />
-        </svg>
-        <span v-else class="busy-dots">…</span>
-      </button>
+      <ComposerSendButton :can-send="canSend" :busy="busy" :has-draft="hasDraft" @send="emit('send')" />
     </div>
   </footer>
 </template>
@@ -262,45 +224,6 @@ function onDragOver(e: DragEvent) {
   border-radius: var(--radius-sm);
   font-size: 12px;
   padding: 6px 14px;
-}
-.attach-strip {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  padding: 2px 2px 0;
-}
-.attach-item {
-  position: relative;
-  width: 64px;
-  height: 64px;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--rule);
-  overflow: hidden;
-  background: var(--paper-sunken);
-}
-.attach-thumb {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
-}
-.attach-remove {
-  position: absolute;
-  top: 2px;
-  right: 2px;
-  width: 18px;
-  height: 18px;
-  border: none;
-  border-radius: 50%;
-  background: rgba(0, 0, 0, 0.55);
-  color: #fff;
-  font-size: 12px;
-  line-height: 1;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
 }
 .composer-shell {
   display: flex;
@@ -369,32 +292,5 @@ function onDragOver(e: DragEvent) {
 }
 .composer-shell textarea:disabled {
   opacity: 0.5;
-}
-.send-btn {
-  width: 34px;
-  height: 34px;
-  border: 1px solid var(--ink);
-  border-radius: var(--radius);
-  background: var(--ink);
-  color: var(--paper);
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  transition:
-    transform var(--dur-press) var(--ease-out),
-    opacity var(--dur-hover) ease;
-}
-.send-btn:active:not(:disabled) {
-  transform: scale(0.97);
-}
-.send-btn:disabled {
-  opacity: 0.3;
-  cursor: default;
-}
-.busy-dots {
-  font-size: 16px;
-  line-height: 1;
 }
 </style>

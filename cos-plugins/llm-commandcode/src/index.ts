@@ -19,6 +19,9 @@
 //   - 模型 id 形如 "deepseek/deepseek-v4.1-flash"、"Qwen/Qwen3.8-Max"（带 provider 前缀，
 //     必须原样传给 API，不能去掉）；
 //   - 流式请求带 stream_options.include_usage 可在末尾收到 usage 块。
+//
+// 分层：config.ts 常量/配置类型 | catalog.ts 模型目录 | stream.ts SSE 翻译；
+// 本文件只做适配器装配与插件激活。
 // @module @diver/llm-commandcode
 
 import type { Context } from 'cordis'
@@ -33,45 +36,24 @@ import type {
   ResolvedModelInfo,
   StreamChunk,
 } from '@cos/plugin-api'
-import { parseSseData, translate } from '@diver/llm-openai-wire'
+import { FALLBACK_MODELS, fetchModelCatalog } from './catalog'
+import {
+  API_KEY_ENV,
+  API_KEY_REF,
+  DEFAULT_BASE_URL,
+  PROVIDER,
+  type CommandCodeConfig,
+} from './config'
+import { streamChat } from './stream'
+
+export { DEFAULT_BASE_URL, PROVIDER }
+export type { CommandCodeConfig }
 
 /** Cordis 插件名（loader 诊断用）。 */
 export const name = 'llm-commandcode'
 
 /** 本插件需要的框架服务：@cos/llm 注册表 + @cos/credentials 凭据层。 */
 export const inject = ['llm', 'credentials']
-
-/** 本适配器服务的 provider 路由 id。 */
-export const PROVIDER = 'commandcode'
-
-/** 默认 API 端点（Provider API 的 OpenAI 兼容路径）。 */
-export const DEFAULT_BASE_URL = 'https://api.commandcode.ai/provider/v1'
-
-/** 凭据 ref 与 env 兜底。 */
-const API_KEY_REF = 'commandcode.apiKey'
-const API_KEY_ENV = 'COMMANDCODE_API_KEY'
-
-/** 适配器配置（cordis.yml 的 config 段）。 */
-export interface CommandCodeConfig {
-  /** Provider API 端点（默认 https://api.commandcode.ai/provider/v1）。 */
-  baseUrl?: string
-  /** 默认模型（无显式 model 时使用；默认 deepseek/deepseek-v4.1-flash）。 */
-  defaultModel?: string
-  /** 静态模型目录覆盖（不设置时用内置兜底目录；advisory）。 */
-  models?: readonly string[]
-  /**
-   * 是否实时拉取 /provider/v1/models 目录。默认 false：listModels() 直接返回
-   * 静态目录（零网络，启动/设置面板不会触发请求）。设为 true 时按需拉取
-   * 并缓存，拉取失败静默退回静态目录。
-   */
-  fetchModels?: boolean
-  /** 凭据文件点路径（默认 commandcode.apiKey）。 */
-  apiKeyKey?: string
-  /** 环境变量兜底（默认 COMMANDCODE_API_KEY）。 */
-  apiKeyEnv?: string
-  /** 拉取 /models 目录的超时（ms）。 */
-  catalogTimeoutMs?: number
-}
 
 class CommandCodeLlmAdapter extends LlmAdapter {
   private readonly credentials: Context['credentials']
@@ -162,41 +144,12 @@ class CommandCodeLlmAdapter extends LlmAdapter {
   async listModels(provider: string): Promise<readonly string[]> {
     if (provider !== PROVIDER) return []
     if (this.staticModels.length > 0) return this.staticModels
-    if (!this.fetchModels) return this.fallbackModels()
+    if (!this.fetchModels) return FALLBACK_MODELS
     if (this.catalogCache !== null) return this.catalogCache
-    try {
-      const response = await fetch(`${this.resolvedBaseUrl()}/models`, {
-        method: 'GET',
-        headers: { accept: 'application/json' },
-        signal: AbortSignal.timeout(this.catalogTimeoutMs),
-      })
-      if (!response.ok) return this.fallbackModels()
-      const body = (await response.json()) as { data?: Array<{ id?: string }> }
-      const ids = (body.data ?? []).map((m) => m.id).filter((id): id is string => typeof id === 'string' && id !== '')
-      if (ids.length === 0) return this.fallbackModels()
-      this.catalogCache = ids
-      return ids
-    } catch {
-      // 静默退回静态目录：目录是 advisory，不值得为它打日志。
-      return this.fallbackModels()
-    }
-  }
-
-  /** 目录拉取失败时的兜底模型（GOAT 套餐高频模型，advisory）。 */
-  private fallbackModels(): readonly string[] {
-    return [
-      'deepseek/deepseek-v4.1-flash',
-      'deepseek/deepseek-v4-pro',
-      'Qwen/Qwen3.8-Max',
-      'Qwen/Qwen3.7-Plus',
-      'gpt-5.6-luna',
-      'gpt-5.6-sol',
-      'claude-sonnet-4-6',
-      'claude-opus-4-7',
-      'google/gemini-3.7-flash',
-      'xai/grok-4.6',
-      'zai-org/GLM-5.2',
-    ]
+    const ids = await fetchModelCatalog(this.resolvedBaseUrl(), this.catalogTimeoutMs)
+    if (ids === null) return FALLBACK_MODELS
+    this.catalogCache = ids
+    return ids
   }
 
   /** 解析确切模型：仅校验存在（目录 advisory，不拦截未列出模型）。 */
@@ -205,161 +158,12 @@ class CommandCodeLlmAdapter extends LlmAdapter {
   }
 
   async *stream(request: GenerateOptions): AsyncGenerator<StreamChunk> {
-    const model = request.model === '' ? this.defaultModel : request.model
-    const response = await fetch(`${this.resolvedBaseUrl()}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        authorization: `Bearer ${this.requireApiKey()}`,
-      },
-      body: JSON.stringify({
-        model,
-        messages: translate(request.messages, request.system),
-        ...(request.tools !== undefined && request.tools.length > 0 ? { tools: request.tools } : {}),
-        // 推理模型 completion_tokens 含 CoT；缺省 max_tokens 会被网关砍半截正文。
-        max_tokens: request.maxTokens ?? 384000,
-        stream: true,
-        stream_options: { include_usage: true },
-      }),
-      signal: request.signal,
+    yield* streamChat({
+      baseUrl: this.resolvedBaseUrl(),
+      apiKey: this.requireApiKey(),
+      defaultModel: this.defaultModel,
+      request,
     })
-    if (!response.ok || response.body === null) {
-      const detail = await response.text().catch(() => '')
-      throw new LlmError('PROVIDER_ERROR', `commandcode request failed: ${response.status} ${detail}`)
-    }
-    const decoder = new TextDecoder()
-    const reader = response.body.getReader()
-    let buffer = ''
-    let textOpened = false
-    let usageReported = false
-    let rawFinish: string | undefined
-    const toolBlocks = new Map<number, { id: string; name: string; arguments: string }>()
-    try {
-      /** 解析一行 SSE data 并产出 StreamChunk（主循环与流末残留 buffer 共用）。 */
-      const consume = function* (line: string): Generator<StreamChunk> {
-        const data = parseSseData(line)
-        if (data === null || typeof data !== 'object') return
-        // 非流式错误载荷（stream 中段的 error 事件）。
-        if ('error' in data) {
-          const message = String((data as { error: { message?: unknown } }).error?.message ?? 'unknown error')
-          throw new LlmError('PROVIDER_ERROR', `commandcode stream error: ${message}`)
-        }
-        // usage 块：OpenAI 兼容流里中间块常带 `"usage": null`，必须用 != null
-        // 判空（`null !== undefined` 为真，直接读 prompt_tokens 会炸）。
-        const usage = (data as {
-          usage?: { prompt_tokens?: number; completion_tokens?: number } | null
-        }).usage
-        // usage 常与 finish_reason 同 chunk：先记 usage，**不能 return**，否则丢掉 rawFinish。
-        if (usage != null && !usageReported) {
-          usageReported = true
-          yield {
-            type: 'usage',
-            usage: {
-              inputTokens: usage.prompt_tokens,
-              outputTokens: usage.completion_tokens,
-            },
-          }
-        }
-        const topFinish = (data as { finish_reason?: string | null }).finish_reason
-        if (typeof topFinish === 'string' && topFinish !== '') {
-          rawFinish = topFinish
-        }
-        const choices = (data as {
-          choices?: Array<{ delta?: unknown; finish_reason?: string | null }> | null
-        }).choices
-        if (!Array.isArray(choices) || choices.length === 0) return
-        const choice = choices[0]
-        if (choice === undefined) return
-        for (const c of choices) {
-          if (typeof c.finish_reason === 'string' && c.finish_reason !== '') {
-            rawFinish = c.finish_reason
-          }
-        }
-        if (typeof choice.delta !== 'object' || choice.delta === null) return
-        const delta = choice.delta as {
-          content?: string
-          reasoning_content?: string
-          reasoning?: string
-          tool_calls?: Array<{
-            index?: number
-            id?: string
-            function?: { name?: string; arguments?: string }
-          }>
-        }
-        const thinking =
-          typeof delta.reasoning_content === 'string' && delta.reasoning_content !== ''
-            ? delta.reasoning_content
-            : typeof delta.reasoning === 'string' && delta.reasoning !== ''
-              ? delta.reasoning
-              : ''
-        if (thinking !== '') {
-          yield { type: 'thinking-delta', text: thinking }
-        }
-        if (typeof delta.content === 'string' && delta.content !== '') {
-          if (!textOpened) {
-            yield { type: 'block-start', index: 0, blockType: 'text' }
-            textOpened = true
-          }
-          yield { type: 'text-delta', index: 0, text: delta.content }
-        }
-        for (const call of delta.tool_calls ?? []) {
-          const blockIndex = (call.index ?? 0) + 1
-          const block = toolBlocks.get(blockIndex) ?? { id: '', name: '', arguments: '' }
-          const firstForBlock = !toolBlocks.has(blockIndex)
-          block.id += call.id ?? ''
-          block.name += call.function?.name ?? ''
-          block.arguments += call.function?.arguments ?? ''
-          toolBlocks.set(blockIndex, block)
-          if (firstForBlock) yield { type: 'block-start', index: blockIndex, blockType: 'tool-call' }
-          yield {
-            type: 'tool-call-delta',
-            index: blockIndex,
-            id: call.id ?? '',
-            name: call.function?.name ?? '',
-            argumentsDelta: call.function?.arguments ?? '',
-          }
-        }
-      }
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        buffer += decoder.decode(value, { stream: true })
-        const lines = buffer.split('\n')
-        buffer = lines.pop() ?? ''
-        for (const line of lines) {
-          yield* consume(line.trim())
-        }
-      }
-      // 流末尾：flush 解码器 + 处理残留 buffer（最后一行 SSE 往往没有尾换行，不处理会丢掉正文尾巴）。
-      buffer += decoder.decode()
-      for (const line of buffer.split('\n')) {
-        const trimmed = line.trim()
-        if (trimmed !== '') yield* consume(trimmed)
-      }
-      buffer = ''
-      if (textOpened) yield { type: 'block-end', index: 0, block: { type: 'text', text: '' } }
-      for (const index of [...toolBlocks.keys()].sort((a, b) => a - b)) {
-        const block = toolBlocks.get(index)
-        yield {
-          type: 'block-end',
-          index,
-          block: {
-            type: 'tool-call',
-            id: block?.id ?? '',
-            name: block?.name ?? '',
-            arguments: block?.arguments ?? '',
-          },
-        }
-      }
-      // 映射上游 finish_reason：length/max_tokens → max-tokens，避免半截回复被当成正常结束。
-      const reason =
-        rawFinish === 'length' || rawFinish === 'max_tokens'
-          ? ({ kind: 'max-tokens' } as const)
-          : ({ kind: 'stop' } as const)
-      yield { type: 'finish', reason }
-    } finally {
-      reader.releaseLock()
-    }
   }
 }
 

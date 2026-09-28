@@ -20,6 +20,8 @@ export interface PetModelHandle {
   setExpression: (name?: string | null) => void;
   /** 鼠标视线追踪：坐标为容器 CSS 像素（与 PIXI screen 一致）。 */
   setLookAt: (x: number, y: number) => void;
+  /** 视线钉定（思考游移等）：钉住期间忽略鼠标跟随；传 null 恢复。 */
+  setLookPinned: (target: { x: number; y: number } | null) => void;
   /** 开关视线追踪（默认开）。 */
   setLookEnabled: (on: boolean) => void;
   /**

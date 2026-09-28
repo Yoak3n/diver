@@ -9,8 +9,8 @@
 //
 // 这些 LLM 调用发生在 worker 自己的会话里（ephemeral，不落盘、不进对话日志），
 // 与原来直连 ctx.llm.stream 的语义一致：不污染主对话。worker 是独立的后台线，
-// 与主会话并行：调用方（index.ts 的调度器）既不等主 agent 空闲、也不会因用户
-// 新消息而取消它。
+// 与主会话并行：调用方（digest-scheduler.ts 的调度器）既不等主 agent 空闲、
+// 也不会因用户新消息而取消它。
 
 import type { Context } from 'cordis'
 import type { ToolExecutor } from '@cos/plugin-api'

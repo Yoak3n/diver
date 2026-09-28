@@ -2,7 +2,7 @@
 import AssistantAvatar from "../../components/AssistantAvatar.vue";
 
 defineProps<{
-  kind: "user" | "assistant";
+  kind: "user" | "assistant" | "thinking";
   text: string;
   streaming: boolean;
   pos: { left: number; top: number } | null;

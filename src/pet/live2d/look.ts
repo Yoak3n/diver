@@ -7,10 +7,18 @@ type LookModel = {
 export function createLookController(model: LookModel) {
   let lookEnabled = true;
   let lookTarget: { x: number; y: number } | null = null;
+  /** 视线钉定（思考游移等）：钉住期间忽略鼠标跟随，直到清空。 */
+  let pinned: { x: number; y: number } | null = null;
   let disposed = false;
 
   function setLookAt(x: number, y: number) {
+    if (pinned) return;
     lookTarget = { x, y };
+  }
+
+  function setLookPinned(target: { x: number; y: number } | null) {
+    pinned = target;
+    if (target) lookTarget = { ...target };
   }
 
   function setLookEnabled(on: boolean) {
@@ -18,9 +26,10 @@ export function createLookController(model: LookModel) {
   }
 
   function applyLook() {
-    if (disposed || !lookEnabled || !lookTarget) return;
+    const target = pinned ?? lookTarget;
+    if (disposed || !lookEnabled || !target) return;
     try {
-      model.focus?.(lookTarget.x, lookTarget.y);
+      model.focus?.(target.x, target.y);
     } catch {
       /* 忽略 */
     }
@@ -29,7 +38,8 @@ export function createLookController(model: LookModel) {
   function destroy() {
     disposed = true;
     lookTarget = null;
+    pinned = null;
   }
 
-  return { setLookAt, setLookEnabled, applyLook, destroy };
+  return { setLookAt, setLookPinned, setLookEnabled, applyLook, destroy };
 }

@@ -33,20 +33,27 @@ pnpm tauri dev   # 自动拉起 sidecar + Vite(1420) + 窗口
 ```
 diver/
 ├─ src/                    # Vue 3 陪伴 UI（聊天、设置、TTS）
+│  ├─ api/                 # API 传输层：基址解析/鉴权令牌/JSON/SSE（base.ts + 领域端点模块）
 │  ├─ components/          # ChatArea / ComposerBar / MessageBubble / SettingsPanel 等
-│  ├─ composables/         # useChat（主窗口）/ useSettings / useInstances
-│  └─ pet/                 # 桌宠：PetApp.vue / live2d.ts / usePetChat / pet.html
+│  ├─ composables/         # useChat（主窗口，composables/chat/）/ useSettings（settings-{tabs,state,actions}）/ useInstances
+│  ├─ ipc/                 # Tauri IPC 前端封装（petWindow / instances…）
+│  ├─ views/               # 页面级组件（ChatView / SettingsView / chat/GroupChatView）
+│  └─ pet/                 # 桌宠：PetApp.vue / live2d/ / usePetChat（chat/{state,events,io}）/ emotion（emotion-{types,lexicon,map,infer}）/ pet.html
 ├─ src-tauri/              # Rust 壳
-│  ├─ src/commands/        # Tauri IPC 薄适配（system/plugins/shortcuts/tts/tts_player/presence/pet/instances/config）
-│  ├─ src/app/             # 组装与生命周期（setup / events / handle / state / tray / shortcut）
+│  ├─ src/commands/        # Tauri IPC 薄适配（system/plugins/shortcuts/tts/tts_player/presence/pet/instances/avatar/groups/config_cmds）
+│  ├─ src/app/             # 组装与生命周期（setup/{handlers,service,sidecar_boot} / events / handle / state / tray / shortcut/{manager,action}）
 │  ├─ src/shell/           # 窗口与桌面集成（window/{manager,pet} / webview_args（WebView2 参数构造） / displays（显示器 canonical 编号） / lightweight / pet_mouse / notify / cursor）
-│  ├─ src/core/            # 可单测业务（sidecar/{process,lifecycle,ports,runtimes,shutdown,reclaim} / instance_registry / delegate（任务委派监督）/ tts/{synth,player} / node_runtime / pet_interaction / pet_models / presence…）
+│  ├─ src/core/            # 可单测业务（sidecar/{process,lifecycle,ports,runtimes,shutdown,reclaim} / instance_registry / delegate（任务委派监督：rpc/manager/notify/supervise…）/ explore_policy（Explore 壳调度：driver/jobs/rpc）/ tts/{synth,player,queue} / node_runtime / pet_interaction / pet_models / setup_extract/{read,extract} / setup_progress / timer / presence…）
 │  ├─ src/plugins/         # 插件 catalog/profile/preflight/{registry,package,install,uninstall}
-│  ├─ src/config/          # 持久化配置（window_startup / instances / groups / pet_model（全局模型真源） / pet_window / tts→config_dir/tts.json / mcp / shortcuts / profile…）
-│  ├─ src/services/        # 本地服务：axum /rpc + memory RPC handler（notify 经注入闭包）
+│  ├─ src/config/          # 持久化配置（window_startup / instances / groups / tasks / delegate / avatar / pet_model（全局模型真源） / pet_window / tts→config_dir/tts.json / mcp / shortcuts / profile…）
+│  ├─ src/services/        # 本地服务：axum /rpc（server/rpc/auth/state）+ 领域 handler（memory/{dispatch,params,card_name} / peer / groups/{rpc,list,say,ops,body} / groups_manage / presence / grep / screenshot / registry；notify 经注入闭包）
 ├─ crates/diver-geom/     # 桌宠几何纯函数（config/shell/core 共用）
 ├─ crates/diver-memory/    # Rust 记忆后端 crate（SQLite 存储 + 确定性逻辑）
 │  └─ src/db/              # store / topics / events / entities / mappers…
+├─ crates/diver-presence/  # 陪伴状态机 crate（FSM / 探索策略 / 快照）
+├─ crates/diver-search/    # 搜索引擎 crate（无传输层）
+├─ crates/diver-shot/      # 屏幕捕获 + JPEG 编码 crate（Win GDI / Wayland portal）
+├─ cos-plugins/            # @diver/* 插件工作区（memory / backend / companion / bundle-companion…）
 ├─ harness/                # Node sidecar workspace（pnpm，自研 cos）
 │  ├─ packages/            # 所有 @cos/* 工作区插件包（含 skills / system-prompt）
 │  │  └─ profile/          # DSH 对齐的 profile 模型（home/双锚点/平面回退/reconcile）
@@ -171,7 +178,7 @@ web-tools 另有需外网的 `live-probe.ts`。
 ## 日志
 
 - Rust 侧日志：`tauri-plugin-log` 输出到控制台 + Webview + 文件
-  （`%APPDATA%/diver/logs/app.log`，见 `app/setup.rs`）
+  （`%APPDATA%/diver/logs/app.log`，见 `app/setup/`）
 - sidecar 日志：stdout/stderr 实时转发到 Rust 控制台（前缀 `[sidecar]` / `[sidecar:err]`），
   同时缓存在 `SidecarStatus.logs`（环形 300 条）供 UI 查看
 - 会话 JSONL：`harness/.cos-home-default/sessions/`（通用事件流格式：`id`/`parentId` 链 + `message` 块 `user`/`assistant`/`toolResult`，明文，方便第三方工具读取）

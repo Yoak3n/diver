@@ -7,7 +7,7 @@ export function useSpeechBubble(opts: {
   onAfterLayout: () => void;
 }) {
   const bubbleText = ref("");
-  const bubbleKind = ref<"user" | "assistant">("assistant");
+  const bubbleKind = ref<"user" | "assistant" | "thinking">("assistant");
   const bubbleVisible = ref(false);
   const bubbleStreaming = ref(false);
   const bubblePos = ref<{ left: number; top: number } | null>(null);
@@ -34,7 +34,7 @@ export function useSpeechBubble(opts: {
     }, ms);
   }
 
-  function showBubble(kind: "user" | "assistant", text: string, holdMs?: number) {
+  function showBubble(kind: "user" | "assistant" | "thinking", text: string, holdMs?: number) {
     if (bubbleTimer !== null) window.clearTimeout(bubbleTimer);
     const plain = markdownToPlainText(text);
     bubbleKind.value = kind;

@@ -3,6 +3,7 @@
 // 群头像 / 解散群 / 邀请记录（只读子组件）。系统全员群只读（成员动态跟随实例增删，
 // 纯展示；头像仍可设置）。管理动作由壳层发起，群系统事件统一 inject（收听不吵）；
 // 失败不回滚，仅提示。
+// 分层：GroupMembers.vue 成员列表；本文件做面板编排与管理动作。
 import { computed, ref, watch } from "vue";
 import {
   deleteGroup,
@@ -13,6 +14,7 @@ import {
 import GroupAvatarEditor from "./GroupAvatarEditor.vue";
 import GroupAvatarMark from "./GroupAvatarMark.vue";
 import GroupInvites from "./GroupInvites.vue";
+import GroupMembers from "./GroupMembers.vue";
 
 const props = defineProps<{
   group: GroupRow;
@@ -129,21 +131,7 @@ function dissolve() {
       <section class="gm-sec">
         <h4>成员</h4>
         <p v-if="group.system" class="gm-hint">系统全员群：成员动态跟随实例增删，不可移出。</p>
-        <ul class="gm-members">
-          <li v-for="m in memberRows" :key="m.id" class="gm-member">
-            <span class="dot" :class="{ on: m.online }"></span>
-            <span class="mname">{{ m.name }}</span>
-            <span class="mid">{{ m.id }}</span>
-            <button
-              v-if="m.removable"
-              class="kick"
-              :disabled="working"
-              @click="kick(m.id, m.name)"
-            >
-              移出
-            </button>
-          </li>
-        </ul>
+        <GroupMembers :rows="memberRows" :working="working" @kick="kick" />
       </section>
 
       <section v-if="!group.system" class="gm-sec">
@@ -229,49 +217,6 @@ function dissolve() {
   margin: 2px 0 6px;
   font-size: 11px;
   color: var(--muted, #999);
-}
-.gm-members {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-.gm-member {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 3px 0;
-  font-size: 13px;
-}
-.mname {
-  color: var(--fg, #222);
-}
-.mid {
-  font-size: 11px;
-  color: var(--muted, #999);
-  flex: 1;
-}
-.dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: #c4c4c4;
-  flex-shrink: 0;
-}
-.dot.on {
-  background: #34c759;
-}
-.kick {
-  border: 1px solid rgba(0, 0, 0, 0.12);
-  background: none;
-  border-radius: 6px;
-  font-size: 11px;
-  padding: 2px 8px;
-  cursor: pointer;
-  color: var(--fg, #444);
-}
-.kick:hover {
-  border-color: #e5484d;
-  color: #e5484d;
 }
 .gm-rename {
   display: flex;

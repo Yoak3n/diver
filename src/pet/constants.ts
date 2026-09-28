@@ -32,6 +32,12 @@ export const PET_MOUSE_MOVE_EVENT = "device-mouse-move";
 /** 配置变更事件名。 */
 export const PET_WINDOW_CONFIG_EVENT = "pet://window-config";
 
+/**
+ * presence 相位迁移事件名（Rust app 层广播）。
+ * payload：{ instance, prev, phase, active }；桌宠按绑定实例过滤（经典宠看 active）。
+ */
+export const PRESENCE_PHASE_EVENT = "presence://phase";
+
 /** 由缩放百分比推导逻辑窗口尺寸（与 Rust `pet_window_logical_size` 一致）。 */
 export function petWindowLogicalSize(percent: number): { width: number; height: number } {
   const p = Number.isFinite(percent) ? percent : PET_SIZE_DEFAULT_PERCENT;

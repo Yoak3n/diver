@@ -171,6 +171,7 @@ export async function createPetModel(
       motion.playEmotion(group, opts),
     setExpression: (name?: string | null) => expression.setExpressionFade(name),
     setLookAt: look.setLookAt,
+    setLookPinned: look.setLookPinned,
     setLookEnabled: look.setLookEnabled,
     react,
     listGroups: () => motion.listGroups(),

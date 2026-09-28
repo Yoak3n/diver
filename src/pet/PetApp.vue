@@ -11,6 +11,7 @@ import { usePetModel } from "./composables/usePetModel";
 import { useSpeechBubble } from "./composables/useSpeechBubble";
 import { usePetDrag } from "./composables/usePetDrag";
 import { usePetEmotion } from "./composables/usePetEmotion";
+import { usePetThinking } from "./composables/usePetThinking";
 import { useClickthrough } from "./composables/useClickthrough";
 import { useLipSync } from "./composables/useLipSync";
 import { usePetQuestion } from "./composables/usePetQuestion";
@@ -98,6 +99,8 @@ const drag = reactive(usePetDrag({
   },
 }));
 const question = reactive(usePetQuestion(pendingQuestion, submitQuestionAnswer));
+// thinking 相位 → 思考表现（视线游移 + 微动作 + 嘟囔气泡），只作用于本实例宠。
+usePetThinking({ instance: petInstance, pet: petModel, lip, panel, bubble, emotion });
 const visibleMessages = computed(() => messages.value.filter(hasVisibleMessageBody));
 
 function applyRetreat() {

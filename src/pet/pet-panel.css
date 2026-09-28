@@ -162,6 +162,16 @@
   border: 1px solid rgba(255, 255, 255, 0.12);
   color: #f4f2fa;
 }
+/* 思考嘟囔：比正式回答更轻（斜体 + 降透明度），别当成台词回答。 */
+.speech-bubble.thinking {
+  background: rgba(28, 29, 44, 0.82);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: rgba(236, 234, 245, 0.82);
+  font-style: italic;
+}
+.speech-bubble.thinking .bubble-text {
+  opacity: 0.9;
+}
 .bubble-label {
   font-size: 10px;
   opacity: 0.7;

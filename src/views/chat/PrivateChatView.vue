@@ -43,12 +43,16 @@ const composer = computed({
   },
 });
 
-// TTS 源（开关/语音）由设置状态持有；每个会话建立时注入
+// TTS 源（开关/语音）由设置状态持有；每个会话建立时注入。
+// 自动朗读 = 全局 TTS 总开关 AND 该实例的 autoRead（instances.json，实例页配置）；
+// 清单未加载时兜底 true 保持旧行为。
 watch(
   chat,
   (c) => {
     c.setTtsSource(() => ({
-      enabled: state.ttsEnabled,
+      enabled:
+        state.ttsEnabled &&
+        (instancesState.instances.value.find((m) => m.id === props.instanceId)?.autoRead ?? true),
       voice: state.ttsVoice,
     }));
   },

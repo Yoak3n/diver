@@ -1,13 +1,14 @@
 <script setup lang="ts">
 // 设置页「实例」页：实例清单增删改（壳层元配置 instances.json）。
 // P0 边界：只登记不启动；实例内设置（人格/模型/插件集）不在此编辑。
+// 分层：InstanceRow.vue 单实例卡片行；本文件做清单装配、改名编辑态与管理动作。
 import { onBeforeUnmount, onMounted, ref } from "vue";
 import { tauriAvailable, type InstanceMeta } from "../../tauri";
 import { useInstances } from "../../composables/useInstances";
 import { useInstancePet } from "../../composables/useInstancePet";
-import InstanceAvatar from "./children/InstanceAvatar.vue";
+import InstanceRow from "./InstanceRow.vue";
 
-const { instances, loading, error, notice, refresh, create, rename, clearName, toggle, remove } =
+const { instances, loading, error, notice, refresh, create, rename, clearName, toggle, setAutoRead, remove } =
   useInstances();
 
 const newName = ref("");
@@ -82,15 +83,6 @@ function onDelete(inst: InstanceMeta): void {
   if (!window.confirm(`删除实例${label}？仅移除登记，数据目录清理随 P1 落地。`)) return;
   void remove(inst.id);
 }
-
-/** 展示名：未命名时回退占位（名字通常由人格卡片在聊天后回填）。 */
-function displayName(inst: InstanceMeta): string {
-  return inst.name || "未命名";
-}
-
-function formatDate(unix: number): string {
-  return unix ? new Date(unix * 1000).toLocaleDateString() : "—";
-}
 </script>
 
 <template>
@@ -120,82 +112,33 @@ function formatDate(unix: number): string {
   <div v-if="error" class="error-msg">{{ error }}</div>
 
   <div class="instance-list">
-    <div v-for="inst in instances" :key="inst.id" class="instance-card">
-      <InstanceAvatar :instance-id="inst.id" :name="inst.name" />
-      <div class="meta">
-        <template v-if="editingId === inst.id">
-          <input
-            v-model="editingName"
-            class="name-input"
-            maxlength="32"
-            @keyup.enter="confirmRename(inst)"
-            @keyup.escape="cancelRename"
-          />
-        </template>
-        <template v-else>
-          <div class="name-row">
-            <span class="name" :class="{ unnamed: !inst.name }">{{ displayName(inst) }}</span>
-            <span v-if="inst.id === 'default'" class="badge">默认</span>
-          </div>
-          <div class="id-row">id：{{ inst.id }} · 登记于 {{ formatDate(inst.createdAt) }}</div>
-        </template>
-      </div>
-      <select
-        class="model-select"
-        :value="inst.petModel ?? ''"
-        :disabled="!tauriAvailable()"
-        title="桌宠模型：跟随全局或为该实例固定"
-        @change="onModelChange(inst, ($event.target as HTMLSelectElement).value)"
-      >
-        <option value="">跟随全局模型</option>
-        <option v-for="m in modelProfiles" :key="m.id" :value="m.id">{{ m.label }}</option>
-      </select>
-      <label class="toggle">
-        <input
-          type="checkbox"
-          :checked="inst.enabled"
-          :disabled="!tauriAvailable()"
-          @change="toggle(inst.id, ($event.target as HTMLInputElement).checked)"
-        />
-        启用
-      </label>
-      <template v-if="editingId === inst.id">
-        <button class="btn small" @click="confirmRename(inst)">保存</button>
-        <button class="btn small" @click="cancelRename">取消</button>
-      </template>
-      <template v-else>
-        <button
-          class="btn small"
-          :disabled="!tauriAvailable() || petBusy === inst.id"
-          @click="togglePet(inst)"
-        >
-          {{ petOn(inst) ? "收起桌宠" : "召唤桌宠" }}
-        </button>
-        <button class="btn small" :disabled="!tauriAvailable()" @click="startRename(inst)">改名</button>
-        <button
-          v-if="inst.name"
-          class="btn small"
-          :disabled="!tauriAvailable()"
-          @click="onClearName(inst)"
-        >
-          清空名字
-        </button>
-        <button
-          class="btn small danger"
-          :disabled="!tauriAvailable() || inst.id === 'default'"
-          @click="onDelete(inst)"
-        >
-          删除
-        </button>
-      </template>
-    </div>
+    <InstanceRow
+      v-for="inst in instances"
+      :key="inst.id"
+      :inst="inst"
+      :editing="editingId === inst.id"
+      v-model:editing-name="editingName"
+      :model-profiles="modelProfiles"
+      :pet-active="petOn(inst)"
+      :pet-busy="petBusy === inst.id"
+      @start-rename="startRename"
+      @cancel-rename="cancelRename"
+      @confirm-rename="confirmRename"
+      @clear-name="onClearName"
+      @delete="onDelete"
+      @toggle="toggle"
+      @toggle-auto-read="setAutoRead"
+      @toggle-pet="togglePet"
+      @model-change="onModelChange"
+    />
     <p v-if="!loading && instances.length === 0 && !error" class="hint">暂无实例登记。</p>
     <p v-if="petMsg" class="hint">{{ petMsg }}</p>
   </div>
 
   <p class="hint">
-    「启用」控制是否随应用启动（P1 起生效）；改名留空 = 不修改，
-    「清空名字」才回到未命名（同步清人格卡片，命名流程可重来）；
+    「启用」控制是否随应用启动（P1 起生效）；「自动朗读」控制该实例的回复是否朗读
+    （自动朗读 = 语音总开关 AND 本开关，群聊一律不朗读）；
+    改名留空 = 不修改，「清空名字」才回到未命名（同步清人格卡片，命名流程可重来）；
     默认实例不可删除（旧数据零迁移保留）。
   </p>
 </template>
@@ -236,68 +179,5 @@ function formatDate(unix: number): string {
   display: flex;
   flex-direction: column;
   gap: 8px;
-}
-.instance-card {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 12px;
-  background: var(--paper-sunken);
-  border: 1px solid var(--rule);
-  border-radius: var(--radius);
-}
-.meta {
-  flex: 1;
-  min-width: 0;
-}
-.name-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-.name {
-  font-size: 13px;
-  color: var(--ink);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.unnamed {
-  color: var(--ink-dim);
-  font-style: italic;
-}
-.badge {
-  font-size: 10px;
-  color: var(--ink-dim);
-  border: 1px solid var(--rule-strong);
-  border-radius: 999px;
-  padding: 1px 6px;
-}
-.id-row {
-  font-size: 11px;
-  color: var(--ink-dim);
-  margin-top: 2px;
-}
-.toggle {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 11px;
-  color: var(--ink-muted);
-  flex-shrink: 0;
-}
-.model-select {
-  flex-shrink: 0;
-  max-width: 128px;
-  background: var(--paper-sunken);
-  border: 1px solid var(--rule-strong);
-  border-radius: var(--radius);
-  color: var(--ink);
-  font-size: 11px;
-  padding: 4px 6px;
-  font-family: inherit;
-}
-.btn.danger {
-  color: var(--ink-muted);
 }
 </style>

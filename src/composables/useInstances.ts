@@ -9,6 +9,7 @@ import {
   createInstance,
   deleteInstance,
   listInstances,
+  setInstanceAutoRead,
   tauriAvailable,
   updateInstance,
   type InstanceMeta,
@@ -97,6 +98,21 @@ async function toggle(id: string, enabled: boolean): Promise<boolean> {
   }
 }
 
+/** 每实例自动朗读开关（自动朗读 = 全局 TTS 总开关 AND 本开关）。 */
+async function setAutoRead(id: string, autoRead: boolean): Promise<boolean> {
+  error.value = "";
+  try {
+    const meta = await setInstanceAutoRead(id, autoRead);
+    const inst = instances.value.find((x) => x.id === id);
+    if (inst) inst.autoRead = meta.autoRead;
+    return true;
+  } catch (err) {
+    fail(err, "保存失败");
+    await refresh();
+    return false;
+  }
+}
+
 /** 删除实例（default 命令层拒绝；数据目录清理随 P1 落地）。 */
 async function remove(id: string): Promise<boolean> {
   notice.value = "";
@@ -112,5 +128,5 @@ async function remove(id: string): Promise<boolean> {
 }
 
 export function useInstances() {
-  return { instances, loading, error, notice, refresh, create, rename, clearName, toggle, remove };
+  return { instances, loading, error, notice, refresh, create, rename, clearName, toggle, setAutoRead, remove };
 }

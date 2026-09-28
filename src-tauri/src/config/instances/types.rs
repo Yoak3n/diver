@@ -25,6 +25,9 @@ pub struct InstanceMeta {
     /// 每实例桌宠模型 id（P2-5 多桌宠；`None` = 跟随全局模型选择）。
     #[serde(default)]
     pub pet_model: Option<String>,
+    /// 该实例回复是否自动朗读（自动朗读 = 全局 TTS 总开关 AND 本开关；群聊不朗读）。
+    #[serde(default = "default_true")]
+    pub auto_read: bool,
     /// 登记时间（Unix 秒）。
     #[serde(default)]
     pub created_at: u64,

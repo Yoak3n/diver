@@ -122,6 +122,22 @@ pub fn set_instance_pet_model(
     }
 }
 
+/// 设置每实例自动朗读开关并落盘（自动朗读 = 全局 TTS 总开关 AND 本开关）。
+pub fn set_instance_auto_read(
+    app: &AppHandle,
+    id: &str,
+    auto_read: bool,
+) -> Result<InstanceMeta, InstanceError> {
+    let base = config_dir(app);
+    let mut reg = load_or_seed_at(&base, now_secs());
+    let meta = reg.set_auto_read(id, auto_read)?;
+    if save_config_at(&base, &reg) {
+        Ok(meta)
+    } else {
+        Err(InstanceError::Io)
+    }
+}
+
 /// 删除实例并落盘（`default` 拒绝）。
 pub fn delete_instance(app: &AppHandle, id: &str) -> Result<(), InstanceError> {
     let base = config_dir(app);

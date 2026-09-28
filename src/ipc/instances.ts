@@ -16,6 +16,8 @@ export interface InstanceMeta {
   avatar: string | null;
   /** 每实例桌宠模型 id（P2-5）；null = 跟随全局模型选择 */
   petModel: string | null;
+  /** 该实例回复是否自动朗读（自动朗读 = 全局 TTS 总开关 AND 本开关；群聊不朗读） */
+  autoRead: boolean;
   /** 登记时间（Unix 秒） */
   createdAt: number;
 }
@@ -40,6 +42,11 @@ export function updateInstance(
     name: patch.name ?? null,
     enabled: patch.enabled ?? null,
   });
+}
+
+/** 设置每实例自动朗读开关（自动朗读 = 全局 TTS 总开关 AND 本开关）。 */
+export function setInstanceAutoRead(id: string, autoRead: boolean): Promise<InstanceMeta> {
+  return invoke<InstanceMeta>("set_instance_auto_read", { id, autoRead });
 }
 
 /** 清空名字（仅设置面板手动）：双写清空人格卡片 + 清单，真回到未命名。 */

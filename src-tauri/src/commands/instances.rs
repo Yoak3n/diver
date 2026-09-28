@@ -84,6 +84,16 @@ pub fn set_instance_pet_model(
     instances::set_instance_pet_model(&app, &id, model.as_deref()).map_err(err_text)
 }
 
+/// 设置每实例自动朗读开关（自动朗读 = 全局 TTS 总开关 AND 本开关；群聊不朗读）。
+#[tauri::command]
+pub fn set_instance_auto_read(
+    app: AppHandle,
+    id: String,
+    auto_read: bool,
+) -> Result<InstanceMeta, String> {
+    instances::set_instance_auto_read(&app, &id, auto_read).map_err(err_text)
+}
+
 #[tauri::command]
 pub fn list_instance_runtimes(app: AppHandle) -> Vec<crate::core::instance_registry::InstanceRecord> {
     crate::core::instance_registry::list_at(&instances::registry_dir(&app))

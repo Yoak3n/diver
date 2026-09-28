@@ -80,6 +80,7 @@ impl InstancesFile {
             enabled: true,
             avatar: None,
             pet_model: None,
+            auto_read: true,
             created_at: now,
         };
         self.instances.push(meta.clone());
@@ -127,6 +128,21 @@ impl InstancesFile {
         Ok(inst.clone())
     }
 
+    /// 设置每实例自动朗读开关（自动朗读 = 全局 TTS 总开关 AND 本开关）。
+    pub fn set_auto_read(
+        &mut self,
+        id: &str,
+        auto_read: bool,
+    ) -> Result<InstanceMeta, InstanceError> {
+        let inst = self
+            .instances
+            .iter_mut()
+            .find(|i| i.id == id)
+            .ok_or(InstanceError::NotFound)?;
+        inst.auto_read = auto_read;
+        Ok(inst.clone())
+    }
+
     /// 删除实例（`default` 双保险不可删；数据目录清理随 P1 落地）。
     pub fn remove(&mut self, id: &str) -> Result<(), InstanceError> {
         if id == DEFAULT_ID {
@@ -156,6 +172,7 @@ impl InstancesFile {
                 enabled: true,
                 avatar: None,
                 pet_model: None,
+                auto_read: true,
                 created_at: now,
             },
         );

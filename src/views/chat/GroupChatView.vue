@@ -29,6 +29,7 @@ const instancesState = useInstances();
 const settings = useSettings();
 
 // 群视图订阅成员会话池（进程级幂等；成员未私聊过也有完整流量进合并流）
+// 群聊**不接** TTS 源（用户定案）：群聊回复不自动朗读，自动朗读只属于私聊。
 const memberIds = computed<string[]>(() => {
   const g = props.groups.find((x) => x.id === props.groupId);
   return !g || g.system

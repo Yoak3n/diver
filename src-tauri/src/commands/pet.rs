@@ -44,17 +44,17 @@ pub async fn toggle_pet_window(app: AppHandle) -> Result<bool, String> {
     pet_win::toggle(&app)
 }
 
-/// 桌宠软限位：夹到最近可见显示器工作区（拖动结束后调用，不在 Moved 里跑）。
-#[tauri::command]
-pub fn clamp_pet_window(app: AppHandle) {
-    pet_win::ensure_visible(&app)
-}
-
 /// 按物理像素增量移动桌宠，并夹进最近显示器（对齐 DSH `move_pet_window`）。
-/// `delta_x/y = 0` 时等价于软恢复；需要挪动时带 ease-out 过渡。
+/// `delta_x/y = 0` 时等价于软恢复（拖动收尾回正就是它）；需要挪动时带 ease-out 过渡。
+/// `window` 由 Tauri 注入**调用窗口本体**——回正作用在被拖的那只（经典 `pet`
+/// 或实例 `pet-<id>`），多实例拓扑下不得硬绑经典窗。
 #[tauri::command]
-pub fn move_pet_window(app: AppHandle, delta_x: i32, delta_y: i32) -> Result<(), String> {
-    pet_win::move_by_delta(&app, delta_x, delta_y)
+pub fn move_pet_window(
+    window: tauri::WebviewWindow,
+    delta_x: i32,
+    delta_y: i32,
+) -> Result<(), String> {
+    pet_win::move_by_delta(&window, delta_x, delta_y)
 }
 
 /// 取消进行中的桌宠位置过渡动画。

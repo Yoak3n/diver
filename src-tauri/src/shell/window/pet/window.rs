@@ -47,7 +47,7 @@ pub fn apply_size(app: &AppHandle) -> Result<(), String> {
         .set_size(tauri::LogicalSize::new(width, height))
         .map_err(|e| format!("PET_RESIZE_FAILED: {e}"))?;
     // 缩放后夹回可见区（DSH：resize 后 move_pet_window(0,0)）
-    ensure_visible(app);
+    ensure_visible(&window);
     Ok(())
 }
 

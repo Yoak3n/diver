@@ -17,9 +17,9 @@ mod window;
 pub use flags::{note_window_moved, set_dragging};
 pub use lifecycle::{brief_yield, ensure_window, set_visible, toggle};
 pub use position::{
-    cancel_position_animation, clamp_to_current_monitor, ensure_visible, move_by_delta,
-    move_to_monitor, place_at_default, place_pool_window, position_on_any_monitor,
-    restore_or_default_position, save_window_position,
+    cancel_position_animation, ensure_visible, move_by_delta, move_to_monitor,
+    place_at_default, place_pool_window, position_on_any_monitor, restore_or_default_position,
+    save_window_position,
 };
 pub use window::{
     apply_size, emit_config, get_config, logical_size, persist_position, set_size_percent,

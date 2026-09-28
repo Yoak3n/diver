@@ -15,7 +15,12 @@ const PET_MOVE_ANIM_MS: u64 = 200;
 const PET_MOVE_FRAME_MS: u64 = 16;
 
 /// 采样窗口当前位置并节流写盘。
+/// 位置记忆只归经典窗（`pet-window.json` 是它的位置真源）：实例宠（`pet-<id>`）
+/// 的 Moved 不落盘，否则拖实例宠会把经典窗的记忆写花。
 pub fn save_window_position(window: &WebviewWindow) {
+    if window.label() != PET_WINDOW_LABEL {
+        return;
+    }
     if !window.is_visible().unwrap_or(false) {
         return;
     }
@@ -180,7 +185,7 @@ fn animate_position(app: &AppHandle, window: &WebviewWindow, to_x: i32, to_y: i3
             let elapsed = start.elapsed();
             if elapsed >= total {
                 let _ = window.set_position(PhysicalPosition::new(to_x, to_y));
-                persist_position(&app, to_x, to_y);
+                persist_if_classic(&window, &app, to_x, to_y);
                 return;
             }
             let t = elapsed.as_secs_f32() / total.as_secs_f32();
@@ -195,12 +200,13 @@ fn animate_position(app: &AppHandle, window: &WebviewWindow, to_x: i32, to_y: i3
 
 /// 把窗口夹进「中心点所在 / 最近」显示器的工作区（对齐 DSH `move_pet_window`）。
 ///
+/// `window` 是调用它的那只桌宠窗本体（经典 `pet` 或实例 `pet-<id>`）——多实例
+/// 拓扑下回正必须作用在被拖的窗口上，不能硬绑经典窗（否则实例宠的回正打空）。
+///
 /// **不要在 `Moved` 事件里调用**：系统原生拖动（`startDragging`）进行中时
 /// `set_position` 会与拖动循环抢位置，跨屏表现为闪动或被扯回原屏。
-pub fn move_by_delta(app: &AppHandle, delta_x: i32, delta_y: i32) -> Result<(), String> {
-    let window = app
-        .get_webview_window(PET_WINDOW_LABEL)
-        .ok_or_else(|| "PET_WINDOW_NOT_FOUND".to_string())?;
+pub fn move_by_delta(window: &WebviewWindow, delta_x: i32, delta_y: i32) -> Result<(), String> {
+    let app = window.app_handle();
     let current = window
         .outer_position()
         .map_err(|e| format!("PET_WINDOW_POSITION_FAILED: {e}"))?;
@@ -267,7 +273,7 @@ pub fn move_by_delta(app: &AppHandle, delta_x: i32, delta_y: i32) -> Result<(), 
     let x = desired_x.clamp(area.position.x, max_x);
     let y = desired_y.clamp(area.position.y, max_y);
     if x == current.x && y == current.y {
-        persist_position(app, x, y);
+        persist_if_classic(window, app, x, y);
         return Ok(());
     }
     // 关键：系统原生拖动仍在进行时绝不 set_position ——
@@ -278,18 +284,22 @@ pub fn move_by_delta(app: &AppHandle, delta_x: i32, delta_y: i32) -> Result<(), 
         );
         return Ok(());
     }
-    animate_position(app, &window, x, y);
+    animate_position(app, window, x, y);
     Ok(())
 }
 
-/// 拖动/缩放后的软恢复：`move_by_delta(0, 0)`，仅在完全跑出可见区时才会挪动。
-pub fn ensure_visible(app: &AppHandle) {
-    let _ = move_by_delta(app, 0, 0);
+/// 拖动/缩放后的软恢复：`move_by_delta(0, 0)`——超出所在屏工作区即拉回
+/// （骑在两屏接缝/半悬空也算），带 ease-out 过渡。
+pub fn ensure_visible(window: &WebviewWindow) {
+    let _ = move_by_delta(window, 0, 0);
 }
 
-/// 兼容旧语义：软限位到最近显示器工作区（拖动结束后调用）。
-pub fn clamp_to_current_monitor(app: &AppHandle) {
-    ensure_visible(app);
+/// 位置记忆只归经典窗（`pet-window.json` 是它的位置真源）：实例宠（`pet-<id>`）
+/// 的移动/回正不落盘，防止把经典窗的记忆写花（同 `place_pool_window` 的约定）。
+fn persist_if_classic(window: &WebviewWindow, app: &AppHandle, x: i32, y: i32) {
+    if window.label() == PET_WINDOW_LABEL {
+        persist_position(app, x, y);
+    }
 }
 
 /// 按目标显示器工作区定位（右下贴边），带过渡动画，并持久化。

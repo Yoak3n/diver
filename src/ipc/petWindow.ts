@@ -13,19 +13,9 @@ export async function getCursorScreenPoint(): Promise<{ x: number; y: number } |
   }
 }
 
-/** 桌宠拖动结束后软恢复：夹到最近可见显示器工作区（跨屏拖动用，非拖动中实时 clamp）。 */
-export async function clampPetWindow(): Promise<void> {
-  if (!tauriAvailable()) return;
-  try {
-    await invoke<void>("clamp_pet_window");
-  } catch {
-    /* 忽略 */
-  }
-}
-
 /**
  * 按物理像素增量移动桌宠窗口，并夹进最近显示器。
- * `deltaX/deltaY = 0` 时等价于软恢复（对齐 DSH `move_pet_window`）。
+ * `deltaX/deltaY = 0` 时等价于软恢复（拖动收尾回正就是它，对齐 DSH `move_pet_window`）。
  * 实际需要挪动时带 ease-out 过渡（约 200ms）。
  */
 export async function movePetWindow(deltaX: number, deltaY: number): Promise<void> {

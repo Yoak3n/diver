@@ -8,7 +8,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import { userMessage } from '../agent.ts'
 import { appendGroupSent, groupSentEvent, groupSentPath } from '../group-sent.ts'
 import type { GroupSentRecord } from '../group-sent.ts'
-import { groupMarkerLine, inboxMarkerLine } from '../interaction.ts'
+import { groupMarkerLine, inboxMarkerLine, stampEventText } from '../interaction.ts'
 import { readBody, sendJson } from '../http.ts'
 import { readDiverSettings } from '../session-helpers.ts'
 import { createBroadcast } from '../sse.ts'
@@ -99,17 +99,21 @@ export async function handleChat(
   }
 
   // /api/inject —— 壳端已裁决注入（无门控 followup；控制面在壳 CompanionPresence）。
-  // body: { text, source?: { kind?, detail? }, origin? }
+  // body: { text, source?: { kind?, detail? }, origin?, time? }
   if (pathname === '/api/inject' && req.method === 'POST') {
     const body = await readBody(req)
-    const text = String(body.text ?? '').trim()
-    if (!text) {
+    const rawText = String(body.text ?? '').trim()
+    if (!rawText) {
       sendJson(res, 400, { error: 'text 必填' })
       return true
     }
     const src = (body.source ?? {}) as { kind?: string; detail?: string }
     const kind = src.kind === 'human' || src.kind === 'goal' ? src.kind : 'plugin'
     const detail = String(src.detail ?? body.origin ?? 'proactive')
+    // 事件时刻盖进文本首部：事件文本不带时间，模型无法知道事件发生在几点——system prompt
+    // 的「当前时间」是装配时刻，排队（next-turn）延迟消费时与事件时刻脱节。time 由壳在
+    // 下发时盖章（core/presence/rpc.rs dispatch_inject），缺失退回收包时刻。
+    const text = stampEventText(rawText, Number(body.time) || Date.now())
     const msg = createUserMessage(text, detail ? { kind, detail } : { kind })
     const agent = await deps.ensureAgent()
     agent.followup(msg)

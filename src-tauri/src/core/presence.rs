@@ -19,8 +19,13 @@ use diver_presence::{
 use parking_lot::Mutex;
 use serde_json::{json, Value};
 
+/// 相位迁移观察者（app 层注入，core 不摸 app）：参数 (instance, prev, next)，
+/// 相位名取 `Phase::as_str`。相位是桌宠思考表现等壳级行为的语义真源。
+pub type PhaseSink = Arc<dyn Fn(&str, &str, &str) + Send + Sync>;
+
 /// 进程级存在感总控（单实例一份）。
 pub struct PresenceHandle {
+    id: String,
     inner: Mutex<CompanionPresence>,
 }
 
@@ -32,15 +37,30 @@ impl PresenceHandle {
         REG.get_or_init(|| Mutex::new(HashMap::new()))
     }
 
+    /// 相位迁移 sink（进程级一份；调用在锁外，可安全再摸其他实例）。
+    fn phase_sink() -> &'static Mutex<Option<PhaseSink>> {
+        static SINK: once_cell::sync::OnceCell<Mutex<Option<PhaseSink>>> =
+            once_cell::sync::OnceCell::new();
+        SINK.get_or_init(|| Mutex::new(None))
+    }
+
+    /// 注入相位迁移观察者（app 层转发为 Tauri 事件）。
+    pub fn set_phase_sink(sink: PhaseSink) {
+        *Self::phase_sink().lock() = Some(sink);
+    }
+
     /// 实例 FSM 句柄；空 id 归到 default（旧 sidecar 不带头时的兜底）。
     pub fn instance(id: &str) -> Arc<PresenceHandle> {
         let key = if id.trim().is_empty() { "default".to_string() } else { id.trim().to_string() };
         let mut reg = Self::registry().lock();
-        reg.entry(key)
+        reg.entry(key.clone())
             .or_insert_with(|| {
                 let now = diver_presence::types::now_ms();
                 log::info!("[presence] BOOT instance at {now}");
-                Arc::new(PresenceHandle { inner: Mutex::new(CompanionPresence::boot(now)) })
+                Arc::new(PresenceHandle {
+                    id: key.clone(),
+                    inner: Mutex::new(CompanionPresence::boot(now)),
+                })
             })
             .clone()
     }
@@ -56,33 +76,49 @@ impl PresenceHandle {
         f(&mut g)
     }
 
-    pub fn apply_event(&self, ev: Event) {
+    /// 变更入口统一走这里：前后各取一次相位，迁移即通知 sink（sink 在锁外调用）。
+    /// 时间驱动的迁移（evaluate）也会在下一次读/事件时被观察到。
+    fn observe<R>(&self, f: impl FnOnce(&mut CompanionPresence) -> R) -> R {
         let now = diver_presence::types::now_ms();
+        let (r, prev, next) = {
+            let mut g = self.inner.lock();
+            let prev = g.phase(now);
+            let r = f(&mut g);
+            let next = g.phase(now);
+            (r, prev, next)
+        };
+        if prev != next {
+            if let Some(sink) = Self::phase_sink().lock().as_ref() {
+                sink(&self.id, prev.as_str(), next.as_str());
+            }
+        }
+        r
+    }
+
+    pub fn apply_event(&self, ev: Event) {
         // T13：USER_CHAT 打断 explore —— 先取消 L3 job，再迁相位
         if matches!(ev, Event::UserChat) {
             crate::core::explore_policy::cancel_active_job();
         }
-        self.with(|p| p.handle(ev, now));
+        self.observe(|p| p.handle(ev, now_ms()));
     }
 
     pub fn phase(&self) -> Phase {
-        let now = diver_presence::types::now_ms();
-        self.with(|p| p.phase(now))
+        self.observe(|p| p.phase(now_ms()))
     }
 
     pub fn snapshot(&self) -> PresenceSnapshot {
-        let now = diver_presence::types::now_ms();
-        self.with(|p| p.snapshot(now))
+        self.observe(|p| p.snapshot(now_ms()))
     }
 
     pub fn set_proactive_config(&self, cfg: ProactiveConfig) {
-        self.with(|p| p.set_proactive_config(cfg));
+        self.observe(|p| p.set_proactive_config(cfg));
     }
 
     /// 同步裁决；通过则返回 L3 注入载荷（由调用方 await 发送）。
     pub fn request_proactive_inject(&self, source: &str, text: &str) -> (RequestResult, Option<InjectRequest>) {
         let now = diver_presence::types::now_ms();
-        self.with(|p| {
+        self.observe(|p| {
             p.request(
                 Intent::ProactiveInject {
                     source: source.to_string(),
@@ -92,6 +128,10 @@ impl PresenceHandle {
             )
         })
     }
+}
+
+fn now_ms() -> u64 {
+    diver_presence::types::now_ms()
 }
 
 /// active 实例 id（注册表定位由 setup 注入 manager；缺省回退 default）。
@@ -154,5 +194,38 @@ mod tests {
         b.apply_event(Event::Busy(false));
         assert_eq!(a.phase(), Phase::Thinking);
         assert_eq!(b.phase(), Phase::Listening);
+    }
+
+    #[test]
+    fn phase_sink_fires_on_transitions_with_instance_id() {
+        // 桌宠思考表现依赖相位迁移通知：进出 thinking 必须带实例 id + 相位名。
+        let seen: Arc<Mutex<Vec<(String, String, String)>>> = Arc::new(Mutex::new(Vec::new()));
+        let s = Arc::clone(&seen);
+        PresenceHandle::set_phase_sink(Arc::new(move |id, prev, next| {
+            s.lock().push((id.to_string(), prev.to_string(), next.to_string()));
+        }));
+
+        let h = PresenceHandle::instance("test-sink-a");
+        h.apply_event(Event::UserChat);
+        h.apply_event(Event::Busy(true));
+        let thinking = Phase::Thinking.as_str().to_string();
+        let listening = Phase::Listening.as_str().to_string();
+        {
+            let recs = seen.lock();
+            assert!(
+                recs.iter().any(|(id, prev, next)| {
+                    id == "test-sink-a" && *next == thinking && *prev == listening
+                }),
+                "应记录 listening→thinking 且带实例 id：{recs:?}"
+            );
+        }
+        h.apply_event(Event::Busy(false));
+        {
+            let recs = seen.lock();
+            assert!(
+                recs.iter().any(|(id, prev, _next)| id == "test-sink-a" && *prev == thinking),
+                "应记录离开 thinking 的迁移：{recs:?}"
+            );
+        }
     }
 }

@@ -62,13 +62,17 @@ fn t07_t08_busy_turn() {
 }
 
 #[test]
-fn t09_t11_delivering() {
+fn t09_cancelled_delivering_ignored_while_working() {
     let mut f = fsm_at(0);
     f.handle(Event::UserChat, 3_100);
     f.handle(Event::Busy(true), 3_200);
+    // T09 取消：工作中的播报是表现层事实，相位不迁 Delivering、不来回跳
     f.handle(Event::DeliveringStart, 3_300);
-    assert_eq!(f.phase(), Phase::Delivering);
+    assert_eq!(f.phase(), Phase::Thinking);
     f.handle(Event::DeliveringEnd, 3_800);
+    assert_eq!(f.phase(), Phase::Thinking);
+    // 工作真正结束才收回合
+    f.handle(Event::Busy(false), 4_000);
     assert_eq!(f.phase(), Phase::Observing);
 }
 
@@ -77,10 +81,73 @@ fn t10_delivering_end_user_still_typing() {
     let mut f = fsm_at(0);
     f.handle(Event::UserChat, 3_100);
     f.handle(Event::Busy(true), 3_200);
+    f.handle(Event::Busy(false), 3_250); // 工作先结束：T10 的「非工作」前提
     f.handle(Event::DeliveringStart, 3_300);
     f.handle(Event::UserInputStart, 3_400);
     f.handle(Event::DeliveringEnd, 3_800);
     assert_eq!(f.phase(), Phase::Listening);
+}
+
+#[test]
+fn working_span_ignores_delivering_and_input_events() {
+    // 工作电平期间：播报事件与用户输入信号都不改变相位（恒定 Thinking）
+    let mut f = fsm_at(0);
+    f.handle(Event::UserChat, 3_100);
+    f.handle(Event::Busy(true), 3_200);
+    f.handle(Event::DeliveringStart, 3_300);
+    f.handle(Event::UserInputStart, 3_400);
+    f.handle(Event::DeliveringEnd, 3_800);
+    assert_eq!(f.phase(), Phase::Thinking);
+    f.handle(Event::Busy(false), 4_000);
+    assert_eq!(f.phase(), Phase::Observing);
+}
+
+#[test]
+fn busy_true_from_ambient_enters_thinking() {
+    // 注入 / proactive / 群 / peer 唤醒的回合：busy(true) 恒先于消息事件到壳，
+    // 不得被吃掉——工作开始即思考（原边沿语义下这种回合整轮丢 thinking）。
+    let mut f = fsm_at(0);
+    f.evaluate(3_000);
+    assert_eq!(f.phase(), Phase::Receptive);
+    f.handle(Event::Busy(true), 3_100);
+    assert_eq!(f.phase(), Phase::Thinking);
+}
+
+#[test]
+fn working_span_holds_through_tool_chain_events() {
+    // 图中长工作串：多步工具调用（思考/编辑/读取）+ 活动事件流 + 中插消息/播报，
+    // 工作电平期间相位必须**恒为 Thinking、零跳变**，直到 busy(false)。
+    let mut f = fsm_at(0);
+    f.handle(Event::UserChat, 3_100);
+    f.handle(Event::Busy(true), 3_200);
+    let chain: &[(u64, Event)] = &[
+        (3_300, Event::ChatActivity),     // 工具步 / 流式活动
+        (3_400, Event::DeliveringStart),  // 工作中播报
+        (3_500, Event::ChatActivity),
+        (3_600, Event::UserChat),         // 工作中 steer 插话
+        (3_700, Event::DeliveringEnd),
+        (3_800, Event::ChatActivity),
+    ];
+    for (t, ev) in chain {
+        f.handle(ev.clone(), *t);
+        assert_eq!(f.phase(), Phase::Thinking, "工作串内相位必须恒定：@{t} {ev:?}");
+    }
+    f.handle(Event::Busy(false), 3_900);
+    assert_eq!(f.phase(), Phase::Observing);
+}
+
+#[test]
+fn speech_does_not_delay_turn_end() {
+    // 工作在播报中结束：立即收回合，不等播完、不回 Thinking
+    let mut f = fsm_at(0);
+    f.handle(Event::UserChat, 3_100);
+    f.handle(Event::Busy(true), 3_200);
+    f.handle(Event::DeliveringStart, 3_300); // 吞掉（工作电平）
+    assert_eq!(f.phase(), Phase::Thinking);
+    f.handle(Event::Busy(false), 3_400);
+    assert_eq!(f.phase(), Phase::Observing);
+    f.handle(Event::DeliveringEnd, 3_800); // 播报收尾不迁移
+    assert_eq!(f.phase(), Phase::Observing);
 }
 
 #[test]

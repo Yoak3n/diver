@@ -106,6 +106,10 @@ impl PresenceFsm {
             Event::UserInputEnd => {
                 self.ctx.user_input_active = false;
             }
+            Event::Busy(b) => {
+                // busy = working 电平（任何态都要记账；相位迁移见 transitions.rs）
+                self.ctx.working = *b;
+            }
             Event::DreamStart | Event::DreamEnd | Event::ExploreStart | Event::ExploreEnd => {
                 self.ctx.last_activity_at = now;
             }

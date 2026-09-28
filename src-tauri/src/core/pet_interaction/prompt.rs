@@ -19,22 +19,18 @@ fn payload_str(payload: &Map<String, Value>, key: &str) -> String {
 fn detail_phrase(kind: &str, payload: &Map<String, Value>) -> String {
     match kind {
         "pet.drag.screen_changed" => {
+            // 不写「目前仍按住未松手」：事件到 LLM 手里时用户大概率已松手，
+            // 文本不许断言这种到读取时多半过期的现况。
             let from = payload_str(payload, "fromScreen");
             let to = payload_str(payload, "toScreen");
-            let still = if payload.get("dragging").and_then(|v| v.as_bool()) == Some(true) {
-                "，目前仍按住未松手"
-            } else {
-                ""
-            };
-            format!("用户把桌宠从屏幕 {from} 拖到了屏幕 {to}{still}。")
+            format!("用户把桌宠从屏幕 {from} 拖到了屏幕 {to}。")
         }
         "pet.drag.long_hold" => {
-            let hold = payload
-                .get("holdMs")
-                .and_then(|v| v.as_u64())
-                .map(|n| n.to_string())
-                .unwrap_or_else(|| "较长时间".into());
-            format!("用户拖着你的桌宠已经约 {hold}ms 还没有松手。")
+            // 同上：只陈述「刚才拖了多久」这个既成事实，不断言是否仍按住。
+            match payload.get("holdMs").and_then(|v| v.as_u64()) {
+                Some(hold) => format!("用户刚才拖着你的桌宠约 {hold}ms。"),
+                None => "用户刚才较长时间拖着你的桌宠。".into(),
+            }
         }
         "pet.drag.dropped_edge" => {
             let edge = payload_str(payload, "edge");
@@ -158,6 +154,7 @@ mod tests {
         let p = build_interaction_prompt(&ev, InteractionMode::Events);
         assert!(p.contains("pet.drag.screen_changed"));
         assert!(p.contains("屏幕 0"));
+        assert!(!p.contains("松手"));
         assert!(p.contains("display 1"));
         // 编号契约：事件里的 display 号与工具 list_displays 同源，且给出坐标供核对。
         assert!(p.contains("list_displays"));
@@ -183,5 +180,18 @@ mod tests {
         };
         let p = build_interaction_prompt(&ev, InteractionMode::Events);
         assert!(p.contains("3200ms"));
+        // 到 LLM 手里多半已松手：文本不得断言「仍按住/没松手」类现况。
+        assert!(!p.contains("松手"));
+        // holdMs 缺失兜底：只降级措辞，不得拼出「较长时间ms」混搭单位。
+        let ev2 = PetGestureEvent {
+            kind: "pet.drag.long_hold".into(),
+            ts: None,
+            source: None,
+            payload: serde_json::Map::new(),
+            context: None,
+        };
+        let p2 = build_interaction_prompt(&ev2, InteractionMode::Events);
+        assert!(p2.contains("较长时间"));
+        assert!(!p2.contains("较长时间ms"));
     }
 }

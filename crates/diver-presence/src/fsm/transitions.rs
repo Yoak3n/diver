@@ -29,6 +29,40 @@ impl PresenceFsm {
             return;
         }
 
+        // —— 工作电平（busy = working）：Thinking 是「回合工作中」的投影 ——
+        match ev {
+            // T07（泛化）：工作开始即思考，任何活动态直进。
+            // 边沿语义（仅 Listening 可进）会被到达顺序吃掉——busy(true) 恒先于
+            // user/message 到壳，注入/群/peer 唤醒的整轮工作就整轮丢了 thinking。
+            Event::Busy(true) => {
+                self.enter_conversation(ConversationLeaf::Thinking);
+                return;
+            }
+            // T08：工作结束才收回合；其他态只清电平（记账在 handle）。
+            Event::Busy(false) => {
+                if matches!(
+                    self.state,
+                    Companion::On(OnState::Live(Live::Attending(Attending::Conversation(
+                        ConversationLeaf::Thinking
+                    ))))
+                ) {
+                    self.end_conversation_turn(now);
+                }
+                return;
+            }
+            // 工作中播报不迁相位：DELIVERING_* 是表现层事实（TTS 嘴型/气泡走 TTS
+            // 通道，不看相位），Thinking 保持恒定——工作串判定不得来回跳。
+            Event::DeliveringStart | Event::DeliveringEnd if self.ctx.working => {
+                return;
+            }
+            // 工作中的插话（steer）/活动不掉出工作相位；也兜住残余的到达顺序偏差。
+            Event::UserChat | Event::ChatActivity if self.ctx.working => {
+                self.enter_conversation(ConversationLeaf::Thinking);
+                return;
+            }
+            _ => {}
+        }
+
         // T03：Booting + QUIET_ELAPSED → Observing
         if matches!(self.state, Companion::On(OnState::Booting)) {
             match ev {
@@ -73,16 +107,15 @@ impl PresenceFsm {
                     self.end_conversation_turn(now); // T08 无待播
                     return;
                 }
-                (ConversationLeaf::Thinking, Event::DeliveringStart) => {
-                    self.enter_conversation(ConversationLeaf::Delivering); // T09
-                    return;
-                }
+                // T09 取消：工作中 DELIVERING_START 已在工作电平块吞掉，
+                // Thinking 恒定不迁 Delivering（原「Thinking→Delivering」会来回跳）。
                 (ConversationLeaf::Listening, Event::DeliveringStart) => {
                     self.enter_conversation(ConversationLeaf::Delivering); // T09b
                     return;
                 }
                 (ConversationLeaf::Delivering, Event::DeliveringEnd) => {
-                    // T10 / T11
+                    // T10 / T11（此处 working 恒为 false——工作中的播报事件
+                    // 已被电平块吞掉；Delivering 只由 T09b/T09c 非工作场景进入）
                     if self.ctx.user_input_active {
                         self.enter_conversation(ConversationLeaf::Listening);
                     } else {

@@ -3,7 +3,7 @@
 import type { ServerResponse } from 'node:http'
 import type { Context } from 'cordis'
 import { nativeRpc } from '@diver/native-bridge/rpc'
-import { groupNameFromMarker, groupTag, injectOrigin, injectUiLabel, isGroupMessage, peerSource, stripGroupMarker, stripPeerMarker } from './interaction.ts'
+import { groupNameFromMarker, groupTag, injectOrigin, injectUiLabel, isGroupMessage, peerSource, stripEventStamp, stripGroupMarker, stripPeerMarker } from './interaction.ts'
 import { textOf, imagesOf } from './session-helpers.ts'
 import { SESSION_ID } from './agent.ts'
 import type { WebState } from './state.ts'
@@ -41,9 +41,9 @@ export function attachEventListeners(
         const isHuman = ev.data.source?.kind === 'human'
         if (isHuman && !textOf(ev.data.content).startsWith('[presence]')) {
           reportPresence('presence::event', { type: 'USER_CHAT' })
-          // busy(true) 经 wakeDriver 同步发出，恒先于本事件到达壳；FSM 此刻仍在
-          // Ambient，(Ambient, Busy(true)) 无迁移会被吃掉，整轮卡 Listening。
-          // USER_CHAT 落 Listening 后重发一次，T07 才能进 Thinking。
+          // busy(true) 经 wakeDriver 同步发出，恒先于本事件到达壳。FSM 现按工作电平
+          // 语义接受任意活动态的 BUSY(true)（T07 泛化，见 companion-presence-fsm.md），
+          // 此处重发是幂等保险，非必需。
           if (state.busy) reportPresence('presence::busy', { busy: true })
         } else {
           reportPresence('presence::event', { type: 'CHAT_ACTIVITY' })
@@ -73,8 +73,9 @@ export function attachEventListeners(
         if (injectLabel !== null) {
           // presence 展示问候正文；互动/主动折叠为一行
           const isPresence = injectFrom === 'presence'
+          // 剥事件时间戳 + [presence] 章：气泡自带时间，正文只留问候语。
           const content = isPresence
-            ? text.replace(/^\[presence\]\s*/, '').trim() || injectLabel
+            ? stripEventStamp(text).replace(/^\[presence\]\s*/, '').trim() || injectLabel
             : injectLabel
           broadcast({
             type: 'message', kind: 'system', sessionId: String(session.id),

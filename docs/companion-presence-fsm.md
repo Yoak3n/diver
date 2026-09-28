@@ -173,25 +173,32 @@ Regime ∥ = Normal | Dnd | QuietHours | Focus | Sleep
 | T04 | `Live`（非 Conversation） | `REGIME`→rest | | `Resting/Passive` | |
 | T05 | `Resting` | `REGIME`→`Normal` | | `Live` 深历史 | |
 | T06 | `Live` | `USER_CHAT` | | `Attending/Conversation/Listening` | 取消 dream/explore job |
-| T07 | `Conversation/Listening` | `BUSY(true)` | | `Conversation/Thinking` | |
-| T08 | `Conversation/Thinking` | `BUSY(false)` | 无待播 | `Conversation/Delivering` 或 `Ambient/Observing` | |
-| T09 | `Conversation/Thinking` | `DELIVERING_START` | | `Conversation/Delivering` | |
+| T07 | `*`（任一活动态） | `BUSY(true)` | | `Conversation/Thinking` | 工作电平置位：工作开始即思考 |
+| T08 | `Conversation/Thinking` | `BUSY(false)` | 无待播 | `Conversation/Delivering` 或 `Ambient/Observing` | 工作电平清位；其他源态仅清位不迁叶 |
+| T09 | *（取消）* | `DELIVERING_START`（`working`） | | — 不迁相位 | 工作中播报是表现层事实，Thinking 恒定 |
 | T09b | `Conversation/Listening` | `DELIVERING_START` | | `Conversation/Delivering` | 输出打断 |
 | T09c | `Resting` / `Ambient/*` | `DELIVERING_START` | | `Conversation/Delivering` | 异步 TTS 晚于回合结束 / 手动朗读 |
 | T10 | `Conversation/Delivering` | `DELIVERING_END` | 用户仍输入 | `Conversation/Listening` | |
-| T11 | `Conversation/Delivering` | `DELIVERING_END` | 否则 | `Ambient/Observing` | `lastTurnEndAt=now` |
+| T11 | `Conversation/Delivering` | `DELIVERING_END` | 否则 | `Ambient/Observing` | `lastTurnEndAt=now`；`working` 恒 false（播报事件已被电平块吞掉） |
 | T12 | `Live`（Ambient/Resting） | `DREAM_START` | L1+L2 放行 | `Solitary/Dreaming` | |
 | T13 | `Solitary/*` | `USER_CHAT` | | `Conversation/Listening` | 取消 job |
 | T14 | `Solitary/*` | `DREAM_END` / `EXPLORE_END` | | `Live` 深历史 | |
 | T15 | `Ambient/Observing` | `STILL_ELAPSED` | | `Ambient/Receptive` | |
 | T16 | `Ambient/Receptive` | `USER_INPUT_START` | | `Ambient/Observing` | |
 | T17 | `Attending/Ambient` | `PET_GESTURE` | | *内部* | 不迁叶；L2.react |
-| T18 | `Conversation/*` | `USER_CHAT` | | `Conversation/Listening` | 续写/插话 |
+| T18 | `Conversation/*` | `USER_CHAT` | 非 `working` | `Conversation/Listening` | 续写/插话；工作电平期间插话保持 `Thinking`（`CHAT_ACTIVITY` 同） |
 | T19 | `On` | `SHUTDOWN` | | `Off` | |
 | T20 | `Live`（Ambient/Resting） | `EXPLORE_START` | L1+L2；**互斥** DREAM | `Solitary/Exploring` | 同刻仅一个 Solitary 叶 |
 | T21 | `Solitary/Dreaming` | `EXPLORE_START` | | —（忽略或排队） | dream 优先占道 |
 
 **挂载原则**：能写在 `Live` 的不写到叶；叶只留互斥差异。
+
+**工作电平（`busy` = `working`）**：`BUSY(true/false)` 是电平不是边沿——`working` 置位期间
+`Thinking` 是「回合工作中」的投影，覆盖多步工具链全程（含工具执行窗口、中插消息/播报）。
+T07 从任一活动态直进，防 `busy(true)` 先于消息事件到达时被吃掉（注入 / proactive / 群 /
+peer 唤醒的回合就是这种到达顺序）。工作串内相位**恒定不跳变**：`DELIVERING_START/END` 在
+`working` 期间不迁相位（T09 取消，播报是表现层事实），`USER_CHAT`/`CHAT_ACTIVITY` 保持
+`Thinking`。
 
 ### 3.6 冲突优先级
 

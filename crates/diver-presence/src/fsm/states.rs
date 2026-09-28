@@ -64,6 +64,9 @@ pub struct Context {
     pub regime: Regime,
     /// 用户输入框焦点/键入中。
     pub user_input_active: bool,
+    /// 工作电平（busy 回压）：Thinking 相位的语义真源——
+    /// 「回合工作中」覆盖多步工具链全程，而非某个事件瞬间。
+    pub working: bool,
     /// 观察静默锚点（最后扰动）。
     pub last_activity_at: u64,
 }
@@ -75,6 +78,7 @@ impl Context {
             booted_at: now,
             regime: Regime::Normal,
             user_input_active: false,
+            working: false,
             last_activity_at: now,
         }
     }

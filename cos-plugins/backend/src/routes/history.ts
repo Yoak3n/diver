@@ -16,6 +16,7 @@ import {
   injectUiLabel,
   isGroupMessage,
   peerSource,
+  stripEventStamp,
   stripGroupMarker,
   stripPeerMarker,
 } from '../interaction.ts'
@@ -141,8 +142,9 @@ export function buildHistoryMessages(
       if (ev.data.source?.kind !== 'human' && injectLabel === null) continue
       if (injectLabel !== null) {
         const isPresence = injectFrom === 'presence'
+        // 剥事件时间戳 + [presence] 章：气泡自带时间，正文只留问候语。
         const content = isPresence
-          ? text.replace(/^\[presence\]\s*/, '').trim() || injectLabel
+          ? stripEventStamp(text).replace(/^\[presence\]\s*/, '').trim() || injectLabel
           : injectLabel
         messages.push({
           id: ev.data.id, kind: 'system',

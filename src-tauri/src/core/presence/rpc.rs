@@ -122,6 +122,10 @@ pub async fn dispatch_inject(base_url: &str, req: &InjectRequest) -> Result<Valu
         "text": req.text,
         "source": { "kind": "plugin", "detail": req.detail },
         "origin": req.source,
+        // 事件时刻随行：事件文本不带时间，模型无法知道事件发生在几点——system prompt
+        // 的「当前时间」是装配时刻，排队延迟消费时与事件时刻脱节。sidecar 收口时把它
+        // 盖进文本首部（cos-plugins/backend routes/chat.ts /api/inject）。
+        "time": diver_presence::types::now_ms(),
     });
     let client = reqwest::Client::new();
     let res = client

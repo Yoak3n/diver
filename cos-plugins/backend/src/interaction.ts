@@ -158,3 +158,26 @@ export function groupNameFromMarker(text: string): string | null {
 export function isGroupMessage(text: string): boolean {
   return text.startsWith('【群聊')
 }
+
+// —— 事件时间戳（已裁决注入的文本盖章）——
+// 为什么必须盖在文本上：事件文本不带时间，模型就无法知道事件发生在几点——system prompt
+// 里的「当前时间」是**装配时刻**，事件经 next-turn 排队延迟消费时两者会脱节。时间戳随文本
+// 进模型上下文；UI 展示经 stripEventStamp 剥掉（气泡自带时间，不重复显示）。
+const EVENT_STAMP = /^\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2})\]\s*/
+
+/** 事件时刻展示文本（本地时区，YYYY-MM-DD HH:mm）。 */
+export function formatEventStamp(time: number): string {
+  const d = new Date(time)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+/** 事件文本盖时间戳：`[2026-09-28 11:31] 原文`；已有旧戳则替换（幂等）。 */
+export function stampEventText(text: string, time: number): string {
+  return `[${formatEventStamp(time)}] ${text.replace(EVENT_STAMP, '')}`
+}
+
+/** 剥掉事件时间戳首部（UI 显示用）；无戳文本原样返回。 */
+export function stripEventStamp(text: string): string {
+  return text.replace(EVENT_STAMP, '')
+}

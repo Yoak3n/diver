@@ -2,11 +2,12 @@
 //!
 //! 参考 SillyTavern 的 TTS 扩展协议（MiMo / MiniMax / 火山），
 //! 不在本地做 SAPI 朗读；播放由 WebView 播放窗口完成。
-//! 播放队列在 `player`（后端 latest-wins），事件推给 pet/main。
+//! 播放队列在 `queue`（纯决策）+ `player`（合成分发编排），事件推给 pet/main。
 
 mod audio_util;
 mod player;
 mod player_types;
+mod queue;
 mod synth;
 mod voices;
 

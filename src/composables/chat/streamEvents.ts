@@ -113,8 +113,9 @@ export function createStreamHandler(deps: Deps) {
           const existing = idx >= 0 ? messages.value[idx] : undefined;
           const existingThinking = existing?.thinking;
           const existingTools = existing?.tools;
+          let completed: ChatMessage | undefined;
           if (idx >= 0) {
-            messages.value[idx] = {
+            completed = {
               id: e.messageId,
               kind: "assistant",
               content: e.content,
@@ -129,11 +130,22 @@ export function createStreamHandler(deps: Deps) {
                 ? { tools: existingTools }
                 : {}),
             };
+            messages.value[idx] = completed;
             stepIdAlias.set(e.turnMessageId, e.messageId);
           } else if (e.content !== "") {
-            upsertMessage({ id: e.messageId, kind: "assistant" as const, content: e.content, origin: e.origin, time: e.time, ...groupFields });
+            completed = {
+              id: e.messageId,
+              kind: "assistant" as const,
+              content: e.content,
+              origin: e.origin,
+              time: e.time,
+              ...groupFields,
+            };
+            upsertMessage(completed);
           }
-          maybeSpeak(messages.value[messages.value.length - 1]);
+          // 朗读「刚完成的这条」而不是「最后一条」：生成期间主动事件/peer/群消息
+          // 随时追加到末尾，读最后一条会被 maybeSpeak 的 kind 守卫静默吞掉。
+          maybeSpeak(completed);
         } else {
           const existing = messages.value.find((m) => m.id === e.messageId);
           const thinking = existing?.thinking;

@@ -8,6 +8,7 @@ import { useRoute, useRouter } from "vue-router";
 import TitleBar from "./components/TitleBar.vue";
 import SetupOverlay from "./components/SetupOverlay.vue";
 import { attachTtsPlayer } from "./tts/player";
+import { hydrateTtsState } from "./composables/useSettings";
 
 const route = useRoute();
 const router = useRouter();
@@ -20,6 +21,8 @@ const isSettings = computed(() => route.name === "settings");
 let detachMainPlayer: (() => void) | null = null;
 onMounted(() => {
   if (isPet.value) return;
+  // 启动喂 TTS 状态：自动朗读读共享 state.ttsEnabled，漏喂则重启后恒 false。
+  void hydrateTtsState();
   void attachTtsPlayer("main").then((d) => {
     detachMainPlayer = d;
   });

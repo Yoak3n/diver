@@ -72,6 +72,7 @@ pub fn generate_handlers() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + 
         delete_group,
         set_instance_pet_model,
         set_instance_auto_read,
+        set_instance_tts_profile,
         get_global_pet_model,
         set_global_pet_model,
         open_instance_pet,

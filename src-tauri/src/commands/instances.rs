@@ -94,6 +94,16 @@ pub fn set_instance_auto_read(
     instances::set_instance_auto_read(&app, &id, auto_read).map_err(err_text)
 }
 
+/// 设置每实例音色档案（`null` = 跟随全局 TTS 配置；自定义即整组钉定）。
+#[tauri::command]
+pub fn set_instance_tts_profile(
+    app: AppHandle,
+    id: String,
+    tts: Option<crate::config::instances::InstanceTtsProfile>,
+) -> Result<InstanceMeta, String> {
+    instances::set_instance_tts_profile(&app, &id, tts).map_err(err_text)
+}
+
 #[tauri::command]
 pub fn list_instance_runtimes(app: AppHandle) -> Vec<crate::core::instance_registry::InstanceRecord> {
     crate::core::instance_registry::list_at(&instances::registry_dir(&app))

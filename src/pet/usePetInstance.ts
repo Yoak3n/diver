@@ -4,7 +4,7 @@
 // 经典单例桌宠不带参数 = 跟随 active 实例（行为不变）；实例桌宠钉定创建时的实例。
 
 import { ref } from "vue";
-import { listInstances } from "../ipc/instances";
+import { listInstances, type InstanceTtsProfile } from "../ipc/instances";
 import { setInstancePetModel as setPetModelIpc } from "../ipc/petInstances";
 
 /** 从 URL hash 解析绑定实例（`#/pet?instance=<id>`）；无参数 = null（跟随 active）。 */
@@ -24,6 +24,10 @@ export function petInstanceFromHash(hash: string): string | null {
 export function usePetInstance() {
   const instanceId = ref<string | null>(petInstanceFromHash(window.location.hash));
   const petModelId = ref<string | null>(null);
+  /** 每实例自动朗读（缺省 true；经典宠无实例绑定，保持 true 跟随全局语义）。 */
+  const autoRead = ref(true);
+  /** 每实例音色档案（null = 跟随全局 TTS 配置）。 */
+  const ttsProfile = ref<InstanceTtsProfile | null>(null);
 
   /** 拉元数据：每实例模型（null = 跟随全局）。可重复调用（定向换装后重读）。 */
   async function loadMeta(): Promise<void> {
@@ -32,6 +36,8 @@ export function usePetInstance() {
       const rows = await listInstances();
       const m = rows.find((r) => r.id === instanceId.value);
       petModelId.value = m?.petModel ?? null;
+      autoRead.value = m?.autoRead ?? true;
+      ttsProfile.value = m?.tts ?? null;
     } catch {
       /* 清单不可得：按未钉定处理（跟随全局） */
     }
@@ -60,5 +66,5 @@ export function usePetInstance() {
     }
   }
 
-  return { instanceId, petModelId, ready, loadMeta, setPetModel };
+  return { instanceId, petModelId, autoRead, ttsProfile, ready, loadMeta, setPetModel };
 }

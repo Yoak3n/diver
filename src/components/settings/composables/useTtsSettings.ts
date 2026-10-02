@@ -12,7 +12,7 @@ import {
 import type { TtsVoice } from "../../../types";
 import { speakMessageText, stopSpeaking } from "../../../tts";
 
-const PROVIDERS = [
+export const PROVIDERS = [
   { id: "mimo", label: "MiMo TTS", needsKey: true },
   { id: "minimax", label: "MiniMax", needsKey: true },
   { id: "volcengine", label: "火山引擎 Agent", needsKey: true },
@@ -158,7 +158,11 @@ export function useTtsSettings(state: Ref<SettingsState>) {
     void persist();
   }
 
-  watch(enabled, () => void persist());
+  watch(enabled, () => {
+    // 开关即刻同步共享状态（自动朗读闸门读 state.ttsEnabled），持久化随后台完成。
+    state.value.ttsEnabled = enabled.value;
+    void persist();
+  });
   watch(voice, () => {
     state.value.ttsVoice = voice.value;
     void persist();

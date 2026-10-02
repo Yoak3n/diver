@@ -8,7 +8,7 @@ import { useInstances } from "../../composables/useInstances";
 import { useInstancePet } from "../../composables/useInstancePet";
 import InstanceRow from "./InstanceRow.vue";
 
-const { instances, loading, error, notice, refresh, create, rename, clearName, toggle, setAutoRead, remove } =
+const { instances, loading, error, notice, refresh, create, rename, clearName, toggle, setAutoRead, setTtsProfile, remove } =
   useInstances();
 
 const newName = ref("");
@@ -128,6 +128,7 @@ function onDelete(inst: InstanceMeta): void {
       @delete="onDelete"
       @toggle="toggle"
       @toggle-auto-read="setAutoRead"
+      @set-tts-profile="setTtsProfile"
       @toggle-pet="togglePet"
       @model-change="onModelChange"
     />

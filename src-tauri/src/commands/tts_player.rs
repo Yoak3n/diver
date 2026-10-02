@@ -3,7 +3,7 @@
 use tauri::ipc::Channel;
 use tauri::{AppHandle, State};
 
-use crate::config::tts::load_config;
+use crate::config::tts::{load_config, TtsVoiceOverride};
 use crate::core::tts::{PlayerKind, TtsPlayer, TtsPlayerEvent};
 
 /// 挂载播放端（pet 优先，main 兜底）。重复 attach 覆盖旧 Channel。
@@ -25,7 +25,8 @@ pub fn tts_detach_player(player: State<'_, TtsPlayer>, kind: String) -> Result<(
     Ok(())
 }
 
-/// 入队朗读（后端队列 latest-wins；force 打断当前）。
+/// 入队朗读（后端队列 latest-wins；force 打断当前）。`tts` = 每实例音色覆盖。
+/// `message_id` = 来源消息 id，自动朗读跨窗口去重键（force / 手动朗读不去重）。
 #[tauri::command]
 pub async fn tts_speak(
     app: AppHandle,
@@ -33,9 +34,11 @@ pub async fn tts_speak(
     text: String,
     voice: Option<String>,
     force: Option<bool>,
+    tts: Option<TtsVoiceOverride>,
+    message_id: Option<String>,
 ) -> Result<(), String> {
     let cfg = load_config(&app);
-    player.speak(cfg, text, voice, force.unwrap_or(false))
+    player.speak(cfg, text, voice, tts, force.unwrap_or(false), message_id)
 }
 
 #[tauri::command]

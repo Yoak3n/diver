@@ -138,6 +138,22 @@ pub fn set_instance_auto_read(
     }
 }
 
+/// 设置每实例音色档案并落盘（`None` = 跟随全局 TTS 配置）。
+pub fn set_instance_tts_profile(
+    app: &AppHandle,
+    id: &str,
+    tts: Option<InstanceTtsProfile>,
+) -> Result<InstanceMeta, InstanceError> {
+    let base = config_dir(app);
+    let mut reg = load_or_seed_at(&base, now_secs());
+    let meta = reg.set_tts_profile(id, tts)?;
+    if save_config_at(&base, &reg) {
+        Ok(meta)
+    } else {
+        Err(InstanceError::Io)
+    }
+}
+
 /// 删除实例并落盘（`default` 拒绝）。
 pub fn delete_instance(app: &AppHandle, id: &str) -> Result<(), InstanceError> {
     let base = config_dir(app);

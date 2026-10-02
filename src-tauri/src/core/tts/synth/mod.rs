@@ -9,3 +9,4 @@ mod volcengine;
 
 pub use compose::{resolve_stream_voice, synthesize, synthesize_from_config};
 pub use mimo::synthesize_mimo_stream;
+pub use volcengine::synthesize_volcengine_stream;

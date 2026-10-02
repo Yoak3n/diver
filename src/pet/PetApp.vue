@@ -36,7 +36,11 @@ const {
   addAttachments, removeAttachment, connect, send, startAutoRefresh,
   pendingQuestion, submitQuestionAnswer,
   historyHasMore, loadingOlder, loadOlder,
-} = usePetChat(() => petInstance.instanceId.value ?? undefined);
+} = usePetChat(
+  () => petInstance.instanceId.value ?? undefined,
+  () => petInstance.autoRead.value,
+  () => petInstance.ttsProfile.value,
+);
 
 const click = useClickthrough({ getPet: () => petModel.getPet() });
 const bubble = reactive(useSpeechBubble({

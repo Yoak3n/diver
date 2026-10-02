@@ -1,6 +1,6 @@
 //! 实例清单纯逻辑：id 生成 / 校验，登记、改名、删除（无 IO，可单测）。
 
-use super::types::{InstanceError, InstanceMeta, InstancesFile, DEFAULT_ID};
+use super::types::{InstanceError, InstanceMeta, InstanceTtsProfile, InstancesFile, DEFAULT_ID};
 
 /// 校验实例 id：非空、路径安全字符集 `[a-z0-9-]`、不超过 64 字节。
 pub fn is_valid_id(id: &str) -> bool {
@@ -81,6 +81,7 @@ impl InstancesFile {
             avatar: None,
             pet_model: None,
             auto_read: true,
+            tts: None,
             created_at: now,
         };
         self.instances.push(meta.clone());
@@ -143,6 +144,21 @@ impl InstancesFile {
         Ok(inst.clone())
     }
 
+    /// 设置每实例音色档案（`None` = 跟随全局 TTS 配置；自定义即整组钉定）。
+    pub fn set_tts_profile(
+        &mut self,
+        id: &str,
+        tts: Option<InstanceTtsProfile>,
+    ) -> Result<InstanceMeta, InstanceError> {
+        let inst = self
+            .instances
+            .iter_mut()
+            .find(|i| i.id == id)
+            .ok_or(InstanceError::NotFound)?;
+        inst.tts = tts;
+        Ok(inst.clone())
+    }
+
     /// 删除实例（`default` 双保险不可删；数据目录清理随 P1 落地）。
     pub fn remove(&mut self, id: &str) -> Result<(), InstanceError> {
         if id == DEFAULT_ID {
@@ -173,6 +189,7 @@ impl InstancesFile {
                 avatar: None,
                 pet_model: None,
                 auto_read: true,
+                tts: None,
                 created_at: now,
             },
         );

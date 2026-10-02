@@ -7,7 +7,7 @@ pub const FILE_NAME: &str = "instances.json";
 /// 保留给零迁移实例的 id，不可删。
 pub const DEFAULT_ID: &str = "default";
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct InstanceMeta {
     /// 不可变实例 id，路径安全字符集 `[a-z0-9-]`。
@@ -28,12 +28,26 @@ pub struct InstanceMeta {
     /// 该实例回复是否自动朗读（自动朗读 = 全局 TTS 总开关 AND 本开关；群聊不朗读）。
     #[serde(default = "default_true")]
     pub auto_read: bool,
+    /// 每实例音色档案（`None` = 跟随全局 TTS 配置；自定义即整组钉定，避免跨提供商模型错配）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tts: Option<InstanceTtsProfile>,
     /// 登记时间（Unix 秒）。
     #[serde(default)]
     pub created_at: u64,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// 每实例音色档案：提供商 / 模型 / 声线 / 语速 / 风格指令整组钉定。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InstanceTtsProfile {
+    pub provider: String,
+    pub model: String,
+    pub voice: String,
+    pub speed: f64,
+    pub style_instruction: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct InstancesFile {
     /// schema 版本，留迁移口。

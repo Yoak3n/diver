@@ -3,17 +3,23 @@
 import type { Ref } from "vue";
 import type { ChatMessage } from "../../types";
 import { speakMessageText } from "../../tts";
+import type { TtsSpeakSpec } from "../../tts/queue";
+
+/** TTS 源的声线：字符串 = 全局声线；对象 = 每实例音色覆盖。 */
+export type TtsSourceVoice = string | TtsSpeakSpec;
 
 export function createTtsBridge() {
-  let ttsSource: (() => { enabled: boolean; voice: string } | null) | null = null;
+  let ttsSource: (() => { enabled: boolean; voice: TtsSourceVoice } | null) | null = null;
 
-  function setTtsSource(fn: () => { enabled: boolean; voice: string } | null): void {
+  function setTtsSource(fn: () => { enabled: boolean; voice: TtsSourceVoice } | null): void {
     ttsSource = fn;
   }
 
   async function maybeSpeak(msg?: ChatMessage) {
     if (!msg || msg.kind !== "assistant" || msg.streaming) return;
     if (msg.fromHistory) return;
+    // 群消息不自动朗读（产品定案）：群发言随成员会话流回，带 group 标的一律不读。
+    if (msg.group) return;
     const tts = ttsSource?.();
     if (!tts?.enabled || !msg.content.trim()) return;
     try {

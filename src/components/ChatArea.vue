@@ -3,6 +3,7 @@ import { onBeforeUnmount, onMounted, ref, watch } from "vue";
 import type { ChatMessage, ToolActivity, UserQuestion, UserQuestionAnswerItem } from "../types";
 import { tauriAvailable } from "../tauri";
 import { onTtsSpeakingChange, speakMessageText, stopSpeaking } from "../tts";
+import type { TtsSpeakSpec } from "../tts/queue";
 import MessageBubble from "./MessageBubble.vue";
 import ActivitySummary from "./ActivitySummary.vue";
 import WelcomeCard from "./WelcomeCard.vue";
@@ -21,7 +22,7 @@ const props = withDefaults(
     healthOk: boolean;
     modelConfigured: boolean;
     ttsEnabled: boolean;
-    ttsVoice: string;
+    ttsVoice: string | TtsSpeakSpec;
     pendingQuestion: { requestId: string; questions: UserQuestion[] } | null;
     /** 视图语境：群聊视图 true——他方实例发言靠左、名字在气泡上方；私聊 false */
     groupView?: boolean;

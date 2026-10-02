@@ -18,8 +18,19 @@ export interface InstanceMeta {
   petModel: string | null;
   /** 该实例回复是否自动朗读（自动朗读 = 全局 TTS 总开关 AND 本开关；群聊不朗读） */
   autoRead: boolean;
+  /** 每实例音色档案；null = 跟随全局 TTS 配置（自定义即整组钉定） */
+  tts?: InstanceTtsProfile | null;
   /** 登记时间（Unix 秒） */
   createdAt: number;
+}
+
+/** 每实例音色档案：提供商 / 模型 / 声线 / 语速 / 风格指令整组钉定。 */
+export interface InstanceTtsProfile {
+  provider: string;
+  model: string;
+  voice: string;
+  speed: number;
+  styleInstruction: string;
 }
 
 /** 列出全部实例（首次访问自动登记 default，未命名）。 */
@@ -47,6 +58,14 @@ export function updateInstance(
 /** 设置每实例自动朗读开关（自动朗读 = 全局 TTS 总开关 AND 本开关）。 */
 export function setInstanceAutoRead(id: string, autoRead: boolean): Promise<InstanceMeta> {
   return invoke<InstanceMeta>("set_instance_auto_read", { id, autoRead });
+}
+
+/** 设置每实例音色档案（null = 跟随全局 TTS 配置；自定义即整组钉定）。 */
+export function setInstanceTtsProfile(
+  id: string,
+  tts: InstanceTtsProfile | null,
+): Promise<InstanceMeta> {
+  return invoke<InstanceMeta>("set_instance_tts_profile", { id, tts });
 }
 
 /** 清空名字（仅设置面板手动）：双写清空人格卡片 + 清单，真回到未命名。 */

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import type { ChatMessage } from "../types";
+import type { TtsSpeakSpec } from "../tts/queue";
 import ThinkingBlock from "./ThinkingBlock.vue";
 import MessageToolRecords from "./MessageToolRecords.vue";
 import AssistantAvatar from "./AssistantAvatar.vue";
@@ -10,7 +11,7 @@ import { isImagePlaceholder } from "../composables/chat/echo";
 const props = withDefaults(
   defineProps<{
     msg: ChatMessage;
-    ttsVoice: string;
+    ttsVoice: string | TtsSpeakSpec;
     tauri: boolean;
     /** 视图语境：群聊视图 = true（他方实例发言靠左、名字在气泡上方）；私聊 = false（与用户消息同侧靠右） */
     groupView?: boolean;

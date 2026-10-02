@@ -5,7 +5,8 @@ import { computed, watch } from "vue";
 import { useRouter } from "vue-router";
 import { useChat } from "../../composables/chat";
 import { useInstances } from "../../composables/useInstances";
-import { useSettings } from "../../composables/useSettings";
+import { hydrateTtsState, useSettings } from "../../composables/useSettings";
+import { ttsSpeakSpecOf } from "../../tts/queue";
 import { setChrome } from "../../composables/useChrome";
 import { filesToAttachments } from "../../imageAttach";
 import type { ChatMessage } from "../../types";
@@ -46,14 +47,25 @@ const composer = computed({
 // TTS 源（开关/语音）由设置状态持有；每个会话建立时注入。
 // 自动朗读 = 全局 TTS 总开关 AND 该实例的 autoRead（instances.json，实例页配置）；
 // 清单未加载时兜底 true 保持旧行为。
+// 手动/自动朗读共用的声线：实例音色档案钉定时整组覆盖，null = 跟随全局声线。
+const ttsSpeakVoice = computed(() => {
+  const meta = instancesState.instances.value.find((m) => m.id === props.instanceId);
+  return ttsSpeakSpecOf(meta?.tts ?? null) ?? state.ttsVoice;
+});
+
 watch(
   chat,
   (c) => {
+    // 绑源前补喂 TTS 共享状态：启动喂值失败时进本视图即补齐，闸门不欠喂值。
+    void hydrateTtsState();
+    // 源绑「本池实例」快照，不能在说话时活读 props.instanceId：会话池进程级常驻，
+    // 切到别的实例后旧池照样收流自动朗读，活绑会把旧池的回复读成当前实例的音色
+    // （两实例互相对话时音色串台）。
+    const poolId = props.instanceId;
+    const metaOf = () => instancesState.instances.value.find((m) => m.id === poolId);
     c.setTtsSource(() => ({
-      enabled:
-        state.ttsEnabled &&
-        (instancesState.instances.value.find((m) => m.id === props.instanceId)?.autoRead ?? true),
-      voice: state.ttsVoice,
+      enabled: state.ttsEnabled && (metaOf()?.autoRead ?? true),
+      voice: ttsSpeakSpecOf(metaOf()?.tts ?? null) ?? state.ttsVoice,
     }));
   },
   { immediate: true },
@@ -138,7 +150,7 @@ function openSettings() {
       :health-ok="!!healthInfo?.ok"
       :model-configured="modelConfigured"
       :tts-enabled="state.ttsEnabled"
-      :tts-voice="state.ttsVoice"
+      :tts-voice="ttsSpeakVoice"
       :pending-question="pendingQuestion"
       :has-more-history="chat.historyHasMore.value"
       :loading-older="chat.loadingOlder.value"

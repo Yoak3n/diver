@@ -8,6 +8,8 @@ import type { PetChatState } from "./state";
 export interface EventHooks {
   /** sidecar 就绪信号到达时补拉历史（幂等，实现见 io.ts）。 */
   loadHistory: () => Promise<void>;
+  /** 回复定稿时自动朗读（注入 ttsBridge.maybeSpeak；纯逻辑层不碰 TTS）。 */
+  maybeSpeak?: (msg: ChatMessage) => void;
 }
 
 /** 流事件处理：状态归本函数，副作用只经 hooks。 */
@@ -72,6 +74,13 @@ export function createEventHandler(state: PetChatState, hooks: EventHooks) {
             time: e.time,
           });
         } else if (e.turnMessageId) {
+          const groupFields = e.group
+            ? {
+                group: true,
+                groupId: e.groupId,
+                ...(e.groupName !== undefined ? { groupName: e.groupName } : {}),
+              }
+            : {};
           const idx = messages.value.findIndex((m) => m.id === e.turnMessageId);
           if (idx >= 0) {
             const next = {
@@ -81,17 +90,38 @@ export function createEventHandler(state: PetChatState, hooks: EventHooks) {
               origin: e.origin,
               time: e.time,
               streaming: false,
+              ...groupFields,
             };
             // 定稿后无正文无图：撤掉流式占位，避免留下空气泡
             if (!hasVisibleMessageBody(next)) messages.value.splice(idx, 1);
-            else messages.value[idx] = next;
+            else {
+              messages.value[idx] = next;
+              hooks.maybeSpeak?.(next);
+            }
           } else if (e.content !== "") {
-            push({ id: e.messageId, kind: "assistant", content: e.content, origin: e.origin, time: e.time });
+            const msg = {
+              id: e.messageId,
+              kind: "assistant" as const,
+              content: e.content,
+              origin: e.origin,
+              time: e.time,
+              ...groupFields,
+            };
+            push(msg);
+            hooks.maybeSpeak?.(msg);
           }
         } else {
           // 无占位消息的最终消息：跳过空内容（纯工具步骤等），避免空气泡
           if (e.content === "") break;
-          push({ id: e.messageId, kind: "assistant", content: e.content, origin: e.origin, time: e.time });
+          const msg = {
+            id: e.messageId,
+            kind: "assistant" as const,
+            content: e.content,
+            origin: e.origin,
+            time: e.time,
+          };
+          push(msg);
+          hooks.maybeSpeak?.(msg);
         }
         break;
       case "chunk": {

@@ -103,6 +103,6 @@ pub fn list_models(provider: TtsProvider) -> Vec<String> {
             "speech-01".into(),
             "speech-01-240228".into(),
         ],
-        TtsProvider::Volcengine => Vec::new(),
+        TtsProvider::Volcengine => vec!["seed-tts-2.0".into(), "seed-tts-1.0".into()],
     }
 }

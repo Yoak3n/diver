@@ -10,9 +10,11 @@ import {
   deleteInstance,
   listInstances,
   setInstanceAutoRead,
+  setInstanceTtsProfile,
   tauriAvailable,
   updateInstance,
   type InstanceMeta,
+  type InstanceTtsProfile,
 } from "../tauri";
 
 const instances = ref<InstanceMeta[]>([]);
@@ -113,6 +115,21 @@ async function setAutoRead(id: string, autoRead: boolean): Promise<boolean> {
   }
 }
 
+/** 每实例音色档案（null = 跟随全局 TTS 配置；自定义即整组钉定）。 */
+async function setTtsProfile(id: string, tts: InstanceTtsProfile | null): Promise<boolean> {
+  error.value = "";
+  try {
+    const meta = await setInstanceTtsProfile(id, tts);
+    const inst = instances.value.find((x) => x.id === id);
+    if (inst) inst.tts = meta.tts ?? null;
+    return true;
+  } catch (err) {
+    fail(err, "保存失败");
+    await refresh();
+    return false;
+  }
+}
+
 /** 删除实例（default 命令层拒绝；数据目录清理随 P1 落地）。 */
 async function remove(id: string): Promise<boolean> {
   notice.value = "";
@@ -128,5 +145,5 @@ async function remove(id: string): Promise<boolean> {
 }
 
 export function useInstances() {
-  return { instances, loading, error, notice, refresh, create, rename, clearName, toggle, setAutoRead, remove };
+  return { instances, loading, error, notice, refresh, create, rename, clearName, toggle, setAutoRead, setTtsProfile, remove };
 }

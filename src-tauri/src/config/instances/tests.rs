@@ -130,6 +130,28 @@ fn set_auto_read_toggles_per_instance() {
 }
 
 #[test]
+fn set_tts_profile_pins_and_clears() {
+    let mut reg = InstancesFile::default();
+    let echo = reg.create(Some("Echo"), 1).unwrap();
+    assert_eq!(echo.tts, None); // 缺省跟随全局
+    let profile = InstanceTtsProfile {
+        provider: "minimax".into(),
+        model: "speech-02-hd".into(),
+        voice: "茉莉".into(),
+        speed: 1.1,
+        style_instruction: "温柔".into(),
+    };
+    let pinned = reg.set_tts_profile(&echo.id, Some(profile.clone())).unwrap();
+    assert_eq!(pinned.tts, Some(profile));
+    let cleared = reg.set_tts_profile(&echo.id, None).unwrap();
+    assert_eq!(cleared.tts, None);
+    assert_eq!(
+        reg.set_tts_profile("nope", None),
+        Err(InstanceError::NotFound)
+    );
+}
+
+#[test]
 fn legacy_json_without_new_fields_parses() {
     // 旧/最小形态：只有 id，其余字段走 serde 默认（name 缺省 = 未命名）
     let json = r#"{"schemaVersion":1,"instances":[{"id":"default"}]}"#;
@@ -138,6 +160,7 @@ fn legacy_json_without_new_fields_parses() {
     assert!(reg.instances[0].auto_read);
     assert_eq!(reg.instances[0].name, None);
     assert_eq!(reg.instances[0].avatar, None);
+    assert_eq!(reg.instances[0].tts, None);
     assert_eq!(reg.instances[0].created_at, 0);
 }
 

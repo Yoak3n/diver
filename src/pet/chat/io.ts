@@ -5,7 +5,7 @@ import type { ChatImage, UserQuestionAnswerItem } from "../../types";
 import { onTauriEvent, tauriAvailable, waitForSidecarReady } from "../../tauri";
 import { hasVisibleMessageBody } from "../../markdown";
 import { mergeHistoryIntoPool } from "../../composables/chat/reconcile";
-import { createEventHandler } from "./events";
+import { createEventHandler, type EventHooks } from "./events";
 import type { PetChatState } from "./state";
 
 /** 打开时只加载最近几轮对话（与主窗口一致，更早的懒加载）。 */
@@ -25,7 +25,11 @@ export interface PetChatIo {
   dispose: () => void;
 }
 
-export function createPetChatIo(state: PetChatState, getInstanceId?: () => string | undefined): PetChatIo {
+export function createPetChatIo(
+  state: PetChatState,
+  getInstanceId?: () => string | undefined,
+  maybeSpeak?: EventHooks["maybeSpeak"],
+): PetChatIo {
   const { messages, busy, connected, error, composer, attachments, ttsEnabled, ttsVoice, pendingQuestion, historyHasMore, loadingOlder, isReady, push, clearAttachments } = state;
 
   let closeStream: (() => void) | null = null;
@@ -84,7 +88,7 @@ export function createPetChatIo(state: PetChatState, getInstanceId?: () => strin
     }
   }
 
-  const handleEvent = createEventHandler(state, { loadHistory });
+  const handleEvent = createEventHandler(state, { loadHistory, maybeSpeak });
 
   function openStream() {
     closeStream?.();

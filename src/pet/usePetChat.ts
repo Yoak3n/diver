@@ -3,10 +3,26 @@
 import { onBeforeUnmount } from "vue";
 import { createPetChatState } from "./chat/state";
 import { createPetChatIo } from "./chat/io";
+import { createTtsBridge } from "../composables/chat/ttsBridge";
+import { useSettings } from "../composables/useSettings";
+import { ttsSpeakSpecOf } from "../tts/queue";
+import type { InstanceTtsProfile } from "../ipc/instances";
 
-export function usePetChat(getInstanceId?: () => string | undefined) {
+export function usePetChat(
+  getInstanceId?: () => string | undefined,
+  getAutoRead?: () => boolean,
+  getTtsProfile?: () => InstanceTtsProfile | null,
+) {
   const state = createPetChatState();
-  const io = createPetChatIo(state, getInstanceId);
+  // 自动朗读与主窗私聊同语义：全局 TTS 总开关 AND 实例 autoRead；
+  // 群消息由 maybeSpeak 的 group 守卫拒读；音色随实例档案覆盖（null = 跟随全局声线）。
+  const { state: settingsState } = useSettings();
+  const tts = createTtsBridge();
+  tts.setTtsSource(() => ({
+    enabled: settingsState.ttsEnabled && (getAutoRead?.() ?? true),
+    voice: ttsSpeakSpecOf(getTtsProfile?.() ?? null) ?? settingsState.ttsVoice,
+  }));
+  const io = createPetChatIo(state, getInstanceId, tts.maybeSpeak);
 
   onBeforeUnmount(() => {
     state.clearAttachments();

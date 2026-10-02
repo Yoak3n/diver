@@ -20,9 +20,9 @@ const isSettings = computed(() => route.name === "settings");
 // 主窗口挂兜底播放器（桌宠 attach 后优先走 pet）
 let detachMainPlayer: (() => void) | null = null;
 onMounted(() => {
-  if (isPet.value) return;
-  // 启动喂 TTS 状态：自动朗读读共享 state.ttsEnabled，漏喂则重启后恒 false。
+  // 喂共享 TTS 状态：主窗私聊与桌宠聊天面板的自动朗读闸门都读它，桌宠窗也要喂。
   void hydrateTtsState();
+  if (isPet.value) return;
   void attachTtsPlayer("main").then((d) => {
     detachMainPlayer = d;
   });

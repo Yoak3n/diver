@@ -1,9 +1,11 @@
 <script setup lang="ts">
 // 设置页「实例」页 · 单实例卡片行（头像 / 改名编辑态 / 桌宠模型槽 / 启用 / 自动朗读 / 动作）。
 // 纯展示 + 事件上抛：改名态由父级持有（保存失败保留编辑），管理动作的确认与 IPC 在父级。
-import { tauriAvailable, type InstanceMeta } from "../../tauri";
+import { ref } from "vue";
+import { tauriAvailable, type InstanceMeta, type InstanceTtsProfile } from "../../tauri";
 import type { PetModelProfile } from "../../pet/models";
 import InstanceAvatar from "./children/InstanceAvatar.vue";
+import InstanceTtsPanel from "./children/InstanceTtsPanel.vue";
 
 defineProps<{
   inst: InstanceMeta;
@@ -19,6 +21,9 @@ defineProps<{
 
 const editingName = defineModel<string>("editingName", { default: "" });
 
+/** 音色面板展开态。 */
+const ttsOpen = ref(false);
+
 const emit = defineEmits<{
   startRename: [inst: InstanceMeta];
   cancelRename: [];
@@ -29,6 +34,7 @@ const emit = defineEmits<{
   toggleAutoRead: [id: string, autoRead: boolean];
   togglePet: [inst: InstanceMeta];
   modelChange: [inst: InstanceMeta, value: string];
+  setTtsProfile: [id: string, tts: InstanceTtsProfile | null];
 }>();
 
 /** 展示名：未命名时回退占位（名字通常由人格卡片在聊天后回填）。 */
@@ -104,6 +110,9 @@ function formatDate(unix: number): string {
         {{ petActive ? "收起桌宠" : "召唤桌宠" }}
       </button>
       <button class="btn small" :disabled="!tauriAvailable()" @click="emit('startRename', inst)">改名</button>
+      <button class="btn small" :disabled="!tauriAvailable()" @click="ttsOpen = !ttsOpen">
+        {{ ttsOpen ? "收起音色" : "音色" }}
+      </button>
       <button
         v-if="inst.name"
         class="btn small"
@@ -120,12 +129,18 @@ function formatDate(unix: number): string {
         删除
       </button>
     </template>
+    <InstanceTtsPanel
+      v-if="ttsOpen"
+      :inst="inst"
+      @save="(p) => emit('setTtsProfile', inst.id, p)"
+    />
   </div>
 </template>
 
 <style scoped>
 .instance-card {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 12px;
   padding: 10px 12px;

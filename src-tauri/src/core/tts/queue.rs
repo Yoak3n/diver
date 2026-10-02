@@ -1,10 +1,28 @@
 //! 播放队列决策（纯逻辑，无 IO / 无 Tauri，便于单测）。
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+use std::collections::HashMap;
+
+/// 自动朗读去重 TTL（与前端 spoken.ts 同语义）。
+pub(super) const SPOKEN_TTL_MS: u64 = 60_000;
+
+/// 朗读去重键：优先消息 id（同一条只读一遍），无 id 回退正文（压空白 + 截 300 字）。
+pub(super) fn speech_key(message_id: Option<&str>, text: &str) -> String {
+    match message_id {
+        Some(id) if !id.trim().is_empty() => format!("msg:{}", id.trim()),
+        _ => {
+            let flat = text.split_whitespace().collect::<Vec<_>>().join(" ");
+            format!("text:{}", flat.chars().take(300).collect::<String>())
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub(super) struct Job {
     pub(super) request_id: String,
     pub(super) text: String,
     pub(super) voice: Option<String>,
+    /// 每实例音色覆盖（`None` = 跟随全局 TTS 配置）。
+    pub(super) tts: Option<crate::config::tts::TtsVoiceOverride>,
 }
 
 /// 队列决策（纯逻辑，便于单测）。
@@ -14,9 +32,26 @@ pub(super) struct QueueState {
     generation: u64,
     drain_running: bool,
     wait_id: Option<String>,
+    /// 自动朗读认领记录：去重键 → 认领时刻（跨窗口同一条只读一遍）。
+    spoken: HashMap<String, u64>,
 }
 
 impl QueueState {
+    /// 自动朗读认领：同键在 TTL 内只放行一次。
+    ///
+    /// 前端 `claimSpeech` 是**每 WebView 独立**的 map，主窗与桌宠同时监听同一
+    /// SSE 流时各认领一次、各发一次 tts_speak，同一条会被读两遍——权威认领
+    /// 必须落在共享的播放队列（本进程）上。`now_ms` 由调用方注入，便于单测。
+    pub(super) fn claim(&mut self, key: &str, now_ms: u64) -> bool {
+        self.spoken
+            .retain(|_, at| now_ms.saturating_sub(*at) < SPOKEN_TTL_MS);
+        if self.spoken.contains_key(key) {
+            return false;
+        }
+        self.spoken.insert(key.to_string(), now_ms);
+        true
+    }
+
     /// 入队：force 清待播语义（生成号 +1 打断当前）；默认 latest-wins。
     /// 返回 (generation, 是否需要启动 drain)。
     pub(super) fn enqueue(&mut self, job: Job, force: bool) -> (u64, bool) {
@@ -76,6 +111,7 @@ mod tests {
             request_id: id.into(),
             text: "hi".into(),
             voice: None,
+            tts: None,
         }
     }
 
@@ -114,5 +150,35 @@ mod tests {
         q.enqueue(job("a"), false);
         q.stop();
         assert!(q.take_pending().is_none());
+    }
+
+    #[test]
+    fn claim_same_key_only_once_within_ttl() {
+        let mut q = QueueState::default();
+        assert!(q.claim("msg:a", 1_000));
+        assert!(!q.claim("msg:a", 2_000));
+        assert!(q.claim("msg:b", 2_000));
+    }
+
+    #[test]
+    fn claim_reexpires_after_ttl() {
+        let mut q = QueueState::default();
+        assert!(q.claim("msg:a", 1_000));
+        assert!(!q.claim("msg:a", 1_000 + SPOKEN_TTL_MS - 1));
+        assert!(q.claim("msg:a", 1_000 + SPOKEN_TTL_MS));
+    }
+
+    #[test]
+    fn speech_key_prefers_message_id() {
+        assert_eq!(speech_key(Some("abc"), "hi"), "msg:abc");
+        assert_eq!(speech_key(Some("  abc  "), "hi"), "msg:abc");
+        assert_eq!(speech_key(Some(""), "hi"), "text:hi");
+        assert_eq!(speech_key(None, "  a \n\t b  "), "text:a b");
+    }
+
+    #[test]
+    fn speech_key_text_fallback_truncates() {
+        let long = "字".repeat(400);
+        assert_eq!(speech_key(None, &long).chars().count(), "text:".chars().count() + 300);
     }
 }

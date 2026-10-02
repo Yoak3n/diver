@@ -12,8 +12,8 @@ export type ChatState = ReturnType<typeof createChatState>;
 
 /** 打开时只加载最近几轮对话（用户拍板：最后一两轮，更早的懒加载）。 */
 const INITIAL_ROUNDS = 2;
-/** 上翻懒加载的单块条数。 */
-const OLDER_CHUNK_LIMIT = 60;
+/** 上翻懒加载的单段条数（用户拍板 2026-09-29：加载更多要分段给，不能一次铺完剩余）。 */
+const OLDER_CHUNK_LIMIT = 20;
 
 export function createChatTransport(state: ChatState, instanceId: string) {
   let closeStream: (() => void) | null = null;

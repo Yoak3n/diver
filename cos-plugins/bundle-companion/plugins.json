@@ -38,7 +38,7 @@
       "id": "delegate",
       "packageName": "@diver/delegate",
       "displayName": "任务委派",
-      "description": "delegate_task / list_tasks / cancel_task（壳层监督 coding agent）",
+      "description": "delegate_task / list_tasks / cancel_task / get_task_events（壳层监督 coding agent，多通道取消息）",
       "toggleable": true,
       "defaultEnabled": true
     },

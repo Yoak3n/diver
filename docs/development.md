@@ -43,9 +43,9 @@ diver/
 │  ├─ src/commands/        # Tauri IPC 薄适配（system/plugins/shortcuts/tts/tts_player/presence/pet/instances/avatar/groups/config_cmds）
 │  ├─ src/app/             # 组装与生命周期（setup/{handlers,service,sidecar_boot} / events / handle / state / tray / shortcut/{manager,action}）
 │  ├─ src/shell/           # 窗口与桌面集成（window/{manager,pet} / webview_args（WebView2 参数构造） / displays（显示器 canonical 编号） / lightweight / pet_mouse / notify / cursor）
-│  ├─ src/core/            # 可单测业务（sidecar/{process,lifecycle,ports,runtimes,shutdown,reclaim} / instance_registry / delegate（任务委派监督：rpc/manager/notify/supervise…）/ explore_policy（Explore 壳调度：driver/jobs/rpc）/ tts/{synth,player,queue} / node_runtime / pet_interaction / pet_models / setup_extract/{read,extract} / setup_progress / timer / presence…）
+│  ├─ src/core/            # 可单测业务（sidecar/{process,lifecycle,ports,runtimes,shutdown,reclaim} / instance_registry / delegate（任务委派监督：rpc/manager/notify/supervise/events…）/ explore_policy（Explore 壳调度：driver/jobs/rpc）/ tts/{synth,player,queue} / node_runtime / pet_interaction / pet_models / setup_extract/{read,extract} / setup_progress / timer / presence…）
 │  ├─ src/plugins/         # 插件 catalog/profile/preflight/{registry,package,install,uninstall}
-│  ├─ src/config/          # 持久化配置（window_startup / instances / groups / tasks / delegate / avatar / pet_model（全局模型真源） / pet_window / tts→config_dir/tts.json / mcp / shortcuts / profile…）
+│  ├─ src/config/          # 持久化配置（window_startup / instances / groups / tasks / delegate+delegate_overlay / avatar / pet_model（全局模型真源） / pet_window / tts→config_dir/tts.json / mcp / shortcuts / profile…）
 │  ├─ src/services/        # 本地服务：axum /rpc（server/rpc/auth/state）+ 领域 handler（memory/{dispatch,params,card_name} / peer / groups/{rpc,list,say,ops,body} / groups_manage / presence / grep / screenshot / registry；notify 经注入闭包）
 ├─ crates/diver-geom/     # 桌宠几何纯函数（config/shell/core 共用）
 ├─ crates/diver-memory/    # Rust 记忆后端 crate（SQLite 存储 + 确定性逻辑）

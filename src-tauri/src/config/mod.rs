@@ -10,6 +10,7 @@
 
 pub mod avatar;
 pub mod delegate;
+pub mod delegate_overlay;
 pub mod groups;
 pub mod instances;
 pub mod mcp;

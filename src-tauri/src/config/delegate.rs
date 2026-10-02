@@ -58,7 +58,7 @@ fn default_schema_version() -> u32 {
 }
 
 /// 出厂适配器表：dsh 首发启用（拍板 2026-09-27）；codex/claude 备位。
-fn seeded() -> DelegateConfig {
+fn seeded(overlay: &Path) -> DelegateConfig {
     let mut agents = std::collections::BTreeMap::new();
     agents.insert(
         "dsh".to_string(),
@@ -67,7 +67,7 @@ fn seeded() -> DelegateConfig {
             // Desktop → 捆绑 CLI 直启；见 core::delegate::resolve）。
             // 用户把首项换成任何明确启动形式（node+bin.js / pnpm --dir /
             // 绝对路径 shim）即视为显式指定，探测跳过。
-            argv: dsh_argv(),
+            argv: dsh_argv(overlay),
             enabled: true,
             text_via: TextVia::Stdin,
         },
@@ -97,19 +97,27 @@ fn seeded() -> DelegateConfig {
     }
 }
 
-/// dsh 首发参数（平台无关：`-` = 从 stdin 读任务正文）。
-fn dsh_argv() -> Vec<String> {
-    ["dsh", "--profile", "headless", "--json", "-"]
-        .iter()
-        .map(|s| s.to_string())
-        .collect()
+/// dsh 首发参数（平台无关）：`--patch` 挂模型路由 overlay（provider 直选 +
+/// 禁 deepseek 官方，见 `delegate_overlay`）；`-` = 从 stdin 读任务正文。
+fn dsh_argv(overlay: &Path) -> Vec<String> {
+    [
+        "dsh".to_string(),
+        "--profile".to_string(),
+        "headless".to_string(),
+        "--patch".to_string(),
+        overlay.to_string_lossy().into_owned(),
+        "--json".to_string(),
+        "-".to_string(),
+    ]
+    .to_vec()
 }
 
-/// 读取适配器表；缺文件/空表时播种出厂表（幂等）。
+/// 读取适配器表；缺文件/空表时播种出厂表（幂等），并确保 overlay 已就位。
 pub fn load_or_seed_at(base: &Path) -> DelegateConfig {
     let cfg: DelegateConfig = load_at(base, FILE_NAME);
     if cfg.agents.is_empty() {
-        let seed = seeded();
+        let overlay = super::delegate_overlay::ensure_at(base);
+        let seed = seeded(&overlay);
         save_at(base, FILE_NAME, &seed);
         seed
     } else {
@@ -151,9 +159,13 @@ fn names(agents: &std::collections::BTreeMap<String, AgentAdapter>) -> String {
 mod tests {
     use super::*;
 
+    fn overlay() -> &'static Path {
+        Path::new("/tmp/dsh-delegate-overlay.yml")
+    }
+
     #[test]
     fn seed_enables_dsh_only_and_resolves() {
-        let cfg = seeded();
+        let cfg = seeded(overlay());
         assert!(cfg.agents["dsh"].enabled);
         assert!(!cfg.agents["codex"].enabled);
         assert!(!cfg.agents["claude"].enabled);
@@ -167,9 +179,20 @@ mod tests {
 
     #[test]
     fn dsh_argv_reads_task_from_stdin() {
-        let cfg = seeded();
+        let cfg = seeded(overlay());
         assert!(cfg.agents["dsh"].argv.contains(&"-".to_string()));
         assert_eq!(cfg.agents["dsh"].text_via, TextVia::Stdin);
         assert!(cfg.agents["codex"].argv.contains(&"{text}".to_string()));
+    }
+
+    #[test]
+    fn dsh_argv_pins_overlay_patch() {
+        let cfg = seeded(overlay());
+        let argv = &cfg.agents["dsh"].argv;
+        // --patch 必须是启动器旗标（--json 等 app 旗标之前），并指向 overlay。
+        let patch_at = argv.iter().position(|a| a == "--patch").expect("--patch 在 argv 里");
+        let json_at = argv.iter().position(|a| a == "--json").expect("--json 在 argv 里");
+        assert!(patch_at < json_at, "--patch 先于 app 旗标");
+        assert_eq!(argv[patch_at + 1], "/tmp/dsh-delegate-overlay.yml");
     }
 }

@@ -31,6 +31,8 @@ pub fn dispatch_rpc(
         "delegate::spawn" => spawn(paths, instance, params),
         "delegate::list" => list(paths, instance, params),
         "delegate::cancel" => cancel(paths, instance, params),
+        "delegate::output" => output(paths, instance, params),
+        "delegate::events" => events(paths, instance, params),
         other => Err(format!("未知 delegate 方法：{other}")),
     }
 }
@@ -80,7 +82,7 @@ fn spawn(paths: &Paths, instance: &str, params: &Value) -> Result<Value, String>
     let _ = std::fs::create_dir_all(&workspace);
     // argv 首项为裸 `dsh` 时走探测链解析启动前缀（PATH shim → Harness Desktop →
     // 捆绑 CLI 直启）；用户显式填写的其它形式原样使用（兜底）。
-    let (full_argv, spawn_envs) = if resolve::needs_resolution(&adapter.argv) {
+    let (full_argv, mut spawn_envs) = if resolve::needs_resolution(&adapter.argv) {
         let resolved = resolve::resolve()?;
         let mut full = resolved.launcher;
         full.extend(adapter.argv.iter().skip(1).cloned());
@@ -88,6 +90,17 @@ fn spawn(paths: &Paths, instance: &str, params: &Value) -> Result<Value, String>
     } else {
         (adapter.argv.clone(), Vec::new())
     };
+    // provider/model 直选（拍板 2026-09-29）：经环境变量进 overlay 的 !!js 路由，
+    // 派单可按任务指定模型渠道；不传 = overlay 缺省。详见 config::delegate_overlay。
+    for (key, param) in [
+        ("DSH_DELEGATE_PROVIDER", "provider"),
+        ("DSH_DELEGATE_MODEL", "model"),
+    ] {
+        let value = text_param(params, param);
+        if !value.is_empty() {
+            spawn_envs.push((key.to_string(), value));
+        }
+    }
     let mut file = tasks::load_at(&home);
     let record = tasks::create(
         &mut file,
@@ -99,7 +112,14 @@ fn spawn(paths: &Paths, instance: &str, params: &Value) -> Result<Value, String>
     );
     tasks::save_at(&home, &file);
 
-    let proc = match process::spawn(&full_argv, &workspace, &spawn_envs) {
+    // 输出 tee 落盘（通道一）：进程活着能 tail，死了也能完整回看。
+    let tee_dir = home.join("tasks");
+    let _ = std::fs::create_dir_all(&tee_dir);
+    let tee = process::TeePaths {
+        out: tee_dir.join(format!("{}.out", record.id)),
+        err: tee_dir.join(format!("{}.err", record.id)),
+    };
+    let proc = match process::spawn(&full_argv, &workspace, &spawn_envs, &tee) {
         Ok(proc) => proc,
         Err(err) => {
             // spawn 失败留痕（queued → failed），并把失败直接还给工头。
@@ -174,5 +194,75 @@ fn cancel(paths: &Paths, instance: &str, params: &Value) -> Result<Value, String
         }
         Some(t) => Err(format!("任务「{id}」已是终态（{}），无需取消", t.status)),
         None => Err(format!("未找到任务「{id}」")),
+    }
+}
+
+/// 通道一原始读取：tee 落盘的输出（进程活着能 tail，死了也能完整回看）。
+fn output(paths: &Paths, instance: &str, params: &Value) -> Result<Value, String> {
+    let (home, id) = task_home(paths, instance, params)?;
+    let is_err = text_param(params, "stream") == "stderr";
+    let tail_chars = params
+        .get("tail")
+        .and_then(Value::as_u64)
+        .unwrap_or(4_000)
+        .clamp(200, 64_000) as usize;
+    let path = home
+        .join("tasks")
+        .join(format!("{id}.{}", if is_err { "err" } else { "out" }));
+    let text = std::fs::read(&path)
+        .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
+        .unwrap_or_default();
+    let tail = tail_chars_of(&text, tail_chars);
+    Ok(json!({
+        "taskId": id,
+        "stream": if is_err { "stderr" } else { "stdout" },
+        "text": tail,
+        "chars": text.chars().count(),
+    }))
+}
+
+/// 通道一解析：`--json` 事件流摘要（session id、文本、工具调用、终答、失败信号）。
+fn events(paths: &Paths, instance: &str, params: &Value) -> Result<Value, String> {
+    let (home, id) = task_home(paths, instance, params)?;
+    let path = home.join("tasks").join(format!("{id}.out"));
+    let digest = std::fs::File::open(&path)
+        .map(|file| super::events::digest_from_reader(std::io::BufReader::new(file)))
+        .unwrap_or_default();
+    Ok(json!({
+        "taskId": id,
+        "sessionId": digest.session_id,
+        "cwd": digest.cwd,
+        "texts": digest.texts,
+        "toolCalls": digest.tool_calls,
+        "finalText": digest.final_text,
+        "error": digest.error,
+        "turnEndReason": digest.turn_end_reason,
+        "toolErrors": digest.tool_errors,
+    }))
+}
+
+/// 定位任务（读取面也查册，防串任务/防错 id）。
+fn task_home(
+    paths: &Paths,
+    instance: &str,
+    params: &Value,
+) -> Result<(std::path::PathBuf, String), String> {
+    let id = text_param(params, "taskId");
+    if id.is_empty() {
+        return Err("taskId 必填".to_string());
+    }
+    let home = cos_home_for(&paths.data_dir, instance);
+    let file = tasks::load_at(&home);
+    if !file.tasks.iter().any(|t| t.id == id) {
+        return Err(format!("未找到任务「{id}」"));
+    }
+    Ok((home, id))
+}
+
+fn tail_chars_of(text: &str, cap: usize) -> String {
+    if text.chars().count() <= cap {
+        text.to_string()
+    } else {
+        text.chars().skip(text.chars().count() - cap).collect()
     }
 }

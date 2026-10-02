@@ -2,13 +2,22 @@
 //!
 //! Windows 必须把子进程放进 Job Object（KILL_ON_JOB_CLOSE）：dsh 经 cmd shim
 //! 拉起 node，只杀 cmd 外壳杀不到 node 整树——cancel/超时靠 drop Job 句柄整树终止。
+//!
+//! 两管同时 tee 落盘（原始字节，`.out`/`.err`）：内存尾部只为摘要服务，
+//! 落盘文件是「多通道取消息」的通道一——进程死了照样能读（见 `events.rs`）。
 
 use std::io::{Read, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
 
 use crate::core::sidecar::SidecarJob;
+
+/// 输出 tee 落盘路径（`<cos_home>/tasks/<id>.out|.err`）。
+pub struct TeePaths {
+    pub out: PathBuf,
+    pub err: PathBuf,
+}
 
 /// 输出环形尾部：只保留末尾 `cap` 字符（长流任务内存有界）。
 #[derive(Default)]
@@ -73,9 +82,14 @@ impl ChildProc {
     }
 }
 
-/// argv 直启 + 双管后台收集 + 定制 env。`argv[0]` 为程序名（探测链产出的
+/// argv 直启 + 双管后台收集（tee 落盘）+ 定制 env。`argv[0]` 为程序名（探测链产出的
 /// `cmd /C shim`、`node + bin.js`、用户显式命令等形态都直接表达在 argv 里）。
-pub fn spawn(argv: &[String], cwd: &Path, envs: &[(String, String)]) -> Result<ChildProc, String> {
+pub fn spawn(
+    argv: &[String],
+    cwd: &Path,
+    envs: &[(String, String)],
+    tee: &TeePaths,
+) -> Result<ChildProc, String> {
     let (program, args) = argv.split_first().ok_or("适配器 argv 为空")?;
     let mut command = Command::new(program);
     command
@@ -92,8 +106,8 @@ pub fn spawn(argv: &[String], cwd: &Path, envs: &[(String, String)]) -> Result<C
 
     let stdout = Arc::new(Mutex::new(OutputBuf::default()));
     let stderr = Arc::new(Mutex::new(OutputBuf::default()));
-    spawn_reader(child.stdout.take(), Arc::clone(&stdout));
-    spawn_reader(child.stderr.take(), Arc::clone(&stderr));
+    spawn_reader(child.stdout.take(), Arc::clone(&stdout), &tee.out);
+    spawn_reader(child.stderr.take(), Arc::clone(&stderr), &tee.err);
     let stdin = child.stdin.take();
     Ok(ChildProc {
         child,
@@ -104,14 +118,23 @@ pub fn spawn(argv: &[String], cwd: &Path, envs: &[(String, String)]) -> Result<C
     })
 }
 
-fn spawn_reader<R: Read + Send + 'static>(pipe: Option<R>, sink: Arc<Mutex<OutputBuf>>) {
+fn spawn_reader<R: Read + Send + 'static>(pipe: Option<R>, sink: Arc<Mutex<OutputBuf>>, tee: &Path) {
     let Some(mut pipe) = pipe else { return };
+    // tee 打不开只丢通道一，不拦收集（内存尾部仍然可用）。
+    let mut tee_file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(tee)
+        .ok();
     std::thread::spawn(move || {
         let mut buf = [0u8; 4096];
         loop {
             match pipe.read(&mut buf) {
                 Ok(0) | Err(_) => break,
                 Ok(n) => {
+                    if let Some(file) = tee_file.as_mut() {
+                        let _ = file.write_all(&buf[..n]);
+                    }
                     let chunk = String::from_utf8_lossy(&buf[..n]).to_string();
                     if let Ok(mut tail) = sink.lock() {
                         tail.push(&chunk);
@@ -119,5 +142,41 @@ fn spawn_reader<R: Read + Send + 'static>(pipe: Option<R>, sink: Arc<Mutex<Outpu
                 }
             }
         }
+        if let Some(mut file) = tee_file {
+            let _ = file.flush();
+        }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// tee 落盘：子进程输出既进内存尾部，也逐字节落 `.out` 文件（死后可读）。
+    #[cfg(windows)]
+    #[test]
+    fn spawn_tees_output_to_files() {
+        let dir = std::env::temp_dir().join(format!("diver-tee-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let tee = TeePaths {
+            out: dir.join("t.out"),
+            err: dir.join("t.err"),
+        };
+        let argv = ["cmd", "/C", "echo tee-marker-42"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect::<Vec<_>>();
+        let mut proc = spawn(&argv, &dir, &[], &tee).unwrap();
+        let _ = proc.child.wait();
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        let out = std::fs::read_to_string(&tee.out).unwrap();
+        assert!(out.contains("tee-marker-42"), "tee 文件含子进程输出：{out:?}");
+        assert!(lock_text(&proc.stdout).contains("tee-marker-42"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    fn lock_text(buf: &Mutex<OutputBuf>) -> String {
+        buf.lock().map(|b| b.text()).unwrap_or_default()
+    }
 }

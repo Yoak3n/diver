@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Diver task delegation plugin: delegate_task / list_tasks / cancel_task tools bridging the companion agent to shell-side coding-agent supervision (0.2.0).",
+  "description": "Diver task delegation plugin: delegate_task / list_tasks / cancel_task / get_task_events tools + dsh-provider skill, bridging the companion agent to shell-side coding-agent supervision with multi-channel message retrieval (0.2.0).",
   "main": "./src/index.ts",
   "exports": {
     ".": "./src/index.ts"

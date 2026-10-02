@@ -221,7 +221,13 @@ function pickAttachImages() {
       <input
         :value="composer"
         type="text"
-        :placeholder="isReady ? '说点什么吧…（可粘贴图片）' : busy ? '正在思考…' : '连接中…'"
+        :placeholder="
+          isReady
+            ? busy
+              ? '正在思考…（可插话，回车即插队）'
+              : '说点什么吧…（可粘贴图片）'
+            : '连接中…'
+        "
         :disabled="!isReady"
         @input="emit('update:composer', ($event.target as HTMLInputElement).value)"
         @keydown.enter="emit('send')"
@@ -231,7 +237,7 @@ function pickAttachImages() {
         class="send-btn"
         :class="{ busy }"
         :disabled="!canSend"
-        :title="busy ? '正在思考…' : '发送'"
+        :title="busy ? '发送插话（即时生效）' : '发送'"
         @click="emit('send')"
       >
         <svg v-if="!busy" class="send-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">

@@ -46,7 +46,8 @@ export function createPetChatState(): PetChatState {
   const historyHasMore = ref(false);
   const loadingOlder = ref(false);
 
-  const isReady = computed(() => connected.value && !busy.value);
+  // 就绪 = 已连接即可输入/发送；busy 不锁输入——输出中发送走 steer 插话（与主窗口同语义）。
+  const isReady = computed(() => connected.value);
   const canSend = computed(
     () => isReady.value && (composer.value.trim() !== "" || attachments.value.length > 0),
   );

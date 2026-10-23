@@ -494,7 +494,7 @@ Rust crates / services ──POST /rpc──► @diver/native-bridge（internal�
 | `cos-plugins/bundle-companion/plugins.json` | UI catalog |
 | `cos-plugins/bundle-companion/bundle.yml` | `requires` 校验 |
 | `cos-plugins/native-bridge/src/rpc.ts` | 原生 `/rpc` 共享客户端（P5） |
-| `cos-plugins/self-prompt/` | 自改提示词入口（prompts/*.md 热加载 + revise-prompt skill + 可选 restart_agent） |
+| `cos-plugins/self-prompt/` | 自改提示词入口（prompts/*.md 热加载 + list_prompt_slots / revise_prompt 专用工具 + 可选 restart_agent） |
 | `cos-plugins/peer/` | 互实例消息（P2-2）：`send_to_peer` 工具 → 壳消息路由（`peer::send`）→ 对端 `/api/inbox` |
 | `harness/packages/skills/` | `@cos/skills`：skill 目录 + `load_skill` |
 | `src-tauri/src/plugins/mod.rs` | 壳端启停 + preflight + safe 切换 |
@@ -517,6 +517,11 @@ Rust crates / services ──POST /rpc──► @diver/native-bridge（internal�
 | （续） | **P3 完成**：safe profile、active_profile、preflight、补丁 quarantine、自动降级 |
 | （续） | **P4 完成**：profile pnpm 安装/卸载、diver-plugins.json、internal 拒卸、hello-tool 冒烟 |
 | （续） | **P5 完成**：`@diver/native-bridge` 共享 RPC 客户端 + native_status；memory/grep 收口 |
-| （续） | **self-prompt**：`voice` 更名；prompts/*.md **assemble 热加载**（改正文不必重启）+ `@cos/skills`（revise-prompt）+ 保留 `restart_agent` 重启回路 |
+| （续） | **self-prompt**：`voice` 更名；prompts/*.md **assemble 热加载**（改正文不必重启）+ 保留 `restart_agent` 重启回路 |
 | 2026-10-23 | **onebot**：`@diver/onebot` 接入 OneBot 11（正向 WS；群潜水 / 被 @ 必回 / 低概率插话 + 沉默退避）；回合级**工具收权**（`system-prompt/assemble` 过滤 + `tools/pre-execute` 引擎否决闸）与**出站隐私遮蔽**；backend 导出 `ctx.companion` 服务共享陪伴会话 |
 | 2026-10-23 | **onebot 语音**：`tts::synthesize` 壳层 RPC（复用在线 TTS 配置/凭据/总开关）；出话工具 `voice:true` 可选，`voiceMode` 默认 `off`（配了才开），长度/冷却/超时硬门，失败一律降级发文本 |
+| 2026-10-23 | **onebot 边界**：QQ 回合开放 `web_search` / `web_explore` 与作用域记忆 `recall` / `remember`；`web_read`、本机文件/shell/截图/委派/实例消息/MCP 永久硬禁（即使主人 QQ 也不升权）。记忆新增 `owner` / `global` / `group:<id>` / `private:<id>` 作用域：群回合只给本群+global 原文，其他群仅模糊轮廓，owner 不进入群；QQ 回合用浅层安全卡片替换 `memory:relation-card` |
+| 2026-10-23 | **self-prompt 自改**：新增 `list_prompt_slots` / `revise_prompt`——只写 `$COS_HOME/self-prompt/prompts` 覆盖层，slot 白名单 + 32KB 上限，自动 frontmatter，下一拍热加载；OneBot 仅主人发起的回合放行（群/私聊均可），普通群友触发的回合仍关闭，不开放通用 `read` / `write` / `edit` |
+| 2026-10-23 | **self-prompt skill 退役**：删除依赖 `read`/`edit`/`write` 的 `revise-prompt` skill；能力由专用工具承载，order/层次/边界知识折叠进工具描述与 `list_prompt_slots` 的 hint |
+| 2026-10-23 | **onebot 节流与熔断**：私聊限频（每用户每小时唤醒上限 `privateMaxPerHour`，默认 30，0 不限；超额只记缓冲）；`@全体成员` 不再算点名（落普通档，管理员通知不构成必回）；发送失败熔断（连续 3 次失败本地短路出话并让回合停手，5 分钟愈合窗自动恢复） |
+| 2026-10-23 | **onebot 隐私与缓冲**：QQ 安全卡片不再展示主人 QQ 号（仅保留「本条消息是否来自主人」代码判定行，模型无法报出号码）；缓冲体积控制双管——启动扫目录全量截断（群/私聊含旧文件，各留 2000 行）+ 运行期同一文件每累计 500 条追加滚动截断 |

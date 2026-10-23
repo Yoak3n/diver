@@ -233,7 +233,8 @@ const RESERVED = new Set('break case catch class const continue debugger default
 const identOk = (n) => /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(n) && !RESERVED.has(n)
 const relImport = (file) => {
   const f = file.replace(/\\/g, '/')
-  return JSON.stringify(/^[a-zA-Z]:/.test(f) ? f : `./${f}`)
+  // Windows 盘符与 POSIX 根绝对路径 esbuild 都能直接解析；仅相对路径补 ./
+  return JSON.stringify(/^(?:[a-zA-Z]:|\/)/.test(f) ? f : `./${f}`)
 }
 
 /**

@@ -3,15 +3,18 @@
 // 用法：
 //   pnpm pet:fetch
 //   PET_HIYORI_URL=<zip-url> node scripts/pet-fetch.mjs
+//   HTTPS_PROXY=http://127.0.0.1:7890 pnpm pet:fetch   # 自动走代理环境变量
 //
-// 官方示例包体约 4.7MB；仓库不提交模型文件，clone 后执行一次即可。
+// 官方示例 zipball 约 20MB（整个 samples 仓库，Hiyori 单模型约 4.7MB）；
+// 仓库不提交模型文件，clone 后执行一次即可。
 
 import { execFileSync } from 'node:child_process'
-import { createWriteStream, existsSync, mkdirSync, readdirSync, renameSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, renameSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { Readable } from 'node:stream'
-import { pipeline } from 'node:stream/promises'
+
+import { downloadTo } from './lib/download-file.mjs'
+import { proxyUrlFromEnv } from './lib/proxy-fetch.mjs'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
 const TARGET_DIR = join(ROOT, 'public', 'pet', 'models', 'Hiyori')
@@ -39,14 +42,9 @@ rmSync(WORK_DIR, { recursive: true, force: true })
 mkdirSync(WORK_DIR, { recursive: true })
 mkdirSync(EXTRACT_DIR, { recursive: true })
 
-console.log(`[pet:fetch] 下载 ${DEFAULT_URL}`)
+console.log(`[pet:fetch] 下载 ${DEFAULT_URL}${proxyUrlFromEnv() ? `（代理 ${proxyUrlFromEnv()}）` : '（直连）'}`)
 try {
-  const res = await fetch(DEFAULT_URL)
-  if (!res.ok || !res.body) {
-    console.error(`[pet:fetch] 下载失败：HTTP ${res.status}`)
-    process.exit(1)
-  }
-  await pipeline(Readable.fromWeb(res.body), createWriteStream(ZIP))
+  await downloadTo(DEFAULT_URL, ZIP, '[pet:fetch]')
 } catch (err) {
   console.error(`[pet:fetch] 下载失败：${err?.message ?? err}`)
   console.error('[pet:fetch] 可通过 PET_HIYORI_URL 指定其他 zip 地址后重试')
@@ -54,21 +52,26 @@ try {
 }
 
 console.log(`[pet:fetch] 解压 ${ZIP}`)
-try {
-  execFileSync(
-    'powershell.exe',
-    ['-NoProfile', '-Command', `Expand-Archive -LiteralPath '${ZIP}' -DestinationPath '${EXTRACT_DIR}' -Force`],
-    { stdio: 'inherit' },
-  )
-} catch (err) {
-  console.log(`[pet:fetch] PowerShell 解压失败（${err?.message ?? err}），尝试 tar 回退…`)
+// Windows: powershell；Linux/macOS: bsdtar（认 zip）；最后 tar 兜底
+// （Windows 自带 tar 即 bsdtar；GNU tar 不认 zip，仅作存在性兜底）。
+const EXTRACTORS = [
+  ['powershell.exe', ['-NoProfile', '-Command', `Expand-Archive -LiteralPath '${ZIP}' -DestinationPath '${EXTRACT_DIR}' -Force`]],
+  ['bsdtar', ['-xf', ZIP, '-C', EXTRACT_DIR]],
+  ['tar', ['-xf', ZIP, '-C', EXTRACT_DIR]],
+]
+let extracted = false
+for (const [cmd, args] of EXTRACTORS) {
   try {
-    execFileSync('tar', ['-xf', ZIP, '-C', EXTRACT_DIR], { stdio: 'inherit' })
-  } catch (err2) {
-    console.error(`[pet:fetch] tar 解压也失败：${err2?.message ?? err2}`)
-    console.error(`[pet:fetch] 请手动解压 zip 到：${TARGET_DIR}`)
-    process.exit(1)
+    execFileSync(cmd, args, { stdio: 'inherit' })
+    extracted = true
+    break
+  } catch (err) {
+    console.log(`[pet:fetch] ${cmd} 解压${err?.code === 'ENOENT' ? '（未安装）' : '失败'}：${err?.message ?? err}`)
   }
+}
+if (!extracted) {
+  console.error(`[pet:fetch] 所有解压方式都失败，请手动解压 zip 到：${TARGET_DIR}`)
+  process.exit(1)
 }
 
 function findModelDir(dir, depth = 0) {

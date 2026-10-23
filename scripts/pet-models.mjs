@@ -3,15 +3,17 @@
 // 用法：
 //   pnpm pet:models          # Hiyori（若缺）+ YUI 两套
 //   pnpm pet:models:yui      # 仅 YUI
+//   HTTPS_PROXY=http://127.0.0.1:7890 pnpm pet:models   # 自动走代理环境变量
 //
 // 学习评估用途。YUI 角色/模型版权归 Project N.E.K.O. Team，
 // 仓库 Apache-2.0 不自动授予角色商用再分发权，请勿打进对外发行包。
 import { execFileSync } from 'node:child_process'
-import { createWriteStream, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { Readable } from 'node:stream'
-import { pipeline } from 'node:stream/promises'
+
+import { downloadTo } from './lib/download-file.mjs'
+import { proxyUrlFromEnv } from './lib/proxy-fetch.mjs'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
 const MODELS_DIR = join(ROOT, 'public', 'pet', 'models')
@@ -74,11 +76,9 @@ function ensureLipSyncGroup(model3Path) {
   console.log(`[pet:models] 已补 LipSync 参数组：${need.join(', ')}`)
 }
 
-async function download(url, dest) {
-  console.log(`[pet:models] 下载 ${url}`)
-  const res = await fetch(url)
-  if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`)
-  await pipeline(Readable.fromWeb(res.body), createWriteStream(dest))
+function download(url, dest) {
+  console.log(`[pet:models] 下载 ${url}${proxyUrlFromEnv() ? `（代理 ${proxyUrlFromEnv()}）` : '（直连）'}`)
+  return downloadTo(url, dest, '[pet:models]')
 }
 
 function extractTarGz(tgz, destDir) {

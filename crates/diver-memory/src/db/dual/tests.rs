@@ -105,9 +105,9 @@ fn stats_sums_events_and_snapshot_keeps_card_private() {
     dual.append_event("t", "s2", Some(base - 50), None, true).unwrap();
 
     // 私有库写主题；共享库被直写主题（脏数据）也不得计入 stats
-    dual.remember("私有主题：我在学吉他", None).unwrap();
+    dual.remember("私有主题：我在学吉他", None, None).unwrap();
     dual.shared()
-        .create_topic("共享脏主题", "脏数据", Some("episodic"), Some(false))
+        .create_topic("共享脏主题", "脏数据", Some("episodic"), Some(false), None)
         .unwrap();
 
     let stats = dual.stats().unwrap();
@@ -133,7 +133,7 @@ fn deref_writes_stay_in_private_db() {
     let dual = open_dual(&dir);
 
     // remember / update_card / upsert_promise 都经 Deref 落私有库
-    dual.remember("我叫小明，喜欢弹吉他", None).unwrap();
+    dual.remember("我叫小明，喜欢弹吉他", None, None).unwrap();
     dual.update_card(&json!({ "relationship": "同事小明" })).unwrap();
     dual.upsert_promise("周五交周报", None, None).unwrap();
 

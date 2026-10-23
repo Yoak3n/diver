@@ -39,6 +39,7 @@ const topics: TopicRow[] = [
     lastDiscussedAt: now - 3600_000,
     nTimes: 5,
     uncertain: false,
+    scope: 'owner',
   },
   {
     id: 't2',
@@ -52,6 +53,7 @@ const topics: TopicRow[] = [
     lastDiscussedAt: now,
     nTimes: 20,
     uncertain: false,
+    scope: 'owner',
   },
   {
     id: 't3',
@@ -65,6 +67,7 @@ const topics: TopicRow[] = [
     lastDiscussedAt: now - 2 * 24 * 3600_000,
     nTimes: 2,
     uncertain: true,
+    scope: 'owner',
   },
   {
     id: 't4',
@@ -78,6 +81,7 @@ const topics: TopicRow[] = [
     lastDiscussedAt: now,
     nTimes: 5,
     uncertain: false,
+    scope: 'owner',
   },
 ]
 

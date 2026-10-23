@@ -20,6 +20,8 @@ pub struct TopicRow {
     pub uncertain: bool,
     pub demoted_at: Option<i64>,
     pub demoted_reason: Option<String>,
+    /// 记忆作用域：owner / global / group:<id> / private:<id>。
+    pub scope: String,
 }
 
 #[derive(Debug, Clone, Serialize)]

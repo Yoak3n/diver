@@ -17,8 +17,9 @@ impl MemoryDb {
     pub fn open(path: &Path) -> rusqlite::Result<Self> {
         let conn = Connection::open(path)?;
         conn.execute_batch(SCHEMA)?;
-        // 旧库补齐 name 列（新库已有，重复执行报错忽略即可）。
+        // 旧库补齐 name / scope 列（新库已有，重复执行报错忽略即可）。
         let _ = conn.execute("ALTER TABLE relation_card ADD COLUMN name TEXT", []);
+        let _ = conn.execute("ALTER TABLE topics ADD COLUMN scope TEXT NOT NULL DEFAULT 'owner'", []);
         conn.execute("PRAGMA foreign_keys = ON", [])?;
         conn.execute(
             "INSERT OR IGNORE INTO relation_card (id) VALUES (1)",

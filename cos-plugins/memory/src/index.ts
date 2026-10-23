@@ -31,6 +31,7 @@ import { registerRelationCard } from './relation-card.ts'
 import { registerTopicTools } from './tools-topics.ts'
 import { registerEntityTool } from './tools-entity.ts'
 import { registerIdentityTools } from './tools-identity.ts'
+import { registerTurnScope } from './turn-scope.ts'
 
 export const name = 'memory'
 
@@ -40,6 +41,7 @@ export function apply(ctx: Context, config: { digestIntervalMs?: number }) {
   const store = new MemoryStore(join(cosHome(), 'memory'))
 
   startDigestScheduler(ctx, store, config?.digestIntervalMs)
+  registerTurnScope(ctx)
   registerRelationCard(ctx, store)
   registerTopicTools(ctx, store)
   registerEntityTool(ctx, store)

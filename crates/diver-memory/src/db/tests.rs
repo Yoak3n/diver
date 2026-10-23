@@ -69,6 +69,106 @@ fn entity_candidates_match_name_in_text() {
 }
 
 #[test]
+fn scoped_remember_does_not_merge_across_scopes() {
+    let db = mem_db();
+    let owner = db.remember("主人讨厌香菜", Some("饮食"), None).unwrap();
+    let group = db
+        .remember("群里有人说讨厌香菜", Some("饮食"), Some("group:1"))
+        .unwrap();
+    assert_ne!(owner, group);
+
+    let rows = db.list_topics().unwrap();
+    assert_eq!(rows.len(), 2);
+    assert!(rows.iter().any(|r| r.id == owner && r.scope == "owner"));
+    assert!(rows.iter().any(|r| r.id == group && r.scope == "group:1"));
+}
+
+#[test]
+fn blocking_candidates_filters_scope_and_prefix() {
+    let db = mem_db();
+    db.remember("主人聊过吉他", Some("吉他"), None).unwrap();
+    db.remember("一群聊过吉他", Some("吉他"), Some("group:1")).unwrap();
+    db.remember("二群聊过吉他", Some("吉他"), Some("group:2")).unwrap();
+    db.remember("私聊聊过吉他", Some("吉他"), Some("private:9")).unwrap();
+
+    let all = db.blocking_candidates("吉他", Some(10), None, None, None).unwrap();
+    assert_eq!(all.len(), 4);
+
+    let groups = db
+        .blocking_candidates(
+            "吉他",
+            Some(10),
+            None,
+            Some(&["owner".to_string()]),
+            Some(&["private:".to_string()]),
+        )
+        .unwrap();
+    assert_eq!(groups.len(), 2);
+    assert!(groups.iter().all(|h| h.topic.scope.starts_with("group:")));
+
+    let only_owner = db
+        .blocking_candidates(
+            "吉他",
+            Some(10),
+            Some(&["owner".to_string()]),
+            None,
+            None,
+        )
+        .unwrap();
+    assert_eq!(only_owner.len(), 1);
+    assert_eq!(only_owner[0].topic.scope, "owner");
+}
+
+#[test]
+fn legacy_topics_table_migrates_scope_to_owner() {
+    let dir = std::env::temp_dir().join(format!(
+        "diver-memory-legacy-{}-{}",
+        std::process::id(),
+        "scope"
+    ));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("legacy.sqlite3");
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as i64;
+    {
+        let conn = rusqlite::Connection::open(&path).unwrap();
+        conn.execute_batch(
+            r#"
+            CREATE TABLE topics (
+                id TEXT PRIMARY KEY,
+                canonical_name TEXT NOT NULL,
+                aliases TEXT NOT NULL,
+                state_summary TEXT NOT NULL,
+                weight REAL NOT NULL,
+                tier TEXT NOT NULL,
+                activation_count INTEGER NOT NULL,
+                created_at INTEGER NOT NULL,
+                last_discussed_at INTEGER NOT NULL,
+                n_times INTEGER NOT NULL,
+                uncertain INTEGER NOT NULL,
+                demoted_at INTEGER,
+                demoted_reason TEXT
+            );
+            "#,
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO topics VALUES ('t1', '旧话题', '[]', '旧状态', 1.0, 'episodic', 0, ?1, ?1, 1, 0, NULL, NULL)",
+            [now],
+        )
+        .unwrap();
+    }
+    let db = MemoryDb::open(&path).unwrap();
+    let rows = db.list_topics().unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].scope, "owner");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn card_name_is_scalar_and_overwrite() {
     let db = mem_db();
     // 初始未命名

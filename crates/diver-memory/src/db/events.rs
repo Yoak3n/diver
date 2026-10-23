@@ -12,20 +12,24 @@ impl MemoryDb {
         &self,
         content: &str,
         topic: Option<&str>,
+        scope: Option<&str>,
     ) -> rusqlite::Result<String> {
         let content = content.trim();
+        let scope = scope.map(str::trim).filter(|s| !s.is_empty()).unwrap_or("owner");
         let name = topic
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty())
             .unwrap_or_else(|| content.chars().take(20).collect());
-        let candidates = self.blocking_candidates(&name, Some(3))?;
+        // 只在同作用域内合并，避免群记忆与主人私聊记忆串库。
+        let scopes = vec![scope.to_string()];
+        let candidates = self.blocking_candidates(&name, Some(3), Some(&scopes), None, None)?;
         if let Some(hit) = candidates.first() {
             let id = hit.topic.id.clone();
             self.activate(&id, None)?;
             self.merge_topic(&id, Some(content), None, None)?;
             Ok(id)
         } else {
-            self.create_topic(&name, content, Some("episodic"), Some(false))
+            self.create_topic(&name, content, Some("episodic"), Some(false), Some(scope))
         }
     }
 

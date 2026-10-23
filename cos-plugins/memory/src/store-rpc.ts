@@ -4,118 +4,28 @@
 // - 读取/确定性逻辑：blocking candidates、decay、stats 等由 Rust 按需执行
 // - 本模块维护一份视图缓存，供 system prompt section 的同步 provider 使用
 //   （section text 只允许同步返回字符串）
+//
+// 作用域（scope）是隐私边界：owner / global / group:<id> / private:<id>。
+// 写入方显式传 scope，读取方按需要 include/exclude；缺省仍按 owner 处理。
 
 import { nativeRpc } from '@diver/native-bridge/rpc'
 
-export const DECAY = {
-  episodic: { rate: 0.05, forget: 0.02 },
-  trivia: { rate: 0.15, forget: 0.1 },
-} as const
+import type {
+  EntityGraph,
+  EntityRelationSpec,
+  EntityRow,
+  MemoryEvent,
+  MemoryStats,
+  PromiseRow,
+  RelationCard,
+  ScopeFilter,
+  SelfAction,
+  Snapshot,
+  Tier,
+  TopicRow,
+} from './store-types.ts'
 
-export interface TopicRow {
-  id: string
-  canonicalName: string
-  aliases: string[]
-  stateSummary: string
-  weight: number
-  tier: 'episodic' | 'trivia'
-  activationCount: number
-  createdAt: number
-  lastDiscussedAt: number
-  nTimes: number
-  uncertain: boolean
-  demotedAt?: number
-  demotedReason?: string
-}
-
-export interface MemoryEvent {
-  seq: number
-  topicId: string
-  statement: string
-  ts: number
-  episodeId?: string
-}
-
-export interface RelationCard {
-  /** 名字（可空 = 未命名）：人格卡片是名字权威源，壳层会写回实例清单 */
-  name?: string | null
-  profile: string
-  agent_model: string
-  relationship: string
-  updatedAt: number
-}
-
-export interface PromiseRow {
-  id: string
-  content: string
-  status: 'open' | 'done' | 'expired'
-  createdAt: number
-  dueAt?: number
-  updatedAt?: number
-}
-
-export interface SelfAction {
-  id: string
-  kind: string
-  content: string
-  topicId?: string
-  ts: number
-}
-
-export type Tier = keyof typeof DECAY
-
-export interface Snapshot {
-  card: RelationCard
-  topics: TopicRow[]
-  promises: PromiseRow[]
-  events: MemoryEvent[]
-}
-
-export interface MemoryStats {
-  total: number
-  byTier: Record<string, number>
-  top: Array<{ name: string; nTimes: number }>
-  events: number
-  openPromises: number
-  entities: number
-}
-
-export interface EntityRow {
-  id: string
-  name: string
-  entityType?: string | null
-  mentionCount: number
-  createdAt: number
-  updatedAt: number
-}
-
-export interface EntityAttrRow {
-  id: string
-  entityId: string
-  attrKey: string
-  attrValue: string
-  validFrom: number
-  validUntil?: number | null
-  sourceTopicId?: string | null
-}
-
-export interface EntityNeighbor {
-  relation: string
-  direction: 'out' | 'in'
-  entity: EntityRow
-}
-
-export interface EntityGraph {
-  entity: EntityRow
-  attrs: EntityAttrRow[]
-  neighbors: EntityNeighbor[]
-}
-
-export interface EntityRelationSpec {
-  to: string
-  relation: string
-  toType?: string
-}
+export * from './store-types.ts'
 
 const DAY_MS = 24 * 60 * 60 * 1000
 const SNAPSHOT_LIMIT = 200
@@ -199,11 +109,21 @@ export class MemoryStore {
     return row ?? undefined
   }
 
-  async blockingCandidates(text: string, limit = 5): Promise<Array<TopicRow & { matched: string }>> {
-    return rpc<Array<TopicRow & { matched: string }>>('blocking_candidates', { text, limit })
+  async blockingCandidates(
+    text: string,
+    limit = 5,
+    filter: ScopeFilter = {},
+  ): Promise<Array<TopicRow & { matched: string }>> {
+    return rpc<Array<TopicRow & { matched: string }>>('blocking_candidates', { text, limit, ...filter })
   }
 
-  async createTopic(input: { canonicalName: string; stateSummary: string; tier?: Tier; uncertain?: boolean }): Promise<string> {
+  async createTopic(input: {
+    canonicalName: string
+    stateSummary: string
+    tier?: Tier
+    uncertain?: boolean
+    scope?: string
+  }): Promise<string> {
     const id = await rpc<string>('create_topic', input)
     await this.refresh()
     return id
@@ -235,7 +155,7 @@ export class MemoryStore {
     return ok
   }
 
-  async remember(input: { content: string; topic?: string }): Promise<string> {
+  async remember(input: { content: string; topic?: string; scope?: string }): Promise<string> {
     const id = await rpc<string>('remember', input)
     await this.refresh()
     return id

@@ -14,7 +14,8 @@ CREATE TABLE IF NOT EXISTS topics (
     n_times INTEGER NOT NULL,
     uncertain INTEGER NOT NULL,
     demoted_at INTEGER,
-    demoted_reason TEXT
+    demoted_reason TEXT,
+    scope TEXT NOT NULL DEFAULT 'owner'
 );
 
 CREATE TABLE IF NOT EXISTS events (

@@ -23,6 +23,7 @@ pub(super) fn topic_from_row(row: &Row) -> rusqlite::Result<TopicRow> {
         uncertain: row.get::<_, i64>("uncertain")? != 0,
         demoted_at: row.get("demoted_at")?,
         demoted_reason: row.get("demoted_reason")?,
+        scope: row.get("scope")?,
     })
 }
 

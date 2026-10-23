@@ -37,16 +37,18 @@ impl MemoryDb {
         state_summary: &str,
         tier: Option<&str>,
         uncertain: Option<bool>,
+        scope: Option<&str>,
     ) -> rusqlite::Result<String> {
         let id = new_id("t");
         let now = now_ms();
         let tier = tier.unwrap_or("trivia").to_string();
         let uncertain = uncertain.unwrap_or(true);
+        let scope = normalize_scope(scope);
         let aliases = serde_json::to_string(&[canonical_name]).unwrap_or_else(|_| "[]".into());
         self.conn.execute(
-            "INSERT INTO topics (id, canonical_name, aliases, state_summary, weight, tier, activation_count, created_at, last_discussed_at, n_times, uncertain) \
-             VALUES (?1, ?2, ?3, ?4, 1.0, ?5, 0, ?6, ?6, 1, ?7)",
-            params![id, canonical_name, aliases, state_summary, tier, now, uncertain],
+            "INSERT INTO topics (id, canonical_name, aliases, state_summary, weight, tier, activation_count, created_at, last_discussed_at, n_times, uncertain, scope) \
+             VALUES (?1, ?2, ?3, ?4, 1.0, ?5, 0, ?6, ?6, 1, ?7, ?8)",
+            params![id, canonical_name, aliases, state_summary, tier, now, uncertain, scope],
         )?;
         Ok(id)
     }
@@ -141,6 +143,9 @@ impl MemoryDb {
         &self,
         text: &str,
         limit: Option<usize>,
+        scopes: Option<&[String]>,
+        exclude_scopes: Option<&[String]>,
+        exclude_scope_prefixes: Option<&[String]>,
     ) -> rusqlite::Result<Vec<CandidateRow>> {
         let limit = limit.unwrap_or(5);
         if text.is_empty() {
@@ -148,6 +153,9 @@ impl MemoryDb {
         }
         let mut hits = vec![];
         for row in self.list_topics()? {
+            if !scope_allowed(&row.scope, scopes, exclude_scopes, exclude_scope_prefixes) {
+                continue;
+            }
             let mut matched: Option<String> = None;
             for name in std::iter::once(row.canonical_name.clone()).chain(row.aliases.clone()) {
                 if name.chars().count() >= 2 && text.contains(&name) {
@@ -186,4 +194,32 @@ impl MemoryDb {
         let rows = stmt.query_map(params![limit as i64], topic_from_row)?;
         rows.collect()
     }
+}
+
+fn normalize_scope(scope: Option<&str>) -> &str {
+    scope.map(str::trim).filter(|s| !s.is_empty()).unwrap_or("owner")
+}
+
+fn scope_allowed(
+    scope: &str,
+    scopes: Option<&[String]>,
+    exclude_scopes: Option<&[String]>,
+    exclude_prefixes: Option<&[String]>,
+) -> bool {
+    if let Some(list) = scopes {
+        if !list.iter().any(|s| s == scope) {
+            return false;
+        }
+    }
+    if let Some(list) = exclude_scopes {
+        if list.iter().any(|s| s == scope) {
+            return false;
+        }
+    }
+    if let Some(list) = exclude_prefixes {
+        if list.iter().any(|prefix| scope.starts_with(prefix.as_str())) {
+            return false;
+        }
+    }
+    true
 }

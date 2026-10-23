@@ -19,6 +19,14 @@ pub fn dispatch(
     let i64_opt = |key: &str| params.get(key).and_then(|v| v.as_i64());
     let usize_opt = |key: &str| params.get(key).and_then(|v| v.as_u64()).map(|n| n as usize);
     let bool_opt = |key: &str| params.get(key).and_then(|v| v.as_bool());
+    let str_list = |key: &str| {
+        params.get(key).and_then(|v| v.as_array()).map(|items| {
+            items
+                .iter()
+                .filter_map(|v| v.as_str().map(str::to_string))
+                .collect::<Vec<_>>()
+        })
+    };
 
     let result = match method {
         "list_topics" => to_value(db.list_topics().map_err(err)?),
@@ -30,6 +38,7 @@ pub fn dispatch(
                     &req_str(params, "stateSummary")?,
                     str_opt("tier").as_deref(),
                     bool_opt("uncertain"),
+                    str_opt("scope").as_deref(),
                 )
                 .map_err(err)?;
             json!(id)
@@ -60,17 +69,32 @@ pub fn dispatch(
             db.activate_by_text(&req_str(params, "text")?).map_err(err)?;
             Value::Null
         }
-        "blocking_candidates" => to_value(
-            db.blocking_candidates(&req_str(params, "text")?, usize_opt("limit"))
+        "blocking_candidates" => {
+            let scopes = str_list("scopes");
+            let exclude_scopes = str_list("excludeScopes");
+            let exclude_prefixes = str_list("excludeScopePrefixes");
+            to_value(
+                db.blocking_candidates(
+                    &req_str(params, "text")?,
+                    usize_opt("limit"),
+                    scopes.as_deref(),
+                    exclude_scopes.as_deref(),
+                    exclude_prefixes.as_deref(),
+                )
                 .map_err(err)?,
-        ),
+            )
+        }
         "demote" => {
             let ok = db.demote(&req_str(params, "id")?, str_opt("reason")).map_err(err)?;
             json!(ok)
         }
         "remember" => {
             let id = db
-                .remember(&req_str(params, "content")?, str_opt("topic").as_deref())
+                .remember(
+                    &req_str(params, "content")?,
+                    str_opt("topic").as_deref(),
+                    str_opt("scope").as_deref(),
+                )
                 .map_err(err)?;
             json!(id)
         }

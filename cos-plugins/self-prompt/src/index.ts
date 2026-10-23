@@ -2,7 +2,7 @@
 //
 // 职责：
 //  1. 每次 assemble 热读 prompts/*.md（正文 + order），注入 systemPrompt section；
-//  2. 挂 revise-prompt skill，教模型用现有 read/write/edit 自改这些文件；
+//  2. 注册 list_prompt_slots / revise_prompt 专用工具（只写覆盖层，不暴露通用文件读写）；
 //  3. 提供 restart_agent（保留能力，但改提示词不必走重启）；重启完成注入系统事件。
 //
 // 设计边界：
@@ -15,7 +15,7 @@ import type { Context } from 'cordis'
 import type { AssembledSection, PromptAssembly } from '@cos/plugin-api'
 import { applyRestartEvent } from './resume.ts'
 import { applyRestartTool } from './restart.ts'
-import { applyRevisePromptSkill } from './skill.ts'
+import { applyReviseTools } from './revise-tools.ts'
 import { bundledPromptDir, overridePromptDir } from './paths.ts'
 import {
   SECTION_PREFIX,
@@ -25,10 +25,10 @@ import {
 
 export const name = 'self-prompt'
 
-export const inject = ['systemPrompt', 'tools', 'skills']
+export const inject = ['systemPrompt', 'tools']
 
 export function apply(ctx: Context) {
-  applyRevisePromptSkill(ctx)
+  applyReviseTools(ctx)
   applyRestartTool(ctx)
   applyRestartEvent(ctx)
 
@@ -64,5 +64,5 @@ export function apply(ctx: Context) {
   if (first.slots.length === 0) {
     console.warn('[self-prompt] 未装载任何 prompt 槽位（prompts/*.md 为空或全部非法）')
   }
-  console.log('[self-prompt] 就绪（skill: revise-prompt + restart_agent；prompts 热加载）')
+  console.log('[self-prompt] 就绪（list_prompt_slots / revise_prompt + restart_agent；prompts 热加载）')
 }

@@ -14,7 +14,7 @@ export interface PromptSlot {
   name: string
   order: number
   text: string
-  /** 来源绝对路径，便于 skill 告诉模型改哪个文件。 */
+  /** 来源绝对路径（启动日志/调试用；工具层不返回给模型）。 */
   source: string
 }
 

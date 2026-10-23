@@ -3,13 +3,14 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Diver self-prompt plugin: model-editable prompt slots + revise-prompt skill + restart/reload loop.",
+  "description": "Diver self-prompt plugin: hot-reloaded prompt slots + list_prompt_slots/revise_prompt tools + restart/reload loop.",
   "main": "./src/index.ts",
   "exports": {
     ".": "./src/index.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test src/revise.test.ts",
     "smoke": "node --import tsx scripts/smoke.ts"
   },
   "dependencies": {

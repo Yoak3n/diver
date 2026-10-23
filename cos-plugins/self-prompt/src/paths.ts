@@ -24,11 +24,6 @@ export function overridePromptDir(): string {
   return join(cosHome(), 'self-prompt', 'prompts')
 }
 
-/** skill 源文件目录。 */
-export function skillDir(): string {
-  return join(pluginRoot(), 'skills')
-}
-
 /** 重启完成后待注入的系统事件标志。 */
 export function restartPendingPath(): string {
   return join(cosHome(), 'self-prompt-restart.pending')

@@ -9,7 +9,7 @@ use axum::{extract::State, Json};
 use serde::Deserialize;
 use serde_json::{json, Value};
 
-use super::{grep, groups, memory, notify, peer, presence, registry, screenshot, ServiceState};
+use super::{grep, groups, memory, notify, peer, presence, registry, screenshot, tts, ServiceState};
 
 #[derive(Deserialize)]
 pub struct RpcRequest {
@@ -89,6 +89,12 @@ async fn route(
     if method.starts_with("group::") {
         // 群组消息与群务（P2-4）：群 = 壳层实体，成员解析后经 peer 路由投递。
         return groups::dispatch(state, instance_id, method, params).await;
+    }
+    if method.starts_with("tts::") {
+        // 语音合成（QQ 语音出话）：服务商 HTTP 在壳层 core，闭包由 app 注入。
+        return tts::dispatch(state, method, params)
+            .await
+            .map_err(grep::RpcFailure::new);
     }
     if method.starts_with("delegate::") {
         // 任务委派（0.2.0）：spawn/list/cancel，监督循环在壳层；闭包由 app 注入。

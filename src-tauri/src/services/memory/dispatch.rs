@@ -199,7 +199,7 @@ mod tests {
     use super::dispatch;
     use crate::services::state::{
         CardNameFn, DelegateDispatchFn, MemoryPool, NotifyFn, PresenceDispatchFn, RegistryListFn,
-        ServiceState,
+        ServiceState, TtsSynthesizeFn,
     };
 
     fn temp_pool() -> MemoryPool {
@@ -220,6 +220,7 @@ mod tests {
         let presence: PresenceDispatchFn = Arc::new(|_, _, _| Ok(serde_json::Value::Null));
         let registry: RegistryListFn = Arc::new(|| Ok(serde_json::Value::Null));
         let delegate: DelegateDispatchFn = Arc::new(|_, _, _| Ok(serde_json::Value::Null));
+        let tts: TtsSynthesizeFn = Arc::new(|_, _| Box::pin(async { Ok(serde_json::Value::Null) }));
         ServiceState {
             memory: temp_pool(),
             auth_token: "test".into(),
@@ -228,6 +229,7 @@ mod tests {
             on_card_name,
             registry_list: registry,
             delegate_dispatch: delegate,
+            tts_synthesize: tts,
             groups_dir: std::env::temp_dir(),
         }
     }

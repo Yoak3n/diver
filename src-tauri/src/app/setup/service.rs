@@ -78,6 +78,23 @@ pub(super) fn start_local_services(app: &tauri::AppHandle, instance_id: &str) {
             crate::core::delegate::dispatch_rpc(&paths, instance_id, method, params)
         })
     };
+    // TTS 合成（QQ 语音出话）：服务商 HTTP 在 core::tts，闭包注入 services。
+    // 全局 TTS 总开关（enabled）不通过则明确报错，调用方（onebot）降级发文本。
+    let tts_synthesize: crate::services::TtsSynthesizeFn = {
+        let app_handle = app.clone();
+        std::sync::Arc::new(move |text, voice| {
+            let app = app_handle.clone();
+            Box::pin(async move {
+                let cfg = crate::config::tts::load_config(&app);
+                if !cfg.enabled {
+                    return Err("TTS 未启用（设置 → 语音）".to_string());
+                }
+                let audio = crate::core::tts::synthesize_from_config(&app, &text, voice.as_deref())
+                    .await?;
+                serde_json::to_value(audio).map_err(|e| e.to_string())
+            })
+        })
+    };
     match crate::services::start(
         app,
         crate::core::sidecar::service_token().to_string(),
@@ -88,6 +105,7 @@ pub(super) fn start_local_services(app: &tauri::AppHandle, instance_id: &str) {
         on_card_name,
         registry_list,
         delegate_dispatch,
+        tts_synthesize,
         app.path()
             .app_data_dir()
             .expect("app_data_dir 可用"),

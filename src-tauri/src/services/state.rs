@@ -26,6 +26,19 @@ pub type RegistryListFn = Arc<dyn Fn() -> Result<Value, String> + Send + Sync>;
 /// `(instance_id, method, params) -> data`；监督循环在壳层线程。
 pub type DelegateDispatchFn = Arc<dyn Fn(Option<&str>, &str, &Value) -> Result<Value, String> + Send + Sync>;
 
+/// TTS 合成回调（app 层包一层 `core::tts::synthesize_from_config` 后注入）：
+/// `(text, voice_override) -> { base64, mime }`；服务商 HTTP 异步，故返回 future。
+/// 文本已由调用方（onebot）完成隐私遮蔽后才送来，services 不记录正文。
+pub type TtsSynthesizeFn = Arc<
+    dyn Fn(
+            String,
+            Option<String>,
+        ) -> std::pin::Pin<
+            Box<dyn std::future::Future<Output = Result<Value, String>> + Send>,
+        > + Send
+        + Sync,
+>;
+
 /// 记忆路由（P1-2 身份头路由）：`X-Diver-Instance` → 实例私有 DualDb。
 ///
 /// 每实例一份私有库 + 共用共享库（P1-1 双库）；无身份 / 未知 id 回退 active
@@ -102,6 +115,8 @@ pub struct ServiceState {
     pub registry_list: RegistryListFn,
     /// 任务委派（`delegate::*`，监督循环在壳层）。
     pub delegate_dispatch: DelegateDispatchFn,
+    /// TTS 合成（`tts::synthesize`，服务商 HTTP 在壳层 core）。
+    pub tts_synthesize: TtsSynthesizeFn,
     /// 群组文件目录（P2-4，app 层 app_config_dir 注入）。
     pub groups_dir: std::path::PathBuf,
 }

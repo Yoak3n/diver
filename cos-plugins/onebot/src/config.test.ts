@@ -18,6 +18,18 @@ test('缺省配置取安全默认：不连接、不监听群', () => {
   assert.equal(cfg.rate.quoted, 0.8)
   assert.equal(cfg.cooldownMinutes, 15)
   assert.equal(cfg.sendIntervalMs, 1500)
+  // 语音默认关闭（配了才开）
+  assert.equal(cfg.voice.mode, 'off')
+  assert.equal(cfg.voice.maxChars, 100)
+  assert.equal(cfg.voice.cooldownMinutes, 10)
+})
+
+test('语音配置：非法 mode 回退 off，数值夹紧', () => {
+  assert.equal(resolveConfig({ voiceMode: 'always' }).voice.mode, 'off')
+  assert.equal(resolveConfig({ voiceMode: 'ask' }).voice.mode, 'ask')
+  assert.equal(resolveConfig({ voiceMode: 'auto', voiceRate: 3 }).voice.rate, 1)
+  assert.equal(resolveConfig({ voiceMaxChars: 1 }).voice.maxChars, 10)
+  assert.equal(resolveConfig({ voiceTimeoutMs: 999_999 }).voice.timeoutMs, 60_000)
 })
 
 test('数值越界被夹紧（而非拒绝）', () => {

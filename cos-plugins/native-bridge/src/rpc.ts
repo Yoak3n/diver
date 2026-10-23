@@ -86,6 +86,12 @@ export const NATIVE_RPC_METHODS = [
     description: '裁决主动注入（L1+L2；通过返回 inject 载荷）',
     probeSafe: false as boolean,
   },
+  {
+    method: 'tts::synthesize',
+    service: 'tts',
+    description: '在线 TTS 合成（QQ 语音出话；返回 base64 + mime，按服务商计费）',
+    probeSafe: false as boolean,
+  },
 ] as const
 
 /** `http://127.0.0.1:{DIVER_MEMORY_PORT}/rpc`，未配置时返回 null。 */

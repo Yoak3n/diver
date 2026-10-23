@@ -7,20 +7,39 @@
 // 接入：bundle insert `{ id: onebot, name: '@diver/onebot' }`；配置见 config.ts。
 
 import type { Context } from 'cordis'
+import { nativeRpc } from '@diver/native-bridge/rpc'
 
 import { configDecl, resolveConfig, type Config } from './config.ts'
 import { groupBufferPath, trimBuffer } from './buffer-store.ts'
 import { TurnSandbox, allowedToolNames, filterToolsForTurn, vetoIfActive } from './sandbox.ts'
 import { OnebotClient } from './ws.ts'
-import { applyTools } from './tools.ts'
+import { applyTools, type VoiceSendDeps } from './tools.ts'
 import { applyPrompt } from './prompt.ts'
 import { createRouter, type CompanionLike } from './router.ts'
+import { voiceCooldownOk } from './voice.ts'
 
 export const name = 'onebot'
 
 export const inject = ['companion', 'tools', 'systemPrompt']
 
 export { configDecl }
+
+/** 单次 RPC 超时包装（语音合成可能挂住；超时后降级发文本）。 */
+function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(message)), ms)
+    promise.then(
+      (value) => {
+        clearTimeout(timer)
+        resolve(value)
+      },
+      (error: unknown) => {
+        clearTimeout(timer)
+        reject(error)
+      },
+    )
+  })
+}
 
 export function apply(ctx: Context, config: Config = {}): void {
   const cfg = resolveConfig(config)
@@ -86,9 +105,39 @@ export function apply(ctx: Context, config: Config = {}): void {
 
   const router = createRouter({ companion, cfg, client })
 
+  // 语音出话：mode=off 时完全不接线（工具不暴露语音分支）；
+  // 合成走壳层 TTS（Rust RPC，全局 TTS 总开关/凭据在壳层判定）。
+  const voiceLastAt = new Map<string, number>()
+  const voice: VoiceSendDeps | undefined = cfg.voice.mode === 'off'
+    ? undefined
+    : {
+        policy: cfg.voice,
+        synth: async (text: string) => {
+          const data = await withTimeout(
+            nativeRpc<{ base64?: string }>(
+              'tts::synthesize',
+              { text, ...(cfg.voice.name !== '' ? { voice: cfg.voice.name } : {}) },
+              { label: 'tts::synthesize' },
+            ),
+            cfg.voice.timeoutMs,
+            'TTS 合成超时',
+          )
+          if (typeof data?.base64 !== 'string' || data.base64 === '') {
+            throw new Error('TTS 返回空音频')
+          }
+          return { base64: data.base64 }
+        },
+        cooldownOk: (key, now) =>
+          voiceCooldownOk(voiceLastAt.get(key), now, cfg.voice.cooldownMinutes),
+        noteUsed: (key, now) => {
+          voiceLastAt.set(key, now)
+        },
+      }
+
   applyTools(ctx, {
     client,
     cfg,
+    voice,
     anchor: router.anchor,
     rememberSent: router.rememberSent,
     onSpoke: router.noteSpoke,

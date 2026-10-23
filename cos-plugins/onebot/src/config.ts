@@ -8,6 +8,8 @@
 
 import type { PluginConfigDecl } from '@cos/plugin-api'
 
+import type { VoiceMode } from './voice.ts'
+
 /** 扁平配置（与设置页/patch yml 同形；列表字段为分隔字符串）。 */
 export interface Config {
   wsUrl?: string
@@ -35,6 +37,18 @@ export interface Config {
   extraPatterns?: string
   /** 发送队列相邻两条的最小间隔（毫秒，实现侧风控节流）。 */
   sendIntervalMs?: number
+  /** 语音出话：off（默认，配了才开）/ ask（模型显式要求才发）/ auto（另按概率）。 */
+  voiceMode?: string
+  /** 合成声线覆盖（留空 = 壳层 TTS 配置的全局音色）。 */
+  voiceName?: string
+  /** 单条语音最大字符数（超出降级文本；QQ 语音上限 60 秒的保守对应）。 */
+  voiceMaxChars?: number
+  /** auto 模式语音概率。 */
+  voiceRate?: number
+  /** 同一群/私聊两次语音的最小间隔（分钟）。 */
+  voiceCooldownMinutes?: number
+  /** 单次合成超时（毫秒；超时降级文本）。 */
+  voiceTimeoutMs?: number
 }
 
 export interface ResolvedConfig {
@@ -48,6 +62,14 @@ export interface ResolvedConfig {
   sandbox: { allowedTools: string[] }
   privacy: { maskTerms: string[]; extraPatterns: string[] }
   sendIntervalMs: number
+  voice: {
+    mode: VoiceMode
+    name: string
+    maxChars: number
+    rate: number
+    cooldownMinutes: number
+    timeoutMs: number
+  }
 }
 
 /** 出话三件套：OneBot 回合的固定基座（见 sandbox.ts）。 */
@@ -104,6 +126,14 @@ export function resolveConfig(config: Config = {}): ResolvedConfig {
       extraPatterns: splitList(config.extraPatterns, ';'),
     },
     sendIntervalMs: Math.round(num(config.sendIntervalMs, 1500, 200, 60_000)),
+    voice: {
+      mode: config.voiceMode === 'ask' || config.voiceMode === 'auto' ? config.voiceMode : 'off',
+      name: typeof config.voiceName === 'string' ? config.voiceName.trim() : '',
+      maxChars: Math.round(num(config.voiceMaxChars, 100, 10, 300)),
+      rate: num(config.voiceRate, 0.15, 0, 1),
+      cooldownMinutes: num(config.voiceCooldownMinutes, 10, 0, 720),
+      timeoutMs: Math.round(num(config.voiceTimeoutMs, 20_000, 3_000, 60_000)),
+    },
   }
 }
 
@@ -135,5 +165,22 @@ export const configDecl: PluginConfigDecl = {
     { key: 'maskTerms', label: '出站遮蔽词条', type: 'text', description: '逗号分隔字面量（如真名/住址），发出前替换为 [已遮蔽]' },
     { key: 'extraPatterns', label: '出站遮蔽正则', type: 'text', description: '分号分隔 RegExp source' },
     { key: 'sendIntervalMs', label: '发送间隔（毫秒）', type: 'number', default: 1500, description: '实现侧风控节流' },
+    {
+      key: 'voiceMode',
+      label: '语音出话',
+      type: 'select',
+      options: [
+        { value: 'off', label: '关闭（默认，配了才开）' },
+        { value: 'ask', label: '仅在模型要求时' },
+        { value: 'auto', label: '按概率自动' },
+      ],
+      default: 'off',
+      description: '需先在「语音」设置里启用在线 TTS；任何合成失败都会降级发文本',
+    },
+    { key: 'voiceName', label: '语音声线覆盖', type: 'text', description: '留空 = 跟随全局 TTS 音色' },
+    { key: 'voiceMaxChars', label: '语音最大字数', type: 'number', default: 100, description: '超出改发文本（QQ 语音上限 60 秒）' },
+    { key: 'voiceRate', label: '自动语音概率', type: 'number', default: 0.15, description: '仅 auto 模式生效' },
+    { key: 'voiceCooldownMinutes', label: '语音冷却（分钟）', type: 'number', default: 10, description: '同一群/私聊两次语音的最小间隔' },
+    { key: 'voiceTimeoutMs', label: '语音合成超时（毫秒）', type: 'number', default: 20000 },
   ],
 }

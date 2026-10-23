@@ -102,7 +102,11 @@ pub fn spawn(
         command.env(key, value);
     }
     let mut child = command.spawn().map_err(|e| format!("spawn {program} 失败：{e}"))?;
+    #[cfg(target_os = "windows")]
     let job = SidecarJob::assign(&mut child);
+    // 非 Windows：无 Job Object 树杀，Drop 子进程句柄只终止直系进程
+    #[cfg(not(target_os = "windows"))]
+    let job: Option<SidecarJob> = None;
 
     let stdout = Arc::new(Mutex::new(OutputBuf::default()));
     let stderr = Arc::new(Mutex::new(OutputBuf::default()));

@@ -197,12 +197,10 @@ export function senderName(sender: OnebotSender): string {
   return nick !== '' ? nick : String(sender.user_id)
 }
 
-/** 消息里是否 @ 了指定 QQ（或 @ 全体）。 */
+/** 消息里是否 @ 了指定 QQ。@全体成员不算点名：管理员通知不构成必回，落普通档。 */
 export function atsUser(segments: Segment[], selfId: number): boolean {
   return segments.some(
-    (seg) =>
-      seg.type === 'at'
-      && (String(seg.data.qq ?? '') === String(selfId) || String(seg.data.qq ?? '') === 'all'),
+    (seg) => seg.type === 'at' && String(seg.data.qq ?? '') === String(selfId),
   )
 }
 

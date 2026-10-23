@@ -5,8 +5,12 @@ import assert from 'node:assert/strict'
 import {
   TurnSandbox,
   allowedToolNames,
+  allowedToolNamesForSource,
   filterToolsForTurn,
+  isForbiddenTool,
   isOnebotDetail,
+  isOwnerTool,
+  parseOnebotSource,
   vetoIfActive,
 } from './sandbox.ts'
 
@@ -19,13 +23,28 @@ test('来源判定：只认 onebot: 前缀', () => {
   assert.equal(isOnebotDetail('xonebot:g1'), false)
 })
 
+test('来源解析：群/私聊/坏格式', () => {
+  assert.deepEqual(parseOnebotSource('onebot:g123:456'), { kind: 'group', groupId: '123', userId: '456' })
+  assert.deepEqual(parseOnebotSource('onebot:g123:-'), { kind: 'group', groupId: '123', userId: '' })
+  assert.deepEqual(parseOnebotSource('onebot:u456'), { kind: 'private', userId: '456' })
+  assert.equal(parseOnebotSource('onebot:g'), undefined)
+  assert.equal(parseOnebotSource('onebot:x1'), undefined)
+  assert.equal(parseOnebotSource('peer:u1'), undefined)
+  assert.equal(parseOnebotSource(undefined), undefined)
+})
+
 test('回合状态机：OneBot 消息认领后激活，turn/end 清除', () => {
   const sandbox = new TurnSandbox()
   assert.equal(sandbox.isActive(), false)
-  sandbox.markClaimed([{ source: { detail: 'onebot:g1:2' } }])
+  const source = sandbox.markClaimed([{ source: { detail: 'onebot:g1:2' } }])
+  assert.deepEqual(source, { kind: 'group', groupId: '1', userId: '2' })
   assert.equal(sandbox.isActive(), true)
+  assert.deepEqual(sandbox.currentSource(), source)
+  // 已激活时不重复返回来源（避免重复广播）
+  assert.equal(sandbox.markClaimed([{ source: { detail: 'onebot:g1:3' } }]), undefined)
   sandbox.markTurnEnd()
   assert.equal(sandbox.isActive(), false)
+  assert.equal(sandbox.currentSource(), undefined)
 })
 
 test('混合批次保守：本地+OneBot 同批 → 整回合受限', () => {
@@ -67,8 +86,81 @@ test('执行否决：受限回合点名隐藏工具被拒，白名单放行', ()
   assert.match(vetoIfActive('write', true, allowed) ?? '', /不可用/)
   assert.equal(vetoIfActive('send_qq_group', true, allowed), undefined)
   assert.equal(vetoIfActive('stay_silent', true, allowed), undefined)
+  assert.equal(vetoIfActive('web_search', true, allowed), undefined)
+  assert.equal(vetoIfActive('web_explore', true, allowed), undefined)
+  assert.equal(vetoIfActive('recall', true, allowed), undefined)
+  assert.equal(vetoIfActive('remember', true, allowed), undefined)
   // 非受限回合任何工具都放行
   assert.equal(vetoIfActive('write', false, allowed), undefined)
+})
+
+test('硬禁：本机控制/任意 URL 工具即使被配置也不放行', () => {
+  for (const name of ['sh', 'write', 'read', 'web_read', 'screenshot', 'restart_agent', 'send_to_peer', 'mcp__x__y']) {
+    assert.equal(isForbiddenTool(name), true, name)
+  }
+  const allowed = allowedToolNames(['sh', 'write', 'web_read', 'mcp__x__y'])
+  assert.equal(allowed.includes('sh'), false)
+  assert.equal(allowed.includes('write'), false)
+  assert.equal(allowed.includes('web_read'), false)
+  assert.match(vetoIfActive('sh', true, allowed) ?? '', /永久不可用/)
+  assert.match(vetoIfActive('web_read', true, allowed) ?? '', /永久不可用/)
+})
+
+test('主人发起的回合专属工具：普通群友/陌生私聊不可通过配置放行', () => {
+  const base = allowedToolNames(['revise_prompt', 'list_prompt_slots'])
+  assert.equal(base.includes('revise_prompt'), false)
+  assert.equal(base.includes('list_prompt_slots'), false)
+  assert.equal(isOwnerTool('revise_prompt'), true)
+
+  // 主人在群里发起、主人私聊发起：都放行
+  for (const source of [
+    { kind: 'group' as const, groupId: '1', userId: '10001' },
+    { kind: 'private' as const, userId: '10001' },
+  ]) {
+    const allowed = allowedToolNamesForSource(base, source, ['10001'])
+    assert.equal(allowed.includes('revise_prompt'), true)
+    assert.equal(allowed.includes('list_prompt_slots'), true)
+  }
+
+  // 群友发起、陌生人私聊、无具体发送者的群背景唤醒：都不放行
+  for (const source of [
+    { kind: 'group' as const, groupId: '1', userId: '20002' },
+    { kind: 'private' as const, userId: '20002' },
+    { kind: 'group' as const, groupId: '1', userId: '' },
+  ]) {
+    const allowed = allowedToolNamesForSource(base, source, ['10001'])
+    assert.equal(allowed.includes('revise_prompt'), false)
+    assert.equal(allowed.includes('list_prompt_slots'), false)
+  }
+})
+
+test('主人发起时可见并可执行提示词工具；群友发起时隐藏且被拒', () => {
+  const base = allowedToolNames([])
+  const tools = [
+    { type: 'function', function: { name: 'revise_prompt' } },
+    { type: 'function', function: { name: 'send_qq_group' } },
+  ]
+  const ownerGroupAllowed = allowedToolNamesForSource(
+    base,
+    { kind: 'group', groupId: '1', userId: '10001' },
+    ['10001'],
+  )
+  assert.deepEqual(
+    filterToolsForTurn(tools, true, ownerGroupAllowed).map((t) => t.function.name),
+    ['revise_prompt', 'send_qq_group'],
+  )
+  assert.equal(vetoIfActive('revise_prompt', true, ownerGroupAllowed), undefined)
+
+  const strangerGroupAllowed = allowedToolNamesForSource(
+    base,
+    { kind: 'group', groupId: '1', userId: '20002' },
+    ['10001'],
+  )
+  assert.deepEqual(
+    filterToolsForTurn(tools, true, strangerGroupAllowed).map((t) => t.function.name),
+    ['send_qq_group'],
+  )
+  assert.match(vetoIfActive('revise_prompt', true, strangerGroupAllowed) ?? '', /不可用/)
 })
 
 test('拒因文案列出可用工具，便于模型自纠', () => {

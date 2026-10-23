@@ -41,10 +41,10 @@ test('segmentsToText：媒体与卡片给占位标记', () => {
   assert.equal(text, '@全体成员看图[图][语音][回复]')
 })
 
-test('at 检测：命中 self / @全体；不误判他人', () => {
+test('at 检测：命中 self；@全体成员不算点名', () => {
   const self = [{ type: 'at', data: { qq: '10001' } }]
   assert.equal(atsUser(self, 10001), true)
-  assert.equal(atsUser([{ type: 'at', data: { qq: 'all' } }], 10001), true)
+  assert.equal(atsUser([{ type: 'at', data: { qq: 'all' } }], 10001), false)
   assert.equal(atsUser([{ type: 'at', data: { qq: '20002' } }], 10001), false)
   assert.equal(atsUser([{ type: 'text', data: { text: '@10001' } }], 10001), false)
 })

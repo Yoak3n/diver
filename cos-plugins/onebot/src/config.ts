@@ -4,7 +4,8 @@
 // resolveConfig 负责归一化与夹紧。安全默认：
 // - 未配置 wsUrl → 插件休眠（不连接、不注册任何工具）
 // - groups 空 → 不监听任何群（私聊不受此限）
-// - OneBot 回合工具白名单基座固定为出话三件套，allowedTools 只做增量
+// - OneBot 回合工具白名单基座固定（出话 + 联网检索 + 作用域记忆），
+//   allowedTools 只做增量；本机控制类工具由 sandbox.ts 硬性禁止
 
 import type { PluginConfigDecl } from '@cos/plugin-api'
 
@@ -14,6 +15,8 @@ import type { VoiceMode } from './voice.ts'
 export interface Config {
   wsUrl?: string
   token?: string
+  /** 主人 QQ 号，逗号分隔；只用于提示词与记忆作用域，不开放本机工具。 */
+  ownerIds?: string
   /** 群白名单，逗号分隔群号；空 = 不监听任何群。 */
   groups?: string
   /** 昵称/别名（提及检测），逗号分隔。 */
@@ -29,7 +32,9 @@ export interface Config {
   ratePlain?: number
   /** 每群主动插话冷却（分钟；被 @ / 提及 / 引用不受限）。 */
   cooldownMinutes?: number
-  /** OneBot 回合在基座（出话三件套）之上放行的工具名，逗号分隔。 */
+  /** 私聊每用户每小时唤醒上限（0 = 不限制）；超额只记缓冲不回应。 */
+  privateMaxPerHour?: number
+  /** OneBot 回合在固定基座之上放行的工具名，逗号分隔；硬禁工具会被忽略。 */
   allowedTools?: string
   /** 出站遮蔽词条（字面量），逗号分隔。 */
   maskTerms?: string
@@ -54,11 +59,13 @@ export interface Config {
 export interface ResolvedConfig {
   wsUrl: string
   token: string
+  ownerIds: string[]
   groups: string[]
   aliases: string[]
   context: { maxMessages: number; maxAgeMinutes: number; maxChars: number }
   rate: { mention: number; quoted: number; plain: number }
   cooldownMinutes: number
+  privateMaxPerHour: number
   sandbox: { allowedTools: string[] }
   privacy: { maskTerms: string[]; extraPatterns: string[] }
   sendIntervalMs: number
@@ -72,8 +79,19 @@ export interface ResolvedConfig {
   }
 }
 
-/** 出话三件套：OneBot 回合的固定基座（见 sandbox.ts）。 */
-export const BASELINE_TOOLS = ['send_qq_group', 'send_qq_private', 'stay_silent'] as const
+/**
+ * OneBot 回合的固定基座（见 sandbox.ts）：
+ * 出话三件套 + 受控联网 + 作用域记忆（不含 web_read / 本机工具）。
+ */
+export const BASELINE_TOOLS = [
+  'send_qq_group',
+  'send_qq_private',
+  'stay_silent',
+  'web_search',
+  'web_explore',
+  'recall',
+  'remember',
+] as const
 
 /** 普通消息唤醒后的群聊静默窗（毫秒）：等话头停了再评估，不打断进行中对话。 */
 export const PLAIN_DEBOUNCE_MS = 8_000
@@ -107,6 +125,7 @@ export function resolveConfig(config: Config = {}): ResolvedConfig {
   return {
     wsUrl: typeof config.wsUrl === 'string' ? config.wsUrl.trim() : '',
     token: typeof config.token === 'string' ? config.token.trim() : '',
+    ownerIds: splitList(config.ownerIds, ',').filter((id) => /^\d+$/.test(id)),
     groups: splitList(config.groups, ','),
     aliases: splitList(config.aliases, ','),
     context: {
@@ -120,6 +139,7 @@ export function resolveConfig(config: Config = {}): ResolvedConfig {
       plain: num(config.ratePlain, 0.05, 0, 1),
     },
     cooldownMinutes: num(config.cooldownMinutes, 15, 0, 720),
+    privateMaxPerHour: Math.round(num(config.privateMaxPerHour, 30, 0, 600)),
     sandbox: { allowedTools: splitList(config.allowedTools, ',') },
     privacy: {
       maskTerms: splitList(config.maskTerms, ','),
@@ -147,6 +167,12 @@ export const configDecl: PluginConfigDecl = {
       description: '如 ws://127.0.0.1:3001；留空 = 插件休眠',
     },
     { key: 'token', label: 'access token', type: 'password', description: 'OneBot 实现的 access_token，可留空' },
+    {
+      key: 'ownerIds',
+      label: '主人 QQ 号',
+      type: 'text',
+      description: '逗号分隔；只用于提示词与记忆作用域，不会因此开放本机文件/shell 工具',
+    },
     { key: 'groups', label: '监听的群', type: 'text', description: '逗号分隔群号；空 = 不监听任何群' },
     { key: 'aliases', label: '昵称/别名', type: 'text', description: '逗号分隔；群消息提到即高概率回应' },
     { key: 'maxMessages', label: '上下文条数上限', type: 'number', default: 40 },
@@ -157,10 +183,17 @@ export const configDecl: PluginConfigDecl = {
     { key: 'ratePlain', label: '主动插话概率', type: 'number', default: 0.05, description: '普通群消息经冷却/退避门控后的抽样概率' },
     { key: 'cooldownMinutes', label: '插话冷却（分钟）', type: 'number', default: 15 },
     {
+      key: 'privateMaxPerHour',
+      label: '私聊唤醒上限（次/小时）',
+      type: 'number',
+      default: 30,
+      description: '每用户每小时最多唤醒的私聊回合；超出只记入缓冲不回应（防刷）。0 = 不限制',
+    },
+    {
       key: 'allowedTools',
       label: 'OneBot 回合额外放行工具',
       type: 'text',
-      description: '逗号分隔工具名；基座（send_qq_group/send_qq_private/stay_silent）之外的白名单，建议只放 web_search 这类只读工具',
+      description: '逗号分隔工具名；基座（出话/联网/记忆）之外的白名单。本机文件、shell、截图、委派、MCP、web_read 等硬禁名称会被忽略',
     },
     { key: 'maskTerms', label: '出站遮蔽词条', type: 'text', description: '逗号分隔字面量（如真名/住址），发出前替换为 [已遮蔽]' },
     { key: 'extraPatterns', label: '出站遮蔽正则', type: 'text', description: '分号分隔 RegExp source' },

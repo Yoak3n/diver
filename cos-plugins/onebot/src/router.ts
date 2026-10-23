@@ -21,11 +21,14 @@ import {
 } from './protocol.ts'
 import {
   evaluateGate,
+  evaluatePrivateGate,
   evaluateTrigger,
   newGateState,
+  newPrivateGate,
   plainRateForHour,
   recordTurnOutcome,
   type GateState,
+  type PrivateGate,
 } from './trigger.ts'
 import type { OnebotClient } from './ws.ts'
 import type { TriggerAnchor } from './tools.ts'
@@ -60,6 +63,7 @@ export interface Router {
 export function createRouter(deps: RouterDeps): Router {
   const { companion, cfg, client } = deps
   const gates = new Map<string, GateState>()
+  const privateGates = new Map<string, PrivateGate>()
   const groupNames = new Map<string, string>()
   const sentIds = new Map<string, Set<number>>()
   const anchors = new Map<string, TriggerAnchor>()
@@ -73,6 +77,15 @@ export function createRouter(deps: RouterDeps): Router {
     if (state === undefined) {
       state = newGateState()
       gates.set(groupId, state)
+    }
+    return state
+  }
+
+  const privateGateOf = (userId: string): PrivateGate => {
+    let state = privateGates.get(userId)
+    if (state === undefined) {
+      state = newPrivateGate()
+      privateGates.set(userId, state)
     }
     return state
   }
@@ -187,6 +200,8 @@ export function createRouter(deps: RouterDeps): Router {
       messageId: event.message_id,
       atMe: false,
     } satisfies BufferedMessage)
+    // 必回但有配额：刷屏者在小时内被静默（只记缓冲，不唤醒回合）
+    if (!evaluatePrivateGate(privateGateOf(userId), cfg.privateMaxPerHour, Date.now()).open) return
     await wake({
       kind: 'private',
       group: null,

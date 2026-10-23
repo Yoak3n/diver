@@ -110,3 +110,35 @@ export function plainRateForHour(rate: number, date: Date): number {
   const hour = date.getHours()
   return hour < 9 ? rate * 0.8 : rate
 }
+
+// ---- 私聊唤醒限频（每用户一份） ----
+
+export interface PrivateGate {
+  /** 当前固定窗口起点（毫秒）；0 = 尚未开窗。 */
+  windowStart: number
+  /** 窗口内已唤醒次数。 */
+  count: number
+}
+
+export function newPrivateGate(): PrivateGate {
+  return { windowStart: 0, count: 0 }
+}
+
+/**
+ * 私聊限频（固定 1 小时窗口）：私聊必回但不无限回，刷屏者在窗口内被静默
+ * （消息仍进缓冲，只是不唤醒回合）。maxPerHour = 0 不限制；窗口滚动即恢复。
+ */
+export function evaluatePrivateGate(
+  state: PrivateGate,
+  maxPerHour: number,
+  now: number,
+): { open: boolean; reason?: 'flood' } {
+  if (maxPerHour <= 0) return { open: true }
+  if (state.windowStart === 0 || now - state.windowStart >= 3_600_000) {
+    state.windowStart = now
+    state.count = 0
+  }
+  if (state.count >= maxPerHour) return { open: false, reason: 'flood' }
+  state.count += 1
+  return { open: true }
+}

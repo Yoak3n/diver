@@ -5,43 +5,130 @@
 //  1) 可见性：system-prompt/assemble 时过滤 assembly.tools（模型看不到）
 //  2) 执行：tools/pre-execute 时否决（提示注入点名调用也调不动）
 // 混合批次保守：一批认领消息里混有 OneBot 消息 → 整回合按受限处理。
+//
+// 硬禁清单独立于 allowedTools：即使有人把 sh / write / web_read 填进配置，
+// 也不会对 QQ 回合开放。
 
 import { BASELINE_TOOLS } from './config.ts'
 
 /** 来源 detail 前缀（companion.message 约定，backend CompanionService 同形）。 */
 export const ONEBOT_DETAIL_PREFIX = 'onebot:'
 
-export function isOnebotDetail(detail: string | undefined): boolean {
+/** 一次 OneBot 回合的来源；群/私聊决定记忆作用域。 */
+export type OnebotSource =
+  | { kind: 'group'; groupId: string; userId: string }
+  | { kind: 'private'; userId: string }
+
+export function isOnebotDetail(detail: string | undefined): detail is string {
   return typeof detail === 'string' && detail.startsWith(ONEBOT_DETAIL_PREFIX)
+}
+
+/** 解析 `onebot:g<群号>:<发送者>` / `onebot:u<QQ号>`；坏格式返回 undefined。 */
+export function parseOnebotSource(detail: string | undefined): OnebotSource | undefined {
+  if (!isOnebotDetail(detail)) return undefined
+  const rest = detail.slice(ONEBOT_DETAIL_PREFIX.length)
+  if (rest.startsWith('g')) {
+    const [groupId = '', userId = ''] = rest.slice(1).split(':')
+    if (groupId === '') return undefined
+    return { kind: 'group', groupId, userId: userId === '-' ? '' : userId }
+  }
+  if (rest.startsWith('u')) {
+    const userId = rest.slice(1)
+    return userId === '' ? undefined : { kind: 'private', userId }
+  }
+  return undefined
 }
 
 /** 回合沙箱状态机：claimed 置位 → turn/end 清除。 */
 export class TurnSandbox {
-  private active = false
+  private source: OnebotSource | undefined
 
-  /** 一批被认领的消息；任一来自 OneBot 即激活本回合受限态。 */
-  markClaimed(messages: ReadonlyArray<{ source?: { detail?: string } }>): void {
-    if (this.active) return
+  /**
+   * 一批被认领的消息；任一来自 OneBot 即激活本回合受限态。
+   * 返回本次「新激活」的来源（已激活时返回 undefined，避免重复广播）。
+   */
+  markClaimed(messages: ReadonlyArray<{ source?: { detail?: string } }>): OnebotSource | undefined {
+    if (this.source !== undefined) return undefined
     for (const message of messages) {
-      if (isOnebotDetail(message.source?.detail)) {
-        this.active = true
-        return
+      const source = parseOnebotSource(message.source?.detail)
+      if (source !== undefined) {
+        this.source = source
+        return source
       }
     }
+    return undefined
   }
 
   markTurnEnd(): void {
-    this.active = false
+    this.source = undefined
   }
 
   isActive(): boolean {
-    return this.active
+    return this.source !== undefined
+  }
+
+  currentSource(): OnebotSource | undefined {
+    return this.source
   }
 }
 
-/** 受限回合的全量放行名单 = 基座 + 配置增量（去重）。 */
+/** 本机控制 / 高风险 / 任意 URL 类工具：OneBot 回合永久禁止。 */
+export const FORBIDDEN_TOOLS: ReadonlySet<string> = new Set([
+  // 任意 URL 抓取（web_search / web_explore 已覆盖联网需求）
+  'web_read',
+  // 本地文件与 shell
+  'read', 'write', 'edit', 'multi_edit', 'sh', 'ls', 'find', 'grep',
+  // 屏幕
+  'screenshot', 'list_displays',
+  // 进程 / 实例控制
+  'restart_agent', 'native_status',
+  // 任务委派
+  'delegate_task', 'list_tasks', 'cancel_task', 'get_task_events',
+  // 实例间通信
+  'send_to_peer', 'send_to_group', 'list_peers', 'list_groups',
+  'create_group', 'invite_to_group', 'respond_invite',
+  // 记忆身份/全量枚举/删除（recall/remember 已按作用域开放）
+  'identity', 'set_name', 'demote', 'inventory',
+])
+
+/** MCP 工具语义未知，按前缀整类禁止。 */
+const FORBIDDEN_PREFIXES = ['mcp__'] as const
+
+export function isForbiddenTool(name: string): boolean {
+  return FORBIDDEN_TOOLS.has(name) || FORBIDDEN_PREFIXES.some((prefix) => name.startsWith(prefix))
+}
+
+/** 仅主人发起的回合可用的工具；即使写进 allowedTools 也不会对普通群友开放。 */
+export const OWNER_TOOLS = ['revise_prompt', 'list_prompt_slots'] as const
+
+const OWNER_TOOL_SET: ReadonlySet<string> = new Set(OWNER_TOOLS)
+
+export function isOwnerTool(name: string): boolean {
+  return OWNER_TOOL_SET.has(name)
+}
+
+/** 本回合是否由主人发起（群/私聊都算；无具体发送者的群背景唤醒不算）。 */
+export function isOwnerSource(
+  source: OnebotSource | undefined,
+  ownerIds: readonly string[],
+): boolean {
+  return source !== undefined && ownerIds.includes(source.userId)
+}
+
+/** 受限回合的全量放行名单 = 基座 + 配置增量（去重，硬禁/主人专属项剔除）。 */
 export function allowedToolNames(extra: readonly string[]): string[] {
   return [...new Set([...BASELINE_TOOLS, ...extra])]
+    .filter((name) => !isForbiddenTool(name) && !isOwnerTool(name))
+}
+
+/** 按回合来源计算放行名单：主人发起的回合额外获得提示词自改工具。 */
+export function allowedToolNamesForSource(
+  base: readonly string[],
+  source: OnebotSource | undefined,
+  ownerIds: readonly string[],
+): string[] {
+  if (!isOwnerSource(source, ownerIds)) return [...base]
+  return [...new Set([...base, ...OWNER_TOOLS])]
 }
 
 /** 可见性过滤（保持原顺序）；非受限回合原样返回。 */
@@ -61,6 +148,24 @@ export function filterToolsForTurn<T extends { name?: string; function?: { name?
 /** 执行否决：受限回合里不在名单的工具给出拒因；放行返回 undefined。 */
 export function vetoIfActive(name: string, active: boolean, allowed: readonly string[]): string | undefined {
   if (!active) return undefined
+  if (isForbiddenTool(name)) {
+    return `当前回合来自外部聊天（OneBot），工具 "${name}" 属于本机控制或高风险类别，永久不可用。可用工具仅限：${allowed.join('、')}。`
+  }
   if (allowed.includes(name)) return undefined
   return `当前回合来自外部聊天（OneBot），工具 "${name}" 不可用。可用工具仅限：${allowed.join('、')}。`
+}
+
+/** 回合作用域广播（记忆插件据此选择读写命名空间）。 */
+export interface TurnScopeEvent {
+  active: boolean
+  kind?: 'group' | 'private'
+  groupId?: string
+  userId?: string
+  isOwner?: boolean
+}
+
+declare module 'cordis' {
+  interface Events {
+    'onebot/turn-scope'(scope: TurnScopeEvent): void
+  }
 }

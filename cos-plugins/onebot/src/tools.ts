@@ -9,6 +9,7 @@ import type {} from '@cos/plugin-api'
 
 import type { ResolvedConfig } from './config.ts'
 import { maskOutbound } from './mask.ts'
+import { SendBreaker, breakerErrorMessage } from './send-breaker.ts'
 import { decideVoice, recordSegment, voiceKey, type VoicePolicy } from './voice.ts'
 import type { OnebotClient } from './ws.ts'
 
@@ -51,15 +52,28 @@ function buildMessage(text: string, quoteId?: number): Array<{ type: string; dat
   return segments
 }
 
-function errorJson(error: unknown): { content: string; isError: true } {
+/** 发送失败回执：记录熔断并提示模型停止重试。 */
+function sendFailJson(breaker: SendBreaker, error: unknown): { content: string; isError: true } {
+  breaker.recordFail(Date.now())
   const message = error instanceof Error ? error.message : String(error)
-  return { content: JSON.stringify({ error: message }), isError: true }
+  return {
+    content: JSON.stringify({ error: message, hint: '发送失败；连续失败会暂停出话，不要在本回合反复重试。' }),
+    isError: true,
+  }
+}
+
+/** 熔断检查：阻断时给出停止文案（本地短路，不打实现侧、不合成语音）。 */
+function breakerJson(breaker: SendBreaker): { content: string } | undefined {
+  if (!breaker.blocked(Date.now())) return undefined
+  return { content: JSON.stringify({ error: breakerErrorMessage(breaker.failCount()) }) }
 }
 
 export function applyTools(ctx: Context, deps: SendDeps): void {
   // 串行队列 + 最小间隔（同一实现侧连续发送易触发风控）
   let chain: Promise<unknown> = Promise.resolve()
   let lastSendAt = 0
+  // 连续失败熔断（账号级：群发与私聊共享）
+  const breaker = new SendBreaker()
   function enqueue<T>(job: () => Promise<T>): Promise<T> {
     const run = chain.then(async () => {
       const wait = deps.cfg.sendIntervalMs - (Date.now() - lastSendAt)
@@ -129,6 +143,8 @@ export function applyTools(ctx: Context, deps: SendDeps): void {
     if (groupId === undefined || groupId === '') {
       return { content: JSON.stringify({ error: 'group 必填（未发现可用的近期群聊来源）' }) }
     }
+    const blocked = breakerJson(breaker)
+    if (blocked !== undefined) return blocked
     const quoteId =
       anchor !== undefined
       && anchor.groupId === groupId
@@ -151,6 +167,7 @@ export function applyTools(ctx: Context, deps: SendDeps): void {
         }),
       )
       const messageId = Number(data?.message_id ?? 0)
+      breaker.recordOk()
       if (messageId > 0) deps.rememberSent(groupId, messageId)
       deps.onSpoke()
       return {
@@ -163,7 +180,7 @@ export function applyTools(ctx: Context, deps: SendDeps): void {
         }),
       }
     } catch (error) {
-      return errorJson(error)
+      return sendFailJson(breaker, error)
     }
   }, {
     description:
@@ -189,6 +206,8 @@ export function applyTools(ctx: Context, deps: SendDeps): void {
     const user = String(a.user ?? '').trim()
     if (text === '') return { content: JSON.stringify({ error: 'text 必填' }) }
     if (user === '') return { content: JSON.stringify({ error: 'user 必填（QQ 号）' }) }
+    const blocked = breakerJson(breaker)
+    if (blocked !== undefined) return blocked
     const masked = maskOutbound(text, deps.cfg.privacy)
     const { segments, voiceInfo } = await settleMessage(
       masked.text,
@@ -203,6 +222,7 @@ export function applyTools(ctx: Context, deps: SendDeps): void {
         }),
       )
       const messageId = Number(data?.message_id ?? 0)
+      breaker.recordOk()
       deps.onSpoke()
       return {
         content: JSON.stringify({
@@ -214,7 +234,7 @@ export function applyTools(ctx: Context, deps: SendDeps): void {
         }),
       }
     } catch (error) {
-      return errorJson(error)
+      return sendFailJson(breaker, error)
     }
   }, {
     description:

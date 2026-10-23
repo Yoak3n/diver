@@ -10,11 +10,20 @@ import type { Context } from 'cordis'
 import { nativeRpc } from '@diver/native-bridge/rpc'
 
 import { configDecl, resolveConfig, type Config } from './config.ts'
-import { groupBufferPath, trimBuffer } from './buffer-store.ts'
-import { TurnSandbox, allowedToolNames, filterToolsForTurn, vetoIfActive } from './sandbox.ts'
+import { trimAllBuffers } from './buffer-store.ts'
+import {
+  TurnSandbox,
+  allowedToolNames,
+  allowedToolNamesForSource,
+  filterToolsForTurn,
+  vetoIfActive,
+  type OnebotSource,
+  type TurnScopeEvent,
+} from './sandbox.ts'
 import { OnebotClient } from './ws.ts'
 import { applyTools, type VoiceSendDeps } from './tools.ts'
 import { applyPrompt } from './prompt.ts'
+import { replaceRelationCard, safeRelationCard, type ShallowCardFacts } from './relation-card.ts'
 import { createRouter, type CompanionLike } from './router.ts'
 import { voiceCooldownOk } from './voice.ts'
 
@@ -56,29 +65,74 @@ export function apply(ctx: Context, config: Config = {}): void {
 
   const sandbox = new TurnSandbox()
   const allowed = allowedToolNames(cfg.sandbox.allowedTools)
+  const allowedForTurn = (source: OnebotSource | undefined): string[] =>
+    allowedToolNamesForSource(allowed, source, cfg.ownerIds)
   let selfId = 0
+  /** 本回合主会话 id：避免 subagent 的 turn/end 提前解除沙箱。 */
+  let activeSessionId: string | undefined
+  /** 每回合只读一次身份卡片：只取名字；性格/说话方式由 self-prompt 的 prompts 负责。 */
+  let turnCardFacts: Promise<ShallowCardFacts> | undefined
 
-  // ---- 安全钩子：可见性 + 执行双闸 ----
+  const loadShallowCard = (): Promise<ShallowCardFacts> => {
+    turnCardFacts ??= withTimeout(
+      nativeRpc<{ name?: string | null }>('get_card', {}, { label: 'memory:get_card' }),
+      1_500,
+      '读取身份卡片超时',
+    )
+      .then((card) => ({ name: card?.name ?? '' }))
+      .catch(() => ({ name: '' }))
+    return turnCardFacts
+  }
+
+  /** 把来源转成记忆插件可消费的作用域事件（主人标记只影响提示词/记忆，不升权）。 */
+  const scopeEvent = (source: OnebotSource | undefined): TurnScopeEvent => source === undefined
+    ? { active: false }
+    : {
+        active: true,
+        kind: source.kind,
+        userId: source.userId,
+        ...(source.kind === 'group' ? { groupId: source.groupId } : {}),
+        isOwner: cfg.ownerIds.includes(source.userId),
+      }
+
+  // ---- 安全钩子：可见性 + 执行双闸 + QQ 安全卡片 ----
   // 回合来源由 router 唤醒消息的 `onebot:` detail 标记（inbox/claimed 判定）。
 
-  ctx.on('system-prompt/assemble', (assembly, _context, next) => {
+  ctx.on('system-prompt/assemble', async (assembly, _context, next) => {
     if (sandbox.isActive()) {
-      assembly.tools = filterToolsForTurn(assembly.tools, true, allowed)
+      const source = sandbox.currentSource()
+      assembly.tools = filterToolsForTurn(assembly.tools, true, allowedForTurn(source))
+      if (source !== undefined) {
+        const facts = await loadShallowCard()
+        assembly.sections = replaceRelationCard(
+          assembly.sections,
+          safeRelationCard(source, cfg.ownerIds, facts),
+        )
+      }
     }
     return next()
   })
 
   ctx.on('tools/pre-execute', (payload, next) => {
-    const veto = vetoIfActive(payload.name, sandbox.isActive(), allowed)
+    const veto = vetoIfActive(payload.name, sandbox.isActive(), allowedForTurn(sandbox.currentSource()))
     return veto === undefined ? next() : Promise.resolve({ veto })
   })
 
   ctx.on('agent/inbox/claimed', (payload) => {
-    sandbox.markClaimed([payload.message])
+    const activated = sandbox.markClaimed([payload.message])
+    if (activated !== undefined) {
+      activeSessionId = payload.agent.session.id
+      turnCardFacts = undefined
+      ctx.emit('onebot/turn-scope', scopeEvent(activated))
+    }
   })
-  ctx.on('session/event', (_session, event) => {
+  ctx.on('session/event', (session, event) => {
     if (event.type !== 'turn/end') return
+    if (activeSessionId !== undefined && session.id !== activeSessionId) return
     sandbox.markTurnEnd()
+    activeSessionId = undefined
+    turnCardFacts = undefined
+    ctx.emit('onebot/turn-scope', scopeEvent(undefined))
     router.settleTurn()
   })
 
@@ -152,8 +206,8 @@ export function apply(ctx: Context, config: Config = {}): void {
     router.clearTimers()
   }, 'onebot.lifecycle')
 
-  // 启动压缩（每群/私聊只保留最近 2000 行）+ 建连
-  for (const groupId of cfg.groups) trimBuffer(groupBufferPath(groupId))
+  // 启动全量压缩（群/私聊缓冲各留最近 2000 行；运行期由追加计数滚动截断）+ 建连
+  trimAllBuffers()
   client.start()
   console.log(
     `[onebot] 就绪 ${cfg.wsUrl}（群：${cfg.groups.length > 0 ? cfg.groups.join(',') : '未配置'}；` +

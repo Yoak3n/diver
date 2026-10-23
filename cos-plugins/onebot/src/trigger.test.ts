@@ -5,8 +5,10 @@ import assert from 'node:assert/strict'
 import { resolveConfig } from './config.ts'
 import {
   evaluateGate,
+  evaluatePrivateGate,
   evaluateTrigger,
   newGateState,
+  newPrivateGate,
   nextBackoffMs,
   plainRateForHour,
   recordTurnOutcome,
@@ -73,4 +75,19 @@ test('退避等待期：未攒够 6 条继续拒，攒够提前重估', () => {
 test('深夜降档：9 点前概率 ×0.8，白天原样', () => {
   assert.equal(plainRateForHour(0.5, new Date(2026, 0, 1, 3, 0)), 0.4)
   assert.equal(plainRateForHour(0.5, new Date(2026, 0, 1, 12, 0)), 0.5)
+})
+
+test('私聊限频：窗口内超额静默，窗口滚动恢复，0 不限制', () => {
+  const gate = newPrivateGate()
+  const t0 = 4_000_000
+  for (let i = 0; i < 30; i += 1) {
+    assert.equal(evaluatePrivateGate(gate, 30, t0).open, true)
+  }
+  assert.deepEqual(evaluatePrivateGate(gate, 30, t0 + 1_000), { open: false, reason: 'flood' })
+  // 固定窗口：满 1 小时重开
+  assert.equal(evaluatePrivateGate(gate, 30, t0 + 3_600_000).open, true)
+  const unlimited = newPrivateGate()
+  for (let i = 0; i < 100; i += 1) {
+    assert.equal(evaluatePrivateGate(unlimited, 0, t0).open, true)
+  }
 })

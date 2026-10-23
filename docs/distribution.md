@@ -91,9 +91,10 @@ Linux:   pnpm tauri build --bundles appimage deb   # → bundle/appimage/ 与 bu
 **但必须在目标平台上装配**——vendor 闭包包含 `@esbuild/*` 平台二进制，Windows
 装配的产物带 win32 二进制，Linux 用户跑不了 sidecar。
 
-构建前置（Arch 为例，CI ubuntu 由 release workflow 自动装）：
-`webkit2gtk-4.1 gtk3 libayatana-appindicator3 librsvg fuse2`（打包时
-`APPIMAGE_EXTRACT_AND_RUN=1` 让嵌套 AppImage 走解压运行，免 FUSE 嵌套挂载问题）。
+构建前置（Arch 为例，pacman 安装；CI ubuntu 由 release workflow 自动装）：
+`webkit2gtk-4.1 gtk3 libayatana-appindicator3 librsvg fuse2 patchelf`
+（patchelf 供 linuxdeploy 修 rpath；打包时 `APPIMAGE_EXTRACT_AND_RUN=1` 让嵌套
+AppImage 走解压运行，免 FUSE 嵌套挂载问题）。
 
 与 Windows 的差异点：
 

@@ -9,7 +9,7 @@ permissions:
   contents: write
 
 jobs:
-  release:
+  build-windows:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v6
@@ -63,14 +63,88 @@ jobs:
       - name: upload artifact
         uses: actions/upload-artifact@v7
         with:
-          name: diver-nsis
+          name: diver-windows-nsis
           # Cargo workspace 在仓库根 → 产物在根 target/，不是 src-tauri/target/
           path: target/release/bundle/nsis/*-setup.exe
           if-no-files-found: error
 
-      - name: create GitHub Release
+  build-linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10
+
+      - name: setup node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      # Tauri v2 (wry/tao) Linux 系统依赖 + AppImage 运行时 FUSE
+      # （24.04 的 fuse2 包名是 libfuse2t9，22.04 是 libfuse2——按可用性回退）
+      - name: install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev libgtk-3-dev \
+            libayatana-appindicator3-dev librsvg2-dev \
+            patchelf file
+          sudo apt-get install -y libfuse2 || sudo apt-get install -y libfuse2t9
+
+      - name: check tag matches app version
         if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          ver=$(node -p "require('./src-tauri/tauri.conf.json').version")
+          if [ "v$ver" != "${{ github.ref_name }}" ]; then
+            echo "标签 ${{ github.ref_name }} 与 tauri.conf.json 版本 v$ver 不一致" >&2
+            exit 1
+          fi
+
+      - name: install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: warm harness dependency store
+        working-directory: harness
+        run: pnpm install --frozen-lockfile
+
+      # bundle-release 在 Linux 上走 `tauri build --bundles appimage deb`，
+      # 并在本平台装配 sidecar（vendor 闭包含 @esbuild 平台二进制，必须与目标平台一致）。
+      - name: build AppImage & deb
+        run: node scripts/bundle-release.mjs
+
+      - name: upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: diver-linux
+          path: |
+            target/release/bundle/appimage/*.AppImage
+            target/release/bundle/deb/*.deb
+          if-no-files-found: error
+
+  publish-release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [build-windows, build-linux]
+    runs-on: ubuntu-latest
+    steps:
+      - name: download all artifacts
+        uses: actions/download-artifact@v7
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: create GitHub Release
         uses: softprops/action-gh-release@v3
         with:
-          files: target/release/bundle/nsis/*-setup.exe
+          files: artifacts/*
           generate_release_notes: true

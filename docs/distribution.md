@@ -1,6 +1,6 @@
-# Windows 分发（打包安装包）
+# 分发（打包安装包）
 
-Diver 用 **NSIS 安装包**（`.exe`）分发（排除 MSI 格式）。应用本体是 Tauri 2
+Diver 用 **NSIS 安装包**（Windows `.exe`）与 **AppImage + deb**（Linux）分发。应用本体是 Tauri 2
 壳，agent 大脑是一个 **Node sidecar**（自研 cos harness）。
 
 **不随包 node.exe**（体积从 ~82MB 降到安装包 ~40–50MB）：引擎（`@cos/*`）与
@@ -76,6 +76,33 @@ src-tauri/resources/sidecar/                                      # 打进安装
 > [handoff-0.2.0.md](handoff-0.2.0.md) 与 daily 计划文档。
 
 升级安装**不会**清掉用户数据。
+
+## Linux（AppImage / deb）
+
+打包目标经 CLI 按平台覆盖（conf 的 `bundle.targets` 基座是 `nsis`；Tauri v2
+schema 不接受分平台 targets map）：
+
+```
+Windows: pnpm tauri build                          # → bundle/nsis/
+Linux:   pnpm tauri build --bundles appimage deb   # → bundle/appimage/ 与 bundle/deb/
+```
+
+`bundle-release.mjs` 在 Linux 上自动带上述 CLI 覆盖；其余组装流程两端一致，
+**但必须在目标平台上装配**——vendor 闭包包含 `@esbuild/*` 平台二进制，Windows
+装配的产物带 win32 二进制，Linux 用户跑不了 sidecar。
+
+构建前置（Arch 为例，CI ubuntu 由 release workflow 自动装）：
+`webkit2gtk-4.1 gtk3 libayatana-appindicator3 librsvg fuse2`（打包时
+`APPIMAGE_EXTRACT_AND_RUN=1` 让嵌套 AppImage 走解压运行，免 FUSE 嵌套挂载问题）。
+
+与 Windows 的差异点：
+
+- **Node 解析**同一链路（env → 缓存 → 系统 PATH → 下载 `node-v<ver>-linux-x64.tar.xz`
+  到 `~/.local/share/Diver/runtime/`），SHA256 用 `sha256sum` 校验。
+- **用户数据**：`~/.local/share/com.diver.companion/cos-<实例id>/`（`dirs`
+  data_local_dir，与 Windows 的 `%APPDATA%` 对应）。
+- **模型外置**在 AppImage/deb 里是只读的系统路径，用户自装模型建议放用户目录
+  （后续提供覆盖路径）。
 
 ## 插件开放（核心设计）
 

@@ -24,7 +24,8 @@
 // 依赖：pnpm ≥ 9、Node ≥ 22。
 
 import { execFileSync } from 'node:child_process'
-import { copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { buildSeedManifest, ignoredName } from './lib/seed-manifest.mjs'
@@ -57,8 +58,10 @@ const OPEN_PLUGINS = [
 const ENTRY_PLUGIN = 'companion'
 const SEED_PLUGINS = OPEN_PLUGINS.filter((n) => n !== ENTRY_PLUGIN)
 
-// 随包 Node 运行时来源（开发机 nvm 安装目录）。
+// 构建机 Node（不随包，仅构建用）：DIVER_NODE_BIN 显式指定；
+// Windows 开发机按 nvm 布局探测，Linux/macOS 直接用当前进程的 node。
 const NODE_BIN = process.env.DIVER_NODE_BIN ?? (() => {
+  if (process.platform !== 'win32') return process.execPath
   const candidates = [
     process.env.NVM_SYMLINK ? join(process.env.NVM_SYMLINK, 'node.exe') : null,
     'E:/SDK/nvm/v22.20.0/node.exe',
@@ -87,7 +90,7 @@ function step(label) {
 
 // ── 0. 前置检查 ─────────────────────────────────────────────────────────
 if (!NODE_BIN || !existsSync(NODE_BIN)) {
-  console.error('[bundle] 未找到 node.exe，请设置 DIVER_NODE_BIN 或安装 Node ≥ 22')
+  console.error('[bundle] 未找到构建机 node，请设置 DIVER_NODE_BIN 或安装 Node ≥ 22')
   process.exit(1)
 }
 console.log(`[bundle] 构建机 Node（不随包，仅构建用）: ${NODE_BIN} (${(execFileSync(NODE_BIN, ['--version'], { encoding: 'utf8' }) ?? '').trim()})`)
@@ -398,7 +401,103 @@ if (assembleOnly) {
   // beforeBuildCommand 的前置步骤），此处退出，不再重复调用 `pnpm tauri build`。
   console.log('\n[assemble-only] sidecar 资源组装完成（tauri build 由调用方/`cargo tauri build` 执行）')
 } else {
-  step('NSIS 安装包构建 (tauri build)')
-  run('pnpm tauri build', ROOT, 'tauri-build')
-  console.log('\n[bundle] 完成。安装包位于 target/release/bundle/nsis/')
+  // 打包目标：conf 基座 nsis（Windows）；Linux 用 CLI 覆盖出 AppImage + deb
+  // （conf v2 schema 不接受分平台 targets map，CLI --bundles 是官方覆盖点）。
+  if (process.platform !== 'win32') {
+    // AppImage 工具链 workaround：
+    //  - APPIMAGE_EXTRACT_AND_RUN：嵌套 AppImage（linuxdeploy 内的 plugin-appimage）免 FUSE 嵌套挂载
+    //  - NO_STRIP：linuxdeploy 自带的老 strip 处理不了新链接器产出的 .relr.dyn 段
+    //    （Arch 的 libyuv/libzstd 等系统库全中招；跳过 strip 只影响体积）
+    process.env.APPIMAGE_EXTRACT_AND_RUN = '1'
+    process.env.NO_STRIP = '1'
+    prepareLinuxBundlerWorkarounds()
+  }
+  const bundles = process.platform === 'win32'
+    ? ''
+    : ['appimage', ...(whichBin('dpkg-deb') ? ['deb'] : [])].join(' ')
+  if (process.platform !== 'win32' && !bundles.includes('deb')) {
+    console.log('[bundle] dpkg-deb 不在 PATH，跳过 deb 目标（release CI 的 ubuntu 自带）')
+  }
+  const buildCmd = process.platform === 'win32'
+    ? 'pnpm tauri build'
+    : `pnpm tauri build --bundles ${bundles}`
+  step('安装包构建 (tauri build)')
+  run(buildCmd, ROOT, 'tauri-build')
+  const bundleDir = join(ROOT, 'target', 'release', 'bundle')
+  const artifactDir = process.platform === 'win32'
+    ? join(bundleDir, 'nsis')
+    : join(bundleDir, 'appimage')
+  console.log(`\n[bundle] 完成。安装包位于 ${artifactDir}${process.platform !== 'win32' ? ' 与 bundle/deb/' : ''}`)
+}
+
+/** 探测 PATH 上的可执行文件。 */
+function whichBin(name) {
+  try {
+    return execFileSync(process.platform === 'win32' ? 'where' : 'which', [name], { encoding: 'utf8' }).trim() !== ''
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Linux 打包工具链两个坑的垫层（CI 与本机同路径生效）：
+ *  1) tauri 定格的 linuxdeploy 对 AppDir 内全部 ELF 跑 patchelf —— sidecar vendor
+ *     白名单里的 esbuild 是 Go 静态二进制（无 .dynamic 段），patchelf 报错即整包失败。
+ *     垫一层 patchelf：目标缺 .dynamic 时放行（这类文件本就不需要 rpath 修正）。
+ *  2) Arch gdk-pixbuf ≥ 2.44 把 loaders 内建进主库、目录不再落盘，而 .pc 仍声明
+ *     旧路径 —— gtk 插件 copy 撞空。用本地中转目录 + .pc 变量覆盖顶上
+ *     （ubuntu CI 的目录真实存在，不触发这条路径）。
+ */
+function prepareLinuxBundlerWorkarounds() {
+  const realPatchelf = whichBin('patchelf')
+    ? execFileSync('which', ['patchelf'], { encoding: 'utf8' }).trim()
+    : ''
+  if (realPatchelf !== '') {
+    const shimDir = mkdtempSync(join(tmpdir(), 'diver-patchelf-shim-'))
+    writeFileSync(join(shimDir, 'patchelf'), [
+      '#!/bin/bash',
+      `out=$("${realPatchelf}" "$@" 2>&1)`,
+      'rc=$?',
+      `if [ $rc -ne 0 ] && printf '%s' "$out" | grep -q "cannot find section .dynamic"; then`,
+      '  exit 0',
+      'fi',
+      'if [ $rc -ne 0 ]; then printf \'%s\\n\' "$out" >&2; fi',
+      'exit $rc',
+      '',
+    ].join('\n'), { mode: 0o755 })
+    process.env.PATH = `${shimDir}:${process.env.PATH}`
+  } else {
+    console.warn('[bundle] 未找到 patchelf（AppImage 打包必需；CI 由 apt 步骤安装）')
+  }
+
+  try {
+    const pixbufDir = execFileSync('pkg-config', ['--variable', 'gdk_pixbuf_binarydir', 'gdk-pixbuf-2.0'], { encoding: 'utf8' }).trim()
+    if (pixbufDir !== '' && !existsSync(pixbufDir)) {
+      const stage = join(ROOT, 'target', '.pixbuf-stage', 'gdk-pixbuf-2.0', '2.10.0')
+      mkdirSync(join(stage, 'loaders'), { recursive: true })
+      try {
+        writeFileSync(join(stage, 'loaders.cache'), execFileSync('gdk-pixbuf-query-loaders', [], { encoding: 'utf8' }), 'utf8')
+      } catch { /* 内建 loaders 时输出可能为空，占位即可 */ }
+      const pcDir = join(ROOT, 'target', '.pixbuf-stage', 'pc')
+      mkdirSync(pcDir, { recursive: true })
+      const pcName = 'gdk-pixbuf-2.0.pc'
+      for (const base of ['/usr/lib/pkgconfig', '/usr/share/pkgconfig', '/usr/local/lib/pkgconfig']) {
+        const src = join(base, pcName)
+        if (existsSync(src)) {
+          copyFileSync(src, join(pcDir, pcName))
+          writeFileSync(join(pcDir, pcName), [
+            readFileSync(src, 'utf8'),
+            `# Arch gdk-pixbuf ≥2.44：loaders 内建、目录不存在——重定向到本地中转目录`,
+            `gdk_pixbuf_binarydir=${stage}`,
+            `gdk_pixbuf_cache_file=${join(stage, 'loaders.cache')}`,
+            `gdk_pixbuf_moduledir=${join(stage, 'loaders')}`,
+            '',
+          ].join('\n'), 'utf8')
+          break
+        }
+      }
+      process.env.PKG_CONFIG_PATH = `${pcDir}:${process.env.PKG_CONFIG_PATH ?? ''}`
+      console.log('[bundle] 已为缺失的 gdk-pixbuf loaders 目录建立 .pc 覆盖（Arch 2.44+ 布局）')
+    }
+  } catch { /* pkg-config 不在或查询失败：交由插件自身报错 */ }
 }

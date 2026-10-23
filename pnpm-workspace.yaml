@@ -16,6 +16,7 @@ packages:
   - cos-plugins/llm-custom
   - cos-plugins/llm-openai-wire
   - cos-plugins/native-bridge
+  - cos-plugins/onebot
   - cos-plugins/bundle-companion
 
 nodeLinker: hoisted

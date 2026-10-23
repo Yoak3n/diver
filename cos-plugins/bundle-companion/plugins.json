@@ -35,6 +35,14 @@
       "defaultEnabled": true
     },
     {
+      "id": "onebot",
+      "packageName": "@diver/onebot",
+      "displayName": "OneBot 11（QQ）",
+      "description": "QQ 群潜水 / 被 @ 必回 / 偶尔插话；OneBot 回合自动收权 + 出站隐私遮蔽（配置 wsUrl 后启用）",
+      "toggleable": true,
+      "defaultEnabled": true
+    },
+    {
       "id": "delegate",
       "packageName": "@diver/delegate",
       "displayName": "任务委派",

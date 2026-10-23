@@ -16,6 +16,10 @@
     - id: peer
       name: '@diver/peer'
 
+    # OneBot 11 接入：QQ 群潜水 / 被 @ 必回 / 偶尔插话（缺省休眠；配置 wsUrl 后启用）
+    - id: onebot
+      name: '@diver/onebot'
+
     # 任务委派：delegate_task / list_tasks / cancel_task（壳层监督，0.2.0 委派）
     - id: delegate
       name: '@diver/delegate'

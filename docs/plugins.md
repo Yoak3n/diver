@@ -518,3 +518,4 @@ Rust crates / services ──POST /rpc──► @diver/native-bridge（internal�
 | （续） | **P4 完成**：profile pnpm 安装/卸载、diver-plugins.json、internal 拒卸、hello-tool 冒烟 |
 | （续） | **P5 完成**：`@diver/native-bridge` 共享 RPC 客户端 + native_status；memory/grep 收口 |
 | （续） | **self-prompt**：`voice` 更名；prompts/*.md **assemble 热加载**（改正文不必重启）+ `@cos/skills`（revise-prompt）+ 保留 `restart_agent` 重启回路 |
+| 2026-10-23 | **onebot**：`@diver/onebot` 接入 OneBot 11（正向 WS；群潜水 / 被 @ 必回 / 低概率插话 + 沉默退避）；回合级**工具收权**（`system-prompt/assemble` 过滤 + `tools/pre-execute` 引擎否决闸）与**出站隐私遮蔽**；backend 导出 `ctx.companion` 服务共享陪伴会话 |

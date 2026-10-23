@@ -49,6 +49,7 @@ const OPEN_PLUGINS = [
   'llm-custom',
   'native-bridge',
   'web-tools',
+  'onebot',
 ]
 // 进程入口插件（paths.rs RELEASE_ENTRY 指向 plugins/companion/…）：留在安装
 // 目录作 entry，不进种子（用户工作区不承载进程入口）。

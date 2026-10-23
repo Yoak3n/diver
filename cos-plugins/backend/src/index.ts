@@ -33,6 +33,7 @@ import type { Context } from 'cordis'
 import type {} from '@cos/plugin-api'
 
 import { applyModelChange, ensureAgent } from './agent.ts'
+import { mountCompanionService } from './companion.ts'
 import { healthInfo } from './health.ts'
 import { applyProviderConfigs, catalogModels, isConfigured, persistedProvider, providerDecls } from './providers.ts'
 import { mountServer } from './server.ts'
@@ -57,6 +58,8 @@ export function apply(ctx: Context, config: { uiDist?: string }) {
   const state = createWebState()
   const broadcast = createBroadcast(state)
   attachEventListeners(ctx, state, broadcast)
+  // ctx.companion：产品内其它插件（onebot 等）注入驱动同一陪伴会话的入口。
+  mountCompanionService(ctx, state)
 
   const deps: WebHandlerDeps = {
     ctx,

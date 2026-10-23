@@ -45,6 +45,7 @@ const OPEN_PLUGINS = [
   'basic-tools',
   'mcp',
   'llm-commandcode',
+  'llm-opencode',
   'llm-volcark',
   'llm-custom',
   'native-bridge',

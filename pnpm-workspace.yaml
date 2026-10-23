@@ -12,6 +12,7 @@ packages:
   - cos-plugins/self-prompt
   - cos-plugins/mcp
   - cos-plugins/llm-commandcode
+  - cos-plugins/llm-opencode
   - cos-plugins/llm-volcark
   - cos-plugins/llm-custom
   - cos-plugins/llm-openai-wire

@@ -55,6 +55,10 @@
     - id: llm-volcark
       name: '@diver/llm-volcark'
 
+    # OpenCode Go 网关适配器：注册 provider "opencode-go"（x-opencode-session 会话亲和）
+    - id: llm-opencode
+      name: '@diver/llm-opencode'
+
     # 自定义模型提供商（OpenAI 兼容）：按 custom-providers.json 身份热注册适配器
     - id: llm-custom
       name: '@diver/llm-custom'

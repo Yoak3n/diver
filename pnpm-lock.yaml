@@ -119,6 +119,9 @@ importers:
       '@diver/llm-commandcode':
         specifier: file:../llm-commandcode
         version: link:../llm-commandcode
+      '@diver/llm-opencode':
+        specifier: file:../llm-opencode
+        version: file:cos-plugins/llm-opencode(@cordisjs/plugin-include@1.0.4)(@cordisjs/plugin-loader@1.0.0-rc.5)
       '@diver/llm-volcark':
         specifier: file:../llm-volcark
         version: link:../llm-volcark
@@ -215,6 +218,25 @@ importers:
       '@cos/plugin-api':
         specifier: workspace:*
         version: link:../../harness/packages/plugin-api
+    devDependencies:
+      '@types/node':
+        specifier: ^26.2.0
+        version: 26.2.0
+      typescript:
+        specifier: ~5.6.2
+        version: 5.6.3
+
+  cos-plugins/llm-opencode:
+    dependencies:
+      '@cos/plugin-api':
+        specifier: workspace:*
+        version: link:../../harness/packages/plugin-api
+      '@diver/llm-openai-wire':
+        specifier: file:../llm-openai-wire
+        version: file:cos-plugins/llm-openai-wire
+      cordis:
+        specifier: 4.0.0-rc.7
+        version: 4.0.0-rc.7(@cordisjs/plugin-include@1.0.4)(@cordisjs/plugin-loader@1.0.0-rc.5)
     devDependencies:
       '@types/node':
         specifier: ^26.2.0
@@ -903,6 +925,9 @@ packages:
 
   '@diver/llm-openai-wire@file:cos-plugins/llm-openai-wire':
     resolution: {directory: cos-plugins/llm-openai-wire, type: directory}
+
+  '@diver/llm-opencode@file:cos-plugins/llm-opencode':
+    resolution: {directory: cos-plugins/llm-opencode, type: directory}
 
   '@diver/llm-volcark@file:cos-plugins/llm-volcark':
     resolution: {directory: cos-plugins/llm-volcark, type: directory}
@@ -3113,6 +3138,15 @@ snapshots:
   '@diver/llm-openai-wire@file:cos-plugins/llm-openai-wire':
     dependencies:
       '@cos/plugin-api': link:harness/packages/plugin-api
+
+  '@diver/llm-opencode@file:cos-plugins/llm-opencode(@cordisjs/plugin-include@1.0.4)(@cordisjs/plugin-loader@1.0.0-rc.5)':
+    dependencies:
+      '@cos/plugin-api': link:harness/packages/plugin-api
+      '@diver/llm-openai-wire': file:cos-plugins/llm-openai-wire
+      cordis: 4.0.0-rc.7(@cordisjs/plugin-include@1.0.4)(@cordisjs/plugin-loader@1.0.0-rc.5)
+    transitivePeerDependencies:
+      - '@cordisjs/plugin-include'
+      - '@cordisjs/plugin-loader'
 
   '@diver/llm-volcark@file:cos-plugins/llm-volcark(@cordisjs/plugin-include@1.0.4)(@cordisjs/plugin-loader@1.0.0-rc.5)':
     dependencies:

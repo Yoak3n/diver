@@ -20,7 +20,7 @@
 - **陪伴聊天**：流式对话、工具调用闭环、会话 JSONL 持久化（跨重启）、压缩摘要内化
 - **Live2D 桌宠**：点按随机动作、情绪驱动动作、TTS 口型同步（按真实音频时长驱动）、模型切换（官方 Hiyori / N.E.K.O YUI）、气泡轻聊
 - **关系层记忆**：`remember` / `entity` / `identity` 工具 + 会话末 digest + 实体图谱，Rust SQLite 后端做衰减/激活/遗忘（不做逐轮提取）
-- **模型提供商（一切皆插件）**：`deepseek-official` / `commandcode` / `volcark` / `mock`，自定义 baseUrl 保存即生效；设置面板配置区由插件声明驱动
+- **模型提供商（一切皆插件）**：`deepseek-official` / `commandcode` / `volcark` / `opencode-go` / `mock`，自定义 baseUrl 保存即生效；设置面板配置区由插件声明驱动
 - **在线 TTS**：MiMo / MiniMax / 火山，朗读队列 + 口型同步
 - **主动陪伴**：presence 存在感状态机（HSM）、日程提醒（设置页配置、30s tick 热生效，到点主动问候 + 原生通知）
 - **桌面集成**：全局快捷键唤起、托盘、轻量模式、开机自启、单实例、图片附件、助手头像

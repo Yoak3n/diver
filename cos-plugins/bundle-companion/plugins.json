@@ -83,6 +83,14 @@
       "defaultEnabled": true
     },
     {
+      "id": "llm-opencode",
+      "packageName": "@diver/llm-opencode",
+      "displayName": "OpenCode Go 模型",
+      "description": "OpenCode Go 网关 OpenAI 兼容适配器（x-opencode-session 会话亲和）",
+      "toggleable": true,
+      "defaultEnabled": true
+    },
+    {
       "id": "llm-custom",
       "packageName": "@diver/llm-custom",
       "displayName": "自定义模型提供商",

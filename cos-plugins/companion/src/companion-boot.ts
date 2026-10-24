@@ -47,6 +47,7 @@ export const CORE_PLUGIN_NAMES = [
   'mock-llm',
   'agents',
   'agent-loop',
+  'llm-retry',
   'subagents',
 ] as const
 

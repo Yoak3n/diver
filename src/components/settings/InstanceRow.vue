@@ -17,6 +17,8 @@ defineProps<{
   petActive: boolean;
   /** 本行桌宠召唤/收起进行中。 */
   petBusy: boolean;
+  /** QQ（OneBot）归属实例 id：全局单选，勾选即取代其它实例的绑定。 */
+  qqOwner: string | null;
 }>();
 
 const editingName = defineModel<string>("editingName", { default: "" });
@@ -32,6 +34,7 @@ const emit = defineEmits<{
   delete: [inst: InstanceMeta];
   toggle: [id: string, enabled: boolean];
   toggleAutoRead: [id: string, autoRead: boolean];
+  toggleQq: [id: string, on: boolean];
   togglePet: [inst: InstanceMeta];
   modelChange: [inst: InstanceMeta, value: string];
   setTtsProfile: [id: string, tts: InstanceTtsProfile | null];
@@ -96,6 +99,16 @@ function formatDate(unix: number): string {
         @change="emit('toggleAutoRead', inst.id, ($event.target as HTMLInputElement).checked)"
       />
       自动朗读
+    </label>
+    <label class="toggle">
+      <input
+        type="checkbox"
+        :checked="qqOwner === inst.id"
+        :disabled="!tauriAvailable()"
+        title="接 QQ：全局单选，勾选即取代其它实例；仅该实例的 OneBot 插件连接（配置见设置「QQ 接入」页，重启应用后生效）"
+        @change="emit('toggleQq', inst.id, ($event.target as HTMLInputElement).checked)"
+      />
+      接 QQ
     </label>
     <template v-if="editing">
       <button class="btn small" @click="emit('confirmRename', inst)">保存</button>

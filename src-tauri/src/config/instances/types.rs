@@ -53,6 +53,11 @@ pub struct InstancesFile {
     /// schema 版本，留迁移口。
     #[serde(default = "default_schema_version")]
     pub schema_version: u32,
+    /// QQ（OneBot）归属实例 id：全局单选，唯一归属实例的 onebot 插件可连 OneBot，
+    /// 其余实例休眠（壳层拉起 sidecar 时经 `DIVER_ONEBOT_OWNER` env 下发）。
+    /// `None` = 未绑定，保持旧「配置即归属」行为（单实例零迁移不受影响）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub onebot_owner: Option<String>,
     #[serde(default)]
     pub instances: Vec<InstanceMeta>,
 }
@@ -92,6 +97,7 @@ impl Default for InstancesFile {
     fn default() -> Self {
         Self {
             schema_version: default_schema_version(),
+            onebot_owner: None,
             instances: Vec::new(),
         }
     }

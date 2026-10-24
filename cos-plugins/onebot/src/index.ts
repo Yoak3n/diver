@@ -9,7 +9,7 @@
 import type { Context } from 'cordis'
 import { nativeRpc } from '@diver/native-bridge/rpc'
 
-import { configDecl, resolveConfig, type Config } from './config.ts'
+import { configDecl, ownerGate, resolveConfig, type Config } from './config.ts'
 import { trimAllBuffers } from './buffer-store.ts'
 import {
   TurnSandbox,
@@ -51,6 +51,14 @@ function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promi
 }
 
 export function apply(ctx: Context, config: Config = {}): void {
+  // 归属闸门（先于 wsUrl 判定）：壳层绑定了 QQ 归属实例时，非归属实例一律休眠，
+  // 多实例配同一 wsUrl 也不会出现双回复；未绑定保持旧「配置即归属」行为。
+  const onebotOwner = (process.env.DIVER_ONEBOT_OWNER ?? '').trim()
+  const selfId = (process.env.DIVER_INSTANCE_ID ?? '').trim()
+  if (!ownerGate(onebotOwner, selfId)) {
+    console.log(`[onebot] QQ 已绑定实例 ${onebotOwner}（本实例 ${selfId || '?'}），插件休眠`)
+    return
+  }
   const cfg = resolveConfig(config)
   if (cfg.wsUrl === '') {
     console.log('[onebot] 未配置 wsUrl，插件休眠（设置「OneBot 11」后重启 sidecar 生效）')

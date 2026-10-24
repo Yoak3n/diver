@@ -8,9 +8,11 @@ import {
   clearInstanceName,
   createInstance,
   deleteInstance,
+  getOnebotOwner,
   listInstances,
   setInstanceAutoRead,
   setInstanceTtsProfile,
+  setOnebotOwner,
   tauriAvailable,
   updateInstance,
   type InstanceMeta,
@@ -21,12 +23,14 @@ const instances = ref<InstanceMeta[]>([]);
 const loading = ref(false);
 const error = ref("");
 const notice = ref("");
+/** QQ（OneBot）归属实例 id：全局单选，null = 未绑定（旧「配置即归属」行为）。 */
+const onebotOwner = ref<string | null>(null);
 
 function fail(err: unknown, fallback: string): void {
   error.value = err instanceof Error ? err.message : String(err) || fallback;
 }
 
-/** 拉取实例清单（首次访问自动登记 default）。 */
+/** 拉取实例清单（首次访问自动登记 default）与 QQ 归属绑定。 */
 async function refresh(): Promise<void> {
   if (!tauriAvailable()) {
     error.value = "当前不在 Tauri 环境中，无法读取实例清单";
@@ -36,6 +40,7 @@ async function refresh(): Promise<void> {
   error.value = "";
   try {
     instances.value = await listInstances();
+    onebotOwner.value = await getOnebotOwner();
   } catch (err) {
     fail(err, "读取实例清单失败");
   } finally {
@@ -137,6 +142,8 @@ async function remove(id: string): Promise<boolean> {
   try {
     await deleteInstance(id);
     instances.value = await listInstances();
+    // 被删实例若是 QQ 归属，壳层已自动解绑；此处同步回显
+    onebotOwner.value = await getOnebotOwner();
     return true;
   } catch (err) {
     fail(err, "删除失败");
@@ -144,6 +151,44 @@ async function remove(id: string): Promise<boolean> {
   }
 }
 
+/**
+ * 绑定 / 解绑 QQ 归属实例（全局单选）：勾选即取代旧归属；
+ * 取消勾选仅当本实例是归属时解绑（不误伤他人的绑定）。
+ * 生效需重启 sidecar（env 下发），提示见 notice。
+ */
+async function setQqOwner(id: string, on: boolean): Promise<boolean> {
+  if (!on && onebotOwner.value !== id) return true;
+  error.value = "";
+  notice.value = "";
+  try {
+    await setOnebotOwner(on ? id : null);
+    onebotOwner.value = on ? id : null;
+    notice.value = on
+      ? `已绑定实例 ${id} 接 QQ：其余实例的 OneBot 插件休眠，重启应用后生效（连接配置见设置「QQ 接入」页）`
+      : "已解除 QQ 归属：回到未绑定行为（配置了 wsUrl 的实例可连接），重启应用后生效";
+    return true;
+  } catch (err) {
+    fail(err, "保存失败");
+    await refresh();
+    return false;
+  }
+}
+
 export function useInstances() {
-  return { instances, loading, error, notice, refresh, create, rename, clearName, toggle, setAutoRead, setTtsProfile, remove };
+  return {
+    instances,
+    loading,
+    error,
+    notice,
+    onebotOwner,
+    refresh,
+    create,
+    rename,
+    clearName,
+    toggle,
+    setAutoRead,
+    setTtsProfile,
+    setQqOwner,
+    remove,
+  };
 }

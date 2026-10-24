@@ -136,6 +136,10 @@ impl SidecarManager {
                     self.instance_id().unwrap_or_default(),
                 )
                 .env(
+                    "DIVER_ONEBOT_OWNER",
+                    crate::config::instances::onebot_owner(app).unwrap_or_default(),
+                )
+                .env(
                     "DIVER_MCP_CONFIG_FILE",
                     crate::config::mcp::config_path(app).to_string_lossy().to_string(),
                 )
@@ -225,6 +229,10 @@ impl SidecarManager {
                 .env(
                     "DIVER_INSTANCE_ID",
                     self.instance_id().unwrap_or_default(),
+                )
+                .env(
+                    "DIVER_ONEBOT_OWNER",
+                    crate::config::instances::onebot_owner(app).unwrap_or_default(),
                 )
                 .env(
                     "DIVER_MCP_CONFIG_FILE",

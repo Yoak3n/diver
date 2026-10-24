@@ -91,3 +91,16 @@ export interface InstanceRuntime {
 export function listInstanceRuntimes(): Promise<InstanceRuntime[]> {
   return invoke<InstanceRuntime[]>("list_instance_runtimes");
 }
+
+/** 当前 QQ（OneBot）归属实例 id（null = 未绑定，保持旧「配置即归属」行为）。 */
+export function getOnebotOwner(): Promise<string | null> {
+  return invoke<string | null>("get_onebot_owner");
+}
+
+/**
+ * 绑定 / 解绑 QQ 归属实例（全局单选：绑定即取代旧归属；null = 解绑）。
+ * 生效需重启对应 sidecar（壳层经 env 下发给 onebot 插件）。
+ */
+export function setOnebotOwner(id: string | null): Promise<void> {
+  return invoke<void>("set_onebot_owner", { id });
+}

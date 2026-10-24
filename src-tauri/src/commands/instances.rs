@@ -109,6 +109,19 @@ pub fn list_instance_runtimes(app: AppHandle) -> Vec<crate::core::instance_regis
     crate::core::instance_registry::list_at(&instances::registry_dir(&app))
 }
 
+/// 当前 QQ（OneBot）归属实例 id（未绑定为 `null`）。
+#[tauri::command]
+pub fn get_onebot_owner(app: AppHandle) -> Option<String> {
+    instances::onebot_owner(&app)
+}
+
+/// 绑定 / 解绑 QQ 归属实例（全局单选；`null` 或空串 = 解绑）。
+/// 生效需重启对应 sidecar（env 下发），提示由前端负责。
+#[tauri::command]
+pub fn set_onebot_owner(app: AppHandle, id: Option<String>) -> Result<(), String> {
+    instances::set_onebot_owner(&app, id.as_deref()).map_err(err_text)
+}
+
 fn err_text(err: InstanceError) -> String {
     err.to_string()
 }

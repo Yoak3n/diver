@@ -160,6 +160,7 @@ impl InstancesFile {
     }
 
     /// 删除实例（`default` 双保险不可删；数据目录清理随 P1 落地）。
+    /// 被删实例若是 QQ 归属实例，一并解除绑定（不留给不存在的 id）。
     pub fn remove(&mut self, id: &str) -> Result<(), InstanceError> {
         if id == DEFAULT_ID {
             return Err(InstanceError::ProtectedDefault);
@@ -167,10 +168,28 @@ impl InstancesFile {
         let before = self.instances.len();
         self.instances.retain(|i| i.id != id);
         if self.instances.len() == before {
-            Err(InstanceError::NotFound)
-        } else {
-            Ok(())
+            return Err(InstanceError::NotFound);
         }
+        if self.onebot_owner.as_deref() == Some(id) {
+            self.onebot_owner = None;
+        }
+        Ok(())
+    }
+
+    /// 绑定 / 解绑 QQ 归属实例（全局单选：`Some(id)` 绑定即自动取代旧归属，
+    /// `None` 或空串解除绑定）。id 必须在册。
+    pub fn set_onebot_owner(&mut self, id: Option<&str>) -> Result<(), InstanceError> {
+        let owner = id.map(str::trim).filter(|s| !s.is_empty());
+        match owner {
+            Some(id) => {
+                if !self.instances.iter().any(|i| i.id == id) {
+                    return Err(InstanceError::NotFound);
+                }
+                self.onebot_owner = Some(id.to_string());
+            }
+            None => self.onebot_owner = None,
+        }
+        Ok(())
     }
 
     /// 确保 `default` 在册（missing-default 兜底），缺失时补登记并返回 true。

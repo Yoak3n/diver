@@ -8,7 +8,7 @@ import { useInstances } from "../../composables/useInstances";
 import { useInstancePet } from "../../composables/useInstancePet";
 import InstanceRow from "./InstanceRow.vue";
 
-const { instances, loading, error, notice, refresh, create, rename, clearName, toggle, setAutoRead, setTtsProfile, remove } =
+const { instances, loading, error, notice, onebotOwner, refresh, create, rename, clearName, toggle, setAutoRead, setTtsProfile, setQqOwner, remove } =
   useInstances();
 
 const newName = ref("");
@@ -121,6 +121,7 @@ function onDelete(inst: InstanceMeta): void {
       :model-profiles="modelProfiles"
       :pet-active="petOn(inst)"
       :pet-busy="petBusy === inst.id"
+      :qq-owner="onebotOwner"
       @start-rename="startRename"
       @cancel-rename="cancelRename"
       @confirm-rename="confirmRename"
@@ -128,6 +129,7 @@ function onDelete(inst: InstanceMeta): void {
       @delete="onDelete"
       @toggle="toggle"
       @toggle-auto-read="setAutoRead"
+      @toggle-qq="setQqOwner"
       @set-tts-profile="setTtsProfile"
       @toggle-pet="togglePet"
       @model-change="onModelChange"
@@ -139,6 +141,9 @@ function onDelete(inst: InstanceMeta): void {
   <p class="hint">
     「启用」控制是否随应用启动（P1 起生效）；「自动朗读」控制该实例的回复是否朗读
     （自动朗读 = 语音总开关 AND 本开关，群聊一律不朗读）；
+    「接 QQ」全局单选：勾选即取代其它实例，仅该实例的 OneBot 插件连接
+    （连接与行为配置见设置「QQ 接入」页，重启应用后生效；未勾选任何实例时，
+    配置了 wsUrl 的实例都可连接——多实例场景建议显式勾选）；
     改名留空 = 不修改，「清空名字」才回到未命名（同步清人格卡片，命名流程可重来）；
     默认实例不可删除（旧数据零迁移保留）。
   </p>

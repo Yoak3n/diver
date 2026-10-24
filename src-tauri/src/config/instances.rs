@@ -106,6 +106,23 @@ pub fn update_instance(
     }
 }
 
+/// 当前 QQ（OneBot）归属实例 id（未绑定为 `None`）。sidecar 拉起时消费。
+pub fn onebot_owner(app: &AppHandle) -> Option<String> {
+    load_or_seed(app).onebot_owner
+}
+
+/// 绑定 / 解绑 QQ 归属实例并落盘（`None` 或空串 = 解绑）。
+pub fn set_onebot_owner(app: &AppHandle, id: Option<&str>) -> Result<(), InstanceError> {
+    let base = config_dir(app);
+    let mut reg = load_or_seed_at(&base, now_secs());
+    reg.set_onebot_owner(id)?;
+    if save_config_at(&base, &reg) {
+        Ok(())
+    } else {
+        Err(InstanceError::Io)
+    }
+}
+
 /// 设置每实例桌宠模型 id 并落盘（P2-5；`None` = 跟随全局）。
 pub fn set_instance_pet_model(
     app: &AppHandle,

@@ -96,6 +96,15 @@ export const BASELINE_TOOLS = [
 /** 普通消息唤醒后的群聊静默窗（毫秒）：等话头停了再评估，不打断进行中对话。 */
 export const PLAIN_DEBOUNCE_MS = 8_000
 
+/**
+ * 归属闸门（纯函数）：壳层把全局单选的 QQ 归属实例经 `DIVER_ONEBOT_OWNER`
+ * 下发给所有 sidecar；绑定时仅归属实例可激活，未绑定时保持旧「配置即归属」
+ * 行为（单实例零迁移）。`selfId` 为本 sidecar 的 `DIVER_INSTANCE_ID`。
+ */
+export function ownerGate(owner: string, selfId: string): boolean {
+  return owner === '' || owner === selfId
+}
+
 /** 连续沉默退避参数（MaiBot no_action_backoff 同值）：基数 15s、上限 300s、第 2 连开始。 */
 export const BACKOFF_BASE_MS = 15_000
 export const BACKOFF_CAP_MS = 300_000

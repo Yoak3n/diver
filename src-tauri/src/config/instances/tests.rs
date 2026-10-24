@@ -194,3 +194,55 @@ fn active_instance_is_first_enabled() {
     reg.update(&echo.id, None, Some(false)).unwrap();
     assert_eq!(active_instance_id_at(&reg), DEFAULT_ID);
 }
+
+// ---------- QQ（OneBot）归属绑定 ----------
+
+#[test]
+fn onebot_owner_bind_is_single_select_and_clearable() {
+    let mut reg = InstancesFile::default();
+    reg.ensure_default(1);
+    let echo = reg.create(Some("Echo"), 2).unwrap();
+    let beta = reg.create(Some("Beta"), 3).unwrap();
+
+    // 绑定 Echo；再绑定 Beta 自动取代（全局单选，无需先解绑）
+    reg.set_onebot_owner(Some(&echo.id)).unwrap();
+    assert_eq!(reg.onebot_owner.as_deref(), Some(echo.id.as_str()));
+    reg.set_onebot_owner(Some(&beta.id)).unwrap();
+    assert_eq!(reg.onebot_owner.as_deref(), Some(beta.id.as_str()));
+
+    // 空串与 None 都是解绑
+    reg.set_onebot_owner(Some("  ")).unwrap();
+    assert_eq!(reg.onebot_owner, None);
+    reg.set_onebot_owner(Some(&beta.id)).unwrap();
+    reg.set_onebot_owner(None).unwrap();
+    assert_eq!(reg.onebot_owner, None);
+}
+
+#[test]
+fn onebot_owner_rejects_unknown_id() {
+    let mut reg = InstancesFile::default();
+    reg.ensure_default(1);
+    assert!(matches!(
+        reg.set_onebot_owner(Some("ghost")),
+        Err(InstanceError::NotFound)
+    ));
+    assert_eq!(reg.onebot_owner, None);
+}
+
+#[test]
+fn removing_owner_clears_binding() {
+    let mut reg = InstancesFile::default();
+    reg.ensure_default(1);
+    let echo = reg.create(Some("Echo"), 2).unwrap();
+    reg.set_onebot_owner(Some(&echo.id)).unwrap();
+    reg.remove(&echo.id).unwrap();
+    assert_eq!(reg.onebot_owner, None);
+}
+
+#[test]
+fn legacy_instances_json_loads_without_owner() {
+    // 旧文件（无 onebotOwner 键）零迁移可读，行为回到「配置即归属」
+    let json = r#"{"schemaVersion":1,"instances":[{"id":"default","enabled":true}]}"#;
+    let reg: InstancesFile = serde_json::from_str(json).unwrap();
+    assert_eq!(reg.onebot_owner, None);
+}

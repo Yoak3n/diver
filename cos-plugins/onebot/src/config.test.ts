@@ -2,7 +2,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { BASELINE_TOOLS, resolveConfig } from './config.ts'
+import { BASELINE_TOOLS, ownerGate, resolveConfig } from './config.ts'
 import { allowedToolNames } from './sandbox.ts'
 
 test('缺省配置取安全默认：不连接、不监听群', () => {
@@ -76,4 +76,14 @@ test('放行名单 = 固定基座 + 增量去重，硬禁项被剔除', () => {
   assert.equal(allowed.includes('sh'), false)
   assert.equal(allowed.includes('web_read'), false)
   assert.equal(allowed.includes('mcp__demo__run'), false)
+})
+
+test('归属闸门：绑定时仅归属实例可激活，未绑定时放行', () => {
+  // 未绑定（owner 空）→ 旧「配置即归属」行为，任何实例可激活
+  assert.equal(ownerGate('', 'beta'), true)
+  assert.equal(ownerGate('', ''), true)
+  // 绑定 beta → 仅 beta 放行
+  assert.equal(ownerGate('beta', 'beta'), true)
+  assert.equal(ownerGate('beta', 'default'), false)
+  assert.equal(ownerGate('beta', ''), false)
 })

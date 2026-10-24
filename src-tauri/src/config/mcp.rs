@@ -17,8 +17,8 @@
 //!   "servers": [
 //!     {
 //!       "transport": "stdio",
-//!       "serverName": "work-review",
-//!       "command": "E:\\...\\server.exe",
+//!       "serverName": "demo-server",
+//!       "command": "/path/to/mcp-server",
 //!       "args": [],
 //!       "env": { "KEY": "value" },
 //!       "cwd": "",
@@ -134,26 +134,9 @@ pub fn ensure_initial_at(cos_home: &Path, shell_config_dir: &Path) {
         }
     }
 
-    let config = McpConfig {
-        servers: vec![McpServerConfig {
-            transport: "stdio".into(),
-            server_name: "work-review".into(),
-            command: r"E:\Utils\Work Review\work-review-mcp-server.exe".into(),
-            args: vec![],
-            env: std::collections::BTreeMap::from([
-                (
-                    "WORK_REVIEW_DB_PATH".into(),
-                    r"E:\Utils\Work Review\cache\workreview.db".into(),
-                ),
-                (
-                    "WORK_REVIEW_CONFIG_PATH".into(),
-                    r"E:\Utils\Work Review\cache\config.json".into(),
-                ),
-            ]),
-            cwd: String::new(),
-            tool_call_timeout_ms: 30_000,
-        }],
-    };
+    // 首启不种示例 server：个人工具配置不该成为所有用户的默认值，
+    // 空列表对 registry 插件同样可读（UI「MCP 服务」页负责增删）。
+    let config = McpConfig::default();
     if !save_config_at(cos_home, &config) {
         log::error!("初始化 MCP 服务配置失败: {}", path.display());
     }
@@ -164,8 +147,8 @@ pub fn ensure_initial_at(cos_home: &Path, shell_config_dir: &Path) {
 /// 早期版本把 `mcp-servers.json` 写在 `app_config_dir`（`$COS_HOME` 的父目录），
 /// 而 sidecar 插件按 `$COS_HOME/mcp-servers.json` 读取，导致 registry 读到空列表。
 /// 这里把既有文件迁移到新位置（仅当目标缺失时，避免覆盖已有配置）；
-/// 目标存在或迁移失败时，若仍无配置则写入默认示例（work-review），
-/// 使 sidecar 的 registry 插件在启动时就有可读的 server 列表。
+/// 目标存在或迁移失败时，若仍无配置则写入空列表，
+/// 使 sidecar 的 registry 插件在启动时就有可读的 server 配置文件。
 pub fn ensure_initial(app: &AppHandle) {
     ensure_initial_at(&cos_home(app), &config_dir(app))
 }
@@ -226,13 +209,13 @@ mod tests {
     }
 
     #[test]
-    fn ensure_initial_writes_default_when_missing() {
+    fn ensure_initial_writes_empty_when_missing() {
         let home = tmp("init");
         let shell = tmp("init-shell");
         ensure_initial_at(&home, &shell);
         let cfg = load_config_at(&home);
-        assert_eq!(cfg.servers.len(), 1);
-        assert_eq!(cfg.servers[0].server_name, "work-review");
+        // 首启种子为空列表：不预置任何个人工具配置
+        assert_eq!(cfg.servers.len(), 0);
         let _ = std::fs::remove_dir_all(&home);
         let _ = std::fs::remove_dir_all(&shell);
     }

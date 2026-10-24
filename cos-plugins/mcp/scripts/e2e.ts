@@ -3,25 +3,27 @@
 // 经 loader 挂载 MCP 插件，验证工具注册与调用。
 // 用法（harness 目录）：node --import tsx ../cos-plugins/mcp/scripts/e2e.ts
 
-import { join } from 'node:path'
+import { join, dirname } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { boot } from '@cos/boot'
 import { writeMcpConfigFile } from '../src/config-file.ts'
 
-const repoRoot = process.env.DIVER_REPO_ROOT ?? 'E:/Project/RustProject/diver'
+// 仓库根 = 本脚本（<repo>/cos-plugins/mcp/scripts/）向上三级；
+// DIVER_REPO_ROOT 可覆盖（如从别处运行）。
+const scriptDir = dirname(fileURLToPath(import.meta.url))
+const repoRoot = process.env.DIVER_REPO_ROOT ?? join(scriptDir, '..', '..', '..')
 const harnessRoot = join(repoRoot, 'harness')
 const pluginRoot = join(repoRoot, 'cos-plugins')
 
-// seed 一份最小 MCP 配置（work-review），registry 模式从文件读取。
+// seed 一份最小 MCP 配置：官方 everything 测试 server（需 node/npx 与网络），
+// registry 模式从文件读取。
 writeMcpConfigFile([
   {
     transport: 'stdio',
-    serverName: 'work-review',
-    command: 'E:\\Utils\\Work Review\\work-review-mcp-server.exe',
-    args: [],
-    env: {
-      WORK_REVIEW_DB_PATH: 'E:\\Utils\\Work Review\\cache\\workreview.db',
-      WORK_REVIEW_CONFIG_PATH: 'E:\\Utils\\Work Review\\cache\\config.json',
-    },
+    serverName: 'everything',
+    command: 'npx',
+    args: ['-y', '@modelcontextprotocol/server-everything'],
+    env: {},
     cwd: '',
     toolCallTimeoutMs: 30000,
   },
@@ -59,8 +61,8 @@ if (mcpTools.length === 0) {
   process.exit(1)
 }
 
-// 调用 get_current_context（无参数，最安全）
-const target = mcpTools.find(n => n.endsWith('get_current_context')) ?? mcpTools[0]
+// 调用无参工具（everything server 的 echo；取不到就退第一个）
+const target = mcpTools.find(n => n.endsWith('echo')) ?? mcpTools[0]
 console.log(`[e2e] calling ${target} ...`)
 const result = await tools.execute(target, {}, new AbortController().signal)
 console.log('[e2e] result:', result.content.slice(0, 300))

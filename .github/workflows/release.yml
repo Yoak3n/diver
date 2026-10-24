@@ -143,8 +143,10 @@ jobs:
           path: artifacts
           merge-multiple: true
 
+      # linux artifact 内部保留 appimage/ 与 deb/ 子目录（upload-artifact 按公共
+      # 祖先裁剪路径），必须 ** 递归才能全部匹配。
       - name: create GitHub Release
         uses: softprops/action-gh-release@v3
         with:
-          files: artifacts/*
+          files: artifacts/**
           generate_release_notes: true

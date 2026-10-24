@@ -52,11 +52,12 @@ try {
 }
 
 console.log(`[pet:fetch] 解压 ${ZIP}`)
-// Windows: powershell；Linux/macOS: bsdtar（认 zip）；最后 tar 兜底
+// Windows: powershell；Linux/macOS: bsdtar 或 unzip（都认 zip）；tar 兜底
 // （Windows 自带 tar 即 bsdtar；GNU tar 不认 zip，仅作存在性兜底）。
 const EXTRACTORS = [
   ['powershell.exe', ['-NoProfile', '-Command', `Expand-Archive -LiteralPath '${ZIP}' -DestinationPath '${EXTRACT_DIR}' -Force`]],
   ['bsdtar', ['-xf', ZIP, '-C', EXTRACT_DIR]],
+  ['unzip', ['-oq', ZIP, '-d', EXTRACT_DIR]],
   ['tar', ['-xf', ZIP, '-C', EXTRACT_DIR]],
 ]
 let extracted = false

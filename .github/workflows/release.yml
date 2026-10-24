@@ -91,15 +91,15 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
-      # Tauri v2 (wry/tao) Linux 系统依赖 + AppImage 运行时 FUSE
-      # （24.04 的 fuse2 包名是 libfuse2t9，22.04 是 libfuse2——按可用性回退）
+      # Tauri v2 (wry/tao) Linux 系统依赖 + AppImage 运行时 FUSE + 模型解压的
+      # bsdtar（GNU tar 不认 zip；24.04 的 fuse2 包名是 libfuse2t9，22.04 是 libfuse2）
       - name: install system dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
             libwebkit2gtk-4.1-dev libgtk-3-dev \
             libayatana-appindicator3-dev librsvg2-dev \
-            patchelf file
+            patchelf libarchive-tools file
           sudo apt-get install -y libfuse2 || sudo apt-get install -y libfuse2t9
 
       - name: check tag matches app version

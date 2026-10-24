@@ -91,18 +91,25 @@ export interface PluginConfigView {
   fields: PluginConfigFieldView[];
 }
 
-export function getPluginConfigsApi(): Promise<{ plugins: PluginConfigView[] }> {
-  return json("/api/plugins/config");
+/** 插件配置读面（缺省 active 实例；传 instanceId 时直连该实例的 backend）。 */
+export function getPluginConfigsApi(instanceId?: string): Promise<{ plugins: PluginConfigView[] }> {
+  return json("/plugins/config", undefined, instanceId);
 }
 
+/** 保存插件配置（缺省 active 实例；传 instanceId 时写入该实例的 profile patch）。 */
 export function savePluginConfigApi(
   id: string,
   values: Record<string, string | number | boolean | null>,
+  instanceId?: string,
 ): Promise<{ ok: true; config: Record<string, unknown> }> {
-  return json("/api/plugins/config", {
-    method: "POST",
-    body: JSON.stringify({ id, values }),
-  });
+  return json(
+    "/plugins/config",
+    {
+      method: "POST",
+      body: JSON.stringify({ id, values }),
+    },
+    instanceId,
+  );
 }
 
 export function getProfileApi(): Promise<ProfileInfo> {

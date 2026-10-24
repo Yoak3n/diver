@@ -2,6 +2,7 @@
 
 export type SettingsTab =
   | "instances"
+  | "onebot"
   | "models"
   | "voice"
   | "mcp"
@@ -13,6 +14,7 @@ export type SettingsTab =
 
 export const SETTINGS_TABS: Array<{ id: SettingsTab; label: string }> = [
   { id: "instances", label: "实例" },
+  { id: "onebot", label: "QQ 接入" },
   { id: "models", label: "模型与提供商" },
   { id: "voice", label: "语音" },
   { id: "mcp", label: "MCP 服务" },

@@ -11,6 +11,7 @@ import {
 } from "../composables/useSettings";
 import ModelsTab from "../components/settings/ModelsTab.vue";
 import InstancesTab from "../components/settings/InstancesTab.vue";
+import OnebotTab from "../components/settings/OnebotTab.vue";
 import VoiceTab from "../components/settings/VoiceTab.vue";
 import SystemTab from "../components/settings/SystemTab.vue";
 import McpTab from "../components/settings/McpTab.vue";
@@ -79,6 +80,7 @@ const tabs = SETTINGS_TABS;
 
       <main class="content">
         <InstancesTab v-if="state.activeTab === 'instances'" />
+        <OnebotTab v-else-if="state.activeTab === 'onebot'" />
         <ModelsTab
           v-else-if="state.activeTab === 'models'"
           :state="state"

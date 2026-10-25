@@ -5,7 +5,7 @@
 // 移植自 DSH 上游 @deepseek-ai/dsh-mcp-client（适配 @cos/tools 极简注册表，
 // 仅 stdio transport，无附件/结构化输出投影）。
 
-import type { Context, Plugin } from 'cordis'
+import { Context, type Plugin } from 'cordis'
 import type {} from '@cos/plugin-api'
 import { resolveReconnectPolicy, startConnection } from './connection.ts'
 import type { ReconnectConfig } from './connection.ts'
@@ -105,10 +105,12 @@ export function apply(ctx: Context, rawConfig: Config): void {
 
   // 保留 serverName 命名空间：重复即配置错误，加载即失败。
   ctx.effect(() => {
-    let names = activeServerNames.get(ctx.root)
+    // cordis 4.0 rc12：root 上下文经 `ctx[Context.root]` 取（旧的 `ctx.root` 已移除）。
+    const app = ctx[Context.root]
+    let names = activeServerNames.get(app)
     if (!names) {
       names = new Set()
-      activeServerNames.set(ctx.root, names)
+      activeServerNames.set(app, names)
     }
     if (names.has(config.serverName)) {
       throw new Error(

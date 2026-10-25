@@ -13,7 +13,8 @@
     "./profile-plugins": "./src/profile-plugins.ts"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test src/companion-boot.test.ts"
   },
   "devDependencies": {
     "@types/node": "^26.2.0",

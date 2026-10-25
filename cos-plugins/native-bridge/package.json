@@ -14,7 +14,7 @@
   },
   "dependencies": {
     "@cos/plugin-api": "workspace:*",
-    "cordis": "4.0.0-rc.7"
+    "cordis": "4.0.0-rc.12"
   },
   "devDependencies": {
     "@types/node": "^26.2.0",

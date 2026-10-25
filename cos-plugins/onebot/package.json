@@ -10,12 +10,13 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "node --import tsx --test src/config.test.ts src/protocol.test.ts src/trigger.test.ts src/context.test.ts src/sandbox.test.ts src/relation-card.test.ts src/mask.test.ts src/voice.test.ts src/send-breaker.test.ts src/buffer-store.test.ts"
+    "test": "node --import tsx --test src/config.test.ts src/fs-jail.test.ts src/protocol.test.ts src/image.test.ts src/out-image.test.ts src/trigger.test.ts src/context.test.ts src/sandbox.test.ts src/relation-card.test.ts src/mask.test.ts src/voice.test.ts src/send-breaker.test.ts src/buffer-store.test.ts"
   },
   "dependencies": {
     "@cos/plugin-api": "workspace:*",
+    "@diver/basic-tools": "file:../basic-tools",
     "@diver/native-bridge": "file:../native-bridge",
-    "cordis": "4.0.0-rc.7"
+    "cordis": "4.0.0-rc.12"
   },
   "devDependencies": {
     "@types/node": "^26.2.0",

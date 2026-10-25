@@ -158,6 +158,10 @@ export function attachEventListeners(
         const raw = String(ev.data.message?.content ?? '')
         // 展开详情用：放宽截断（UI 折叠预览另做 80 字）；过长工具输出仍限幅防 SSE 膨胀
         const summary = raw.length > 4000 ? `${raw.slice(0, 4000)}…` : raw
+        // 工具产出的图（screenshot / read 读图）：UI 展开可见，上限 4 张防 SSE 膨胀
+        const toolImages = Array.isArray(ev.data.message?.images)
+          ? ev.data.message.images.slice(0, 4)
+          : []
         broadcast({
           type: 'tool',
           name,
@@ -165,6 +169,7 @@ export function attachEventListeners(
           messageId: `turn-${ev.data.turn}-${ev.data.step}`,
           ...(callId !== undefined ? { callId } : {}),
           ...(summary !== '' ? { summary } : {}),
+          ...(toolImages.length > 0 ? { images: toolImages } : {}),
           isError: ev.data.message?.isError === true,
         })
         break

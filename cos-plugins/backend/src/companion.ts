@@ -40,13 +40,19 @@ export class CompanionService extends Service {
 
   /**
    * 构造一条入站用户消息：kind=human，`detail` 盖来源（如 `onebot:g123:456`，
-   * 前缀即回合来源判定依据），`id` 可选（跨端去重，如 OneBot message_id）。
+   * 前缀即回合来源判定依据），`id` 可选（跨端去重，如 OneBot message_id），
+   * `images` 可选（入站图片附件，如 OneBot 收到的图，模型可直接看见）。
    */
-  message(text: string, detail?: CompanionDetail, id?: string): UserMessage {
+  message(
+    text: string,
+    detail?: CompanionDetail,
+    id?: string,
+    images?: ReadonlyArray<{ mime: string; data: string; name?: string }>,
+  ): UserMessage {
     return createUserMessage(
       text,
       detail ? { kind: 'human', detail } : { kind: 'human' },
-      undefined,
+      images,
       id,
     )
   }

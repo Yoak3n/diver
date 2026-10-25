@@ -45,6 +45,8 @@ export interface ReplayEvent {
       id?: unknown
       content?: unknown
       isError?: boolean
+      /** tool/result 的产出图片（screenshot / read 读图）。 */
+      images?: Array<{ mime: string; data: string; name?: string }>
     }
   }
 }
@@ -86,9 +88,12 @@ export function buildHistoryMessages(
         : ev.data.callId !== undefined ? String(ev.data.callId)
         : (msgAny?.callId !== undefined ? String(msgAny.callId) : undefined)
       const raw = String(ev.data.message?.content ?? '')
-      // 与 SSE 对齐：详情可展开，过长仍限幅
+      // 与 SSE 对齐：详情可展开，过长仍限幅；工具图片同样透传（上限 4 张）
       const summary = raw.length > 4000 ? `${raw.slice(0, 4000)}…` : raw
       const isError = ev.data.message?.isError === true
+      const toolImages = Array.isArray(ev.data.message?.images)
+        ? ev.data.message.images.slice(0, 4)
+        : []
       let hit = list.findIndex((t) => callId !== undefined && t.callId === callId)
       if (hit < 0) {
         // 无 callId 命中时按名称合并到最近未完成的 call
@@ -101,6 +106,7 @@ export function buildHistoryMessages(
           ...list[hit],
           status: 'result',
           ...(summary !== '' ? { summary } : {}),
+          ...(toolImages.length > 0 ? { images: toolImages } : {}),
           isError,
         }
       } else if (!(callId !== undefined && list.some((t) => t.callId === callId && t.status === 'result'))) {
@@ -111,6 +117,7 @@ export function buildHistoryMessages(
           time: Number(ev.time) || Date.now(),
           ...(callId !== undefined ? { callId } : {}),
           ...(summary !== '' ? { summary } : {}),
+          ...(toolImages.length > 0 ? { images: toolImages } : {}),
           isError,
         })
       }

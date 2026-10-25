@@ -47,3 +47,39 @@ test('实例间私聊注入：origin peer 但不进群合并流（无 group 标�
   assert.equal(m.group, undefined, '私聊流量不挂 group 标')
   assert.equal(m.groupId, undefined)
 })
+
+test('tool/result 带图：工具产出的图片透传到工具记录（上限 4 张）', () => {
+  const img = (data: string) => ({ mime: 'image/jpeg', data })
+  const events: ReplayEvent[] = [
+    {
+      type: 'assistant/message',
+      time: 1000,
+      data: {
+        turn: 1,
+        step: 0,
+        message: { id: 'a1', content: [{ type: 'tool-call', id: 'c1', name: 'screenshot', arguments: '{}' }] },
+      },
+    },
+    {
+      type: 'tool/result',
+      time: 1100,
+      data: {
+        turn: 1,
+        step: 0,
+        callId: 'c1',
+        message: {
+          content: '已截取主屏',
+          isError: false,
+          images: [img('aGk='), img('eHg='), img('MQ=='), img('Mg=='), img('Mw==')],
+        },
+      },
+    },
+  ]
+  const msgs = buildHistoryMessages(events)
+  const tools = (msgs[0] as { tools?: Array<Record<string, unknown>> }).tools
+  assert.equal(tools?.length, 1)
+  assert.equal(tools![0]!.status, 'result')
+  const images = tools![0]!.images as Array<{ mime: string; data: string }>
+  assert.equal(images.length, 4, '第 5 张截断')
+  assert.equal(images[0]!.data, 'aGk=')
+})

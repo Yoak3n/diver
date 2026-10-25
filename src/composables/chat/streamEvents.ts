@@ -185,6 +185,7 @@ export function createStreamHandler(deps: Deps) {
           ...(e.summary !== undefined ? { summary: e.summary } : {}),
           ...(e.callId !== undefined ? { callId: e.callId } : {}),
           ...(e.isError !== undefined ? { isError: e.isError } : {}),
+          ...(e.images !== undefined ? { images: e.images } : {}),
         };
         if (e.status === "call") {
           tools.value.push({ ...tool });
@@ -196,6 +197,7 @@ export function createStreamHandler(deps: Deps) {
             if (tool.summary !== undefined) last.summary = tool.summary;
             if (tool.isError !== undefined) last.isError = tool.isError;
             if (tool.callId !== undefined) last.callId = tool.callId;
+            if (tool.images !== undefined) last.images = tool.images;
           } else {
             tools.value.push({ ...tool });
           }

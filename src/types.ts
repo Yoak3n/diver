@@ -107,6 +107,8 @@ export interface ToolActivity {
   time: number;
   callId?: string;
   isError?: boolean;
+  /** 工具产出的图片（screenshot / read 读图；mime + base64，不含 data: 前缀）。 */
+  images?: ChatImage[];
 }
 
 /** 图片附件（发送/历史/消息气泡共用）。data 为 base64，不含 data: 前缀。 */
@@ -152,7 +154,7 @@ export type StreamEvent =
   | { type: "message"; kind: "user" | "assistant" | "system"; sessionId: string; messageId: string; turnMessageId?: string; content: string; origin: "user" | "assistant" | "presence" | "interaction" | "proactive" | "peer"; from?: string; group?: boolean; groupId?: string; groupName?: string; time: number; images?: ChatImage[] }
   | { type: "chunk"; messageId: string; delta: string }
   | { type: "thinking"; messageId: string; delta: string }
-  | { type: "tool"; name: string; status: "call" | "result"; summary?: string; messageId?: string; callId?: string; isError?: boolean }
+  | { type: "tool"; name: string; status: "call" | "result"; summary?: string; messageId?: string; callId?: string; isError?: boolean; images?: ChatImage[] }
   | { type: "turn"; state: "start" | "end"; reason?: string }
   | { type: "busy"; value: boolean }
   | { type: "question"; requestId: string; questions: UserQuestion[] }

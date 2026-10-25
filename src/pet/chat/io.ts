@@ -1,6 +1,6 @@
 // 桌宠轻量聊天：传输与探活（历史拉取 / SSE 流 / 发送 / 健康轮询 / 设置同步）。
 
-import { answerQuestion, getHistory, health, sendChat, streamEvents } from "../../api";
+import { answerQuestion, getHistory, health, sendChat, streamEvents, StreamAddressError } from "../../api";
 import type { ChatImage, UserQuestionAnswerItem } from "../../types";
 import { onTauriEvent, tauriAvailable, waitForSidecarReady } from "../../tauri";
 import { hasVisibleMessageBody } from "../../markdown";
@@ -97,9 +97,9 @@ export function createPetChatIo(
       handleEvent,
       (err) => {
         error.value = err instanceof Error ? err.message : String(err);
-        // SSE 断开（网络层错误）：标记流已关闭，等待 health 轮询恢复后重开。
-        // 注意：JSON 解析错误也会走这里，但仅当是 EventSource 的网络错误时关闭流。
-        if (err instanceof Event) {
+        // 流已不存在：网络层断开（Event）或寻址失败（实例未运行，流从未建立）。
+        // 标记待重开，等 health 轮询恢复后重建；JSON 解析错误不算——连接还活着。
+        if (err instanceof Event || err instanceof StreamAddressError) {
           streamOpen = false;
           connected.value = false;
         }

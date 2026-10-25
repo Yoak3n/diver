@@ -32,6 +32,11 @@ function toolPreview(t: ToolActivity): string {
 function toolDetail(t: ToolActivity): string {
   return (t.summary ?? "").trim();
 }
+
+/** 展开区有无内容：文本详情或工具产出的图（screenshot / read 读图）。 */
+function hasDetail(t: ToolActivity): boolean {
+  return toolDetail(t) !== "" || (t.images?.length ?? 0) > 0;
+}
 </script>
 
 <template>
@@ -45,7 +50,7 @@ function toolDetail(t: ToolActivity): string {
       <button
         class="tool-row"
         type="button"
-        :title="toolDetail(t) ? '点击展开/收起结果' : undefined"
+        :title="hasDetail(t) ? '点击展开/收起结果' : undefined"
         @click="toggleTool(toolKey(t, i))"
       >
         <span class="tool-icon" aria-hidden="true">⚙</span>
@@ -54,10 +59,21 @@ function toolDetail(t: ToolActivity): string {
         <span class="tool-status">{{ toolLabel(t) }}</span>
         <span v-if="toolPreview(t)" class="sep">·</span>
         <span v-if="toolPreview(t)" class="tool-summary">{{ toolPreview(t) }}</span>
-        <span v-if="toolDetail(t)" class="tool-chevron" :class="{ open: openTools.has(toolKey(t, i)) }">›</span>
+        <span v-if="(t.images?.length ?? 0) > 0" class="sep">·</span>
+        <span v-if="(t.images?.length ?? 0) > 0" class="tool-images-badge">图×{{ t.images!.length }}</span>
+        <span v-if="hasDetail(t)" class="tool-chevron" :class="{ open: openTools.has(toolKey(t, i)) }">›</span>
       </button>
-      <div v-if="openTools.has(toolKey(t, i)) && toolDetail(t)" class="tool-detail">
-        <pre>{{ toolDetail(t) }}</pre>
+      <div v-if="openTools.has(toolKey(t, i)) && hasDetail(t)" class="tool-detail">
+        <div v-if="(t.images?.length ?? 0) > 0" class="tool-images">
+          <img
+            v-for="(img, j) in t.images"
+            :key="j"
+            class="tool-image"
+            :src="`data:${img.mime};base64,${img.data}`"
+            :alt="img.name || '工具图片'"
+          />
+        </div>
+        <pre v-if="toolDetail(t)">{{ toolDetail(t) }}</pre>
       </div>
     </div>
   </div>
@@ -137,6 +153,23 @@ function toolDetail(t: ToolActivity): string {
   background: var(--paper-sunken);
   max-height: 240px;
   overflow: auto;
+}
+.tool-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.tool-image {
+  max-width: 180px;
+  max-height: 120px;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  object-fit: contain;
+}
+.tool-images-badge {
+  flex-shrink: 0;
+  color: var(--ink-dim);
 }
 .tool-detail pre {
   margin: 0;

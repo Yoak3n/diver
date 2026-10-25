@@ -121,6 +121,13 @@ async function json<T>(url: string, init?: RequestInit, instanceId?: string): Pr
   return res.json() as Promise<T>;
 }
 
+/**
+ * 流从未建立的寻址失败（实例未运行、注册表无记录等）。
+ * 与连接建立后的瞬时错误（JSON 解析）区分：调用方据此判断「可等实例就绪后重开」
+ * 还是「连接还活着，不能重开漏事件」。
+ */
+export class StreamAddressError extends Error {}
+
 /** 打开 SSE 事件流（按实例寻址），返回关闭函数。 */
 export function streamEvents(
   onEvent: (e: import("../types").StreamEvent) => void,
@@ -148,8 +155,9 @@ export function streamEvents(
       });
       es.onerror = (err) => onError(err);
     })
-    // 未运行实例等寻址失败：交给调用方的错误面（否则成为未处理拒绝）
-    .catch((err) => onError(err));
+    // 未运行实例等寻址失败：包成 StreamAddressError 交给调用方（流从未建立，
+    // 区别于连接中的瞬时错误），否则成为未处理拒绝。
+    .catch((err) => onError(new StreamAddressError(err instanceof Error ? err.message : String(err))));
   return () => {
     closed = true;
     es?.close();

@@ -2,7 +2,15 @@
 // 按实例寻址（P2-3 私聊）：state 之外固定 instanceId，端点全部带上。
 // 不持有消息/工具等 UI 状态；状态由 chat/state 提供。
 
-import { answerQuestion, getHistory, getSettings, health, sendChat, streamEvents } from "../../api";
+import {
+  answerQuestion,
+  getHistory,
+  getSettings,
+  health,
+  sendChat,
+  streamEvents,
+  StreamAddressError,
+} from "../../api";
 import { onTauriEvent, tauriAvailable, waitForSidecarReady } from "../../tauri";
 import type { ChatImage, SidecarStatus, UserQuestionAnswerItem } from "../../types";
 import { mergeHistoryIntoPool, stripActivityFolds } from "./reconcile";
@@ -17,6 +25,8 @@ const OLDER_CHUNK_LIMIT = 20;
 
 export function createChatTransport(state: ChatState, instanceId: string) {
   let closeStream: (() => void) | null = null;
+  /** 流是否认为自己是活的（含 EventSource 原生重连窗口）；false = 待健康恢复后重建。 */
+  let streamOpen = false;
   let stopSidecarEvent: (() => void) | null = null;
   let healthTimer: number | null = null;
   /** 历史成功加载一次后不再重复拉取（hello / 状态事件 / 健康轮询都会触发重试）。 */
@@ -99,7 +109,10 @@ export function createChatTransport(state: ChatState, instanceId: string) {
       state.healthInfo.value = h;
       state.busy.value = h.busy;
       state.error.value = null;
-      // 健康恢复说明 sidecar 已就绪：补拉历史（幂等）
+      // 健康恢复说明 sidecar 已就绪：补拉历史（幂等）；流未建立（首连时实例
+      // 未运行，openStream 的寻址直接失败）则重建——否则一直收不到流事件，
+      // 表现为发消息成功但主窗口无输出，需手动 reload。
+      if (!streamOpen) openStream();
       void loadHistory();
     } catch (err) {
       state.error.value = err instanceof Error ? err.message : String(err);
@@ -135,19 +148,15 @@ export function createChatTransport(state: ChatState, instanceId: string) {
       }, 8000);
     }
 
-    // Tauri 环境：本实例 sidecar 状态变为 running（DIVER_READY）时立即补拉历史与设置，
+    // Tauri 环境：本实例 sidecar 状态变为 running（DIVER_READY）时立即补拉历史、
+    // 刷新健康与设置，并**重建 SSE 流**——首连时实例未运行的话流从未建立过，
+    // 实例就绪是重开的最早信号，不能等最多 8s 的健康轮询。
     // 修复首次启动 / 插件启停重启后 WebView 状态陈旧（需手动刷新页面）的问题。
     // P2-3：事件全实例广播（payload 带 id），按 instanceId 过滤。
     if (!stopSidecarEvent && tauriAvailable()) {
       void onTauriEvent<SidecarStatus>("sidecar://status", (status) => {
         if (status.state !== "running" || status.id !== instanceId) return;
-        void loadHistory();
-        void refreshHealth();
-        void getSettings(instanceId)
-          .then((s) => {
-            state.settingsInfo.value = s;
-          })
-          .catch(() => {});
+        void reconnect();
       }).then((unlisten) => {
         stopSidecarEvent = unlisten;
       });
@@ -156,6 +165,7 @@ export function createChatTransport(state: ChatState, instanceId: string) {
 
   function openStream() {
     closeStream?.();
+    streamOpen = true;
     closeStream = streamEvents(
       (e) => {
         // SSE 流建立（hello）说明 sidecar HTTP 已就绪：对账补缺（幂等，含空池首拉）
@@ -164,6 +174,12 @@ export function createChatTransport(state: ChatState, instanceId: string) {
       },
       (err) => {
         state.error.value = err instanceof Error ? err.message : String(err);
+        // 寻址失败（实例未运行，流从未建立）或网络层断开：标记待重开，由
+        // 健康轮询 / sidecar://status running 重建。JSON 解析错误不算——
+        // 连接还活着，重开反而制造断缝漏事件。
+        if (err instanceof Event || err instanceof StreamAddressError) {
+          streamOpen = false;
+        }
       },
       instanceId,
     );
@@ -254,6 +270,7 @@ export function createChatTransport(state: ChatState, instanceId: string) {
 
   function dispose() {
     closeStream?.();
+    streamOpen = false;
     stopSidecarEvent?.();
     stopSidecarEvent = null;
     if (healthTimer !== null) {

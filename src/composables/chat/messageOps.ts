@@ -107,6 +107,7 @@ export function createMessageOps(
           ...(tool.summary !== undefined ? { summary: tool.summary } : {}),
           ...(tool.isError !== undefined ? { isError: tool.isError } : {}),
           ...(tool.callId !== undefined ? { callId: tool.callId } : {}),
+          ...(tool.images !== undefined ? { images: tool.images } : {}),
         };
       } else {
         list.push({ ...tool });

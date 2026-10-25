@@ -24,8 +24,12 @@
 
 | store | 落位 | 说明 |
 |---|---|---|
-| `credentials` | 框架配置的 secrets 文件（`credentials.config.file`，默认 `./secrets.yml`） | 凭据（如 API Key，password 类型） |
+| `credentials` | 框架配置的 secrets 文件（diver 经 extraPatches 钉在 `$COS_HOME/secrets.yml`） | 凭据（如 API Key，password 类型） |
 | `settings` | `diver-settings.json`（`<provider>.` 前缀） | 普通设置（如 baseUrl） |
+
+引擎默认 `credentials.config.file` 是 `./secrets.yml`（按 sidecar cwd 解析）；打包布局
+cwd=安装目录只读，companion-boot 因此以绝对路径覆盖为 `$COS_HOME/secrets.yml`（用户
+数据目录，可写、升级不丢），并把旧布局残留在 harness cwd 的 secrets.yml 一次性迁入。
 
 `provider` / `model` 选择存于 `diver-settings.json`；切换后下次对话生效，会话记忆保留。
 若持久化的 provider 已不在 harness 注册表（如改用了别的 overlay），后端自动钳制到

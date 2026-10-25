@@ -51,6 +51,10 @@ export function writeSecret(dotPath: string, value: string, file: string = secre
     mkdirSync(dirname(file), { recursive: true })
     writeFileSync(file, stringifyYaml(root), 'utf8')
   } catch (err) {
+    // 不能吞：设置面板保存 API Key 落在这里，静默失败会让「已保存」与
+    // 「始终未配置」并存（生产 cwd 只读时即此情形）。抛出后经设置路由 500
+    // 回传前端 saveError，用户能看到保存失败的原因。
     console.error('[diver] 保存 secrets 失败:', err)
+    throw new Error(`保存 secrets 失败（${file}）: ${(err as Error).message}`)
   }
 }

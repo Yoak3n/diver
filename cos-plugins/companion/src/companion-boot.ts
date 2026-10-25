@@ -15,7 +15,7 @@
  * @module @diver/companion/companion-boot
  */
 
-import { existsSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 import type { BootOptions, CliOptions } from '../../../harness/packages/boot/src/index.ts'
@@ -78,6 +78,45 @@ export const REQUIRED_SERVICES = [
   'skills',
 ] as const
 
+/** cos home：sidecar 启动时 Rust 注入 COS_HOME；未注入时与引擎兜底一致（~/.cos）。 */
+function cosHomeOf(): string {
+  return process.env.COS_HOME || join(homedir(), '.cos')
+}
+
+/** 对 base cordis.yml credentials 行的 config 覆盖 patch（见 pinCredentialsSecrets）。 */
+interface CredentialsSecretsPin {
+  id: 'credentials'
+  config: { file: string }
+}
+
+/**
+ * 凭据 secrets 文件钉在 $COS_HOME/secrets.yml（用户数据目录：可写、升级不丢）。
+ *
+ * 引擎默认 `credentials.config.file: ./secrets.yml`（harness/cordis.yml）按
+ * sidecar 进程 cwd 解析：dev cwd 是仓库 harness/（可写），打包后是
+ * <install>/resources/sidecar（AppImage squashfs / Program Files 只读）——
+ * 设置面板保存 API Key 时写该路径必然失败，凭据永远 unresolved，面板呈现
+ * 「保存无反应、始终未配置」。这里经 extraPatches 以绝对路径覆盖 base
+ * cordis.yml 里 credentials 行的 config；@cos/credentials（读，取该 config）
+ * 与 @diver/backend 的 secrets 写入（取 ctx.credentials.secretFile）随之同源。
+ * 顺带把旧布局残留在 harness cwd 的 secrets.yml 一次性搬入 COS_HOME
+ * （该位置仅 dev 曾成功写过）。
+ */
+function pinCredentialsSecrets(cosHome: string, harnessDir: string): CredentialsSecretsPin {
+  const file = join(cosHome, 'secrets.yml')
+  const legacy = join(harnessDir, 'secrets.yml')
+  if (!existsSync(file) && existsSync(legacy)) {
+    try {
+      mkdirSync(cosHome, { recursive: true })
+      copyFileSync(legacy, file)
+      console.error(`[cos] 迁移 secrets 文件: ${legacy} → ${file}`)
+    } catch (err) {
+      console.error('[cos] 迁移 secrets 文件失败（保存凭据时将在新位置重建）:', err)
+    }
+  }
+  return { id: 'credentials', config: { file } }
+}
+
 export interface CompanionPaths {
   /** Engine dir containing `packages/@cos/*` sources + node_modules/tsx. */
   harnessDir: string
@@ -120,7 +159,7 @@ export function resolveCompanionPaths(cli: CliOptions, base: {
       ? join(root, 'harness')
       : join(process.cwd(), 'harness')
 
-  const cosHome = process.env.COS_HOME || join(homedir(), '.cos')
+  const cosHome = cosHomeOf()
   const defaultPlugins = prefer
     ? (existsSync(join(root, 'cos-plugins')) ? join(root, 'cos-plugins') : join(root, 'plugins'))
     : (existsSync(join(root, 'plugins')) ? join(root, 'plugins') : join(cosHome, 'plugins'))
@@ -158,6 +197,7 @@ export function companionBootOptions(cli: CliOptions, paths: CompanionPaths): Pa
   const safe = profile === SAFE_PROFILE
   const harnessOk = existsSync(join(paths.harnessDir, 'packages'))
   const bundleOk = existsSync(join(paths.bundleDir, 'cordis.patch.yml'))
+  const secretsPin = pinCredentialsSecrets(cosHomeOf(), paths.harnessDir)
 
   if (!harnessOk) {
     console.error(`[cos] harness missing: ${paths.harnessDir}`)
@@ -183,12 +223,12 @@ export function companionBootOptions(cli: CliOptions, paths: CompanionPaths): Pa
       ...(paths.seedDir === undefined ? {} : { seedDir: paths.seedDir }),
       profile: SAFE_PROFILE,
       required: [...REQUIRED_SERVICES],
-      extraPatches: [safeInsert] as BootOptions['extraPatches'],
+      extraPatches: [secretsPin, safeInsert] as BootOptions['extraPatches'],
     }
   }
 
   // P4: profile-installed plain plugins (non-bundle) mount as insert rows.
-  const cosHome = process.env.COS_HOME || join(homedir(), '.cos')
+  const cosHome = cosHomeOf()
   const profileDir = join(cosHome, 'profiles', profile)
   const profileInserts = profilePluginInserts(profileDir)
   if (profileInserts.length > 0) {
@@ -207,8 +247,8 @@ export function companionBootOptions(cli: CliOptions, paths: CompanionPaths): Pa
     ...(paths.seedDir === undefined ? {} : { seedDir: paths.seedDir }),
     profile,
     required: [...REQUIRED_SERVICES],
-    ...(profileInserts.length === 0
-      ? {}
-      : { extraPatches: [{ insert: profileInserts }] as BootOptions['extraPatches'] }),
+    extraPatches: (profileInserts.length === 0
+      ? [secretsPin]
+      : [secretsPin, { insert: profileInserts }]) as BootOptions['extraPatches'],
   }
 }

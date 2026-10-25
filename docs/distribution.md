@@ -136,8 +136,8 @@ Diver.exe
             --bundles resources/sidecar/bundles/bundle-companion
             --plugin-root resources/sidecar/plugins
             --harness resources/sidecar/harness
-    cwd      = resources/sidecar            （cordis.yml / secrets.yml 从这读）
-    COS_HOME = %APPDATA%\com.diver.companion\cos-<实例id>
+    cwd      = resources/sidecar            （只读；cordis.yml 相对路径从这解析）
+    COS_HOME = %APPDATA%\com.diver.companion\cos-<实例id>   （secrets.yml 钉在这，可写）
     DIVER_PORT = 随机（DIVER_READY 就绪行回报）
     DIVER_UI_DIST = resources/sidecar/dist
     └─ @cos/boot 组装 → pluginPaths(@cos/*) + pluginRoot(plugins/) + profile 启停

@@ -7,6 +7,7 @@ use std::time::Duration;
 
 use tauri::{AppHandle, Emitter};
 
+use super::launch::LaunchScope;
 use super::process::SidecarManager;
 use super::reclaim::reclaim_stale_sidecar;
 use super::shutdown::{request_shutdown, wait_exit, GRACEFUL_EXIT_TIMEOUT};
@@ -53,7 +54,16 @@ pub(super) fn start_impl(mgr: &'static SidecarManager, app: &AppHandle) -> bool 
         mgr.set_state(SidecarState::Crashed);
         return false;
     };
-    let mut report = (hooks.preflight)(app);
+    // 多实例：extras 在启动前注入自己的 COS_HOME；active 未注入则回退全局。
+    let launch_scope = LaunchScope {
+        instance_id: mgr.instance_id(),
+        cos_home: mgr.cos_home(),
+    };
+    let instance_home = launch_scope
+        .cos_home
+        .clone()
+        .unwrap_or_else(|| crate::config::cos_home(app));
+    let mut report = (hooks.preflight)(app, &launch_scope);
     if let Some(bak) = &report.quarantined {
         mgr.push_log(format!("[diver] profile 补丁已隔离: {bak}"));
     }
@@ -66,8 +76,12 @@ pub(super) fn start_impl(mgr: &'static SidecarManager, app: &AppHandle) -> bool 
             mgr.push_log(
                 "[diver] companion 预检失败 → 自动 safe 模式（仅核心 + backend）".into(),
             );
-            if crate::config::profile::set_active_profile(app, &hooks.safe_profile_name) {
-                report = (hooks.preflight)(app);
+            // 多实例：写本实例 COS_HOME 的 active-profile.json，不要串到 active 实例。
+            if crate::config::profile::set_active_profile_at(
+                &instance_home,
+                &hooks.safe_profile_name,
+            ) {
+                report = (hooks.preflight)(app, &launch_scope);
             }
         }
         if !report.ok {
@@ -85,7 +99,7 @@ pub(super) fn start_impl(mgr: &'static SidecarManager, app: &AppHandle) -> bool 
 
     // 构建启动命令：dev 用仓库内 cos-plugins/companion/src/companion.ts；
     // release 用随包 Node + plugins/companion/src/companion-bundle.ts（开放 plugins/ 目录，非 SEA）。
-    let ctx = (hooks.launch)(app);
+    let ctx = (hooks.launch)(app, &launch_scope);
     let mut cmd = match mgr.build_command(app, &ctx) {
         Ok(cmd) => cmd,
         Err(e) => {

@@ -48,29 +48,17 @@ pub fn plugin_paths(app: &AppHandle) -> PluginPaths {
     plugin_paths_for(app, &active_profile(app))
 }
 
-/// 指定 profile 名的布局解析。
+/// 指定 profile 名的布局解析（active 实例）。
 pub fn plugin_paths_for(app: &AppHandle, profile: &str) -> PluginPaths {
-    let cos_home = crate::config::cos_home(app);
+    plugin_paths_at(app, &crate::config::cos_home(app), profile)
+}
 
+/// 指定实例 COS_HOME 的布局解析（P2-3 多实例：每实例一份插件区/profile 补丁）。
+pub fn plugin_paths_at(app: &AppHandle, cos_home: &Path, profile: &str) -> PluginPaths {
     #[cfg(debug_assertions)]
     {
         let _ = app;
-        let profile_dir = cos_home.join("profiles").join(profile);
-        let root = repo_root();
-        let plugins_root = {
-            let cos_plugins = root.join("cos-plugins");
-            if cos_plugins.is_dir() {
-                cos_plugins
-            } else {
-                root.join("plugins")
-            }
-        };
-        let bundle_dir = plugins_root.join("bundle-companion");
-        PluginPaths {
-            bundle_dir,
-            plugins_root,
-            profile_dir,
-        }
+        plugin_paths_dev(cos_home, profile)
     }
 
     #[cfg(not(debug_assertions))]
@@ -82,7 +70,26 @@ pub fn plugin_paths_for(app: &AppHandle, profile: &str) -> PluginPaths {
             .unwrap_or_else(|_| PathBuf::from("."))
             .join("resources")
             .join("sidecar");
-        plugin_paths_release(&res_dir, &cos_home, profile)
+        plugin_paths_release(&res_dir, cos_home, profile)
+    }
+}
+
+/// dev 布局：插件包在仓库 `cos-plugins/`（全体实例共享），profile 补丁按实例 COS_HOME 分叉。
+#[cfg(debug_assertions)]
+fn plugin_paths_dev(cos_home: &Path, profile: &str) -> PluginPaths {
+    let root = repo_root();
+    let plugins_root = {
+        let cos_plugins = root.join("cos-plugins");
+        if cos_plugins.is_dir() {
+            cos_plugins
+        } else {
+            root.join("plugins")
+        }
+    };
+    PluginPaths {
+        bundle_dir: plugins_root.join("bundle-companion"),
+        plugins_root,
+        profile_dir: cos_home.join("profiles").join(profile),
     }
 }
 
@@ -100,5 +107,19 @@ mod tests {
         assert_eq!(p.plugins_root, home.join("plugins"));
         assert_eq!(p.profile_dir, home.join("profiles").join("companion"));
         assert_ne!(p.plugins_root, res.join("plugins"));
+    }
+
+    #[test]
+    #[cfg(debug_assertions)]
+    fn instance_homes_isolate_profile_patches() {
+        let a = PathBuf::from("/tmp/.cos-home-default");
+        let b = PathBuf::from("/tmp/.cos-home-beta");
+        let pa = plugin_paths_dev(&a, "companion");
+        let pb = plugin_paths_dev(&b, "companion");
+        assert_eq!(pa.profile_dir, a.join("profiles").join("companion"));
+        assert_eq!(pb.profile_dir, b.join("profiles").join("companion"));
+        assert_ne!(pa.profile_dir, pb.profile_dir);
+        // dev 形态插件包共享仓库 cos-plugins/，只有 profile 补丁逐实例分叉。
+        assert_eq!(pa.plugins_root, pb.plugins_root);
     }
 }

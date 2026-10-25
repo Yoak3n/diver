@@ -36,7 +36,7 @@ pub type SidecarJob = ();
 #[cfg(target_os = "windows")]
 pub use job_object::SidecarJob;
 
-pub use launch::{LaunchContext, LaunchHooks, PreflightStatus};
+pub use launch::{LaunchContext, LaunchHooks, LaunchScope, PreflightStatus};
 pub use paths::{auth_bearer, service_token, DEFAULT_PORT};
 pub use process::SidecarManager;
 pub use runtimes::Runtimes;

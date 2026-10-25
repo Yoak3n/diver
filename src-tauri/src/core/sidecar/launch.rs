@@ -33,13 +33,22 @@ pub struct PreflightStatus {
     pub quarantined: Option<String>,
 }
 
+/// 启动作用域：本 sidecar 所属实例（多实例下 extras 与 active 的 COS_HOME 不同）。
+///
+/// `None` 表示调用方未注入，按 active 实例解析。core 只透传，不解释路径。
+#[derive(Debug, Clone, Default)]
+pub struct LaunchScope {
+    pub instance_id: Option<String>,
+    pub cos_home: Option<PathBuf>,
+}
+
 /// 启动期注入的跨层能力（app 组装，core 不依赖 plugins）。
 #[derive(Clone)]
 pub struct LaunchHooks {
-    /// 组装启动描述（app 包一层 plugins::active_profile / plugin_paths_for）。
-    pub launch: Arc<dyn Fn(&AppHandle) -> LaunchContext + Send + Sync>,
-    /// 启动预检（app 包一层 plugins::preflight，映射到 PreflightStatus）。
-    pub preflight: Arc<dyn Fn(&AppHandle) -> PreflightStatus + Send + Sync>,
+    /// 组装启动描述（app 包一层 active_profile_at / plugin_paths_at）。
+    pub launch: Arc<dyn Fn(&AppHandle, &LaunchScope) -> LaunchContext + Send + Sync>,
+    /// 启动预检（app 包一层 plugins::preflight_at，映射到 PreflightStatus）。
+    pub preflight: Arc<dyn Fn(&AppHandle, &LaunchScope) -> PreflightStatus + Send + Sync>,
     /// 降级用 safe profile 名（如 `"safe"`）。
     pub safe_profile_name: String,
 }

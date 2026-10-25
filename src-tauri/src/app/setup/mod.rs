@@ -105,27 +105,51 @@ pub fn configure(builder: Builder<tauri::Wry>) -> Builder<tauri::Wry> {
         // sidecar 启动钩子：profile/布局/preflight 在 plugins 层组装后注入 core，
         // 保持 plugins ↔ core 零互引。
         {
-            use crate::core::sidecar::{LaunchContext, LaunchHooks, PreflightStatus};
+            use crate::core::sidecar::{
+                LaunchContext, LaunchHooks, LaunchScope, PreflightStatus,
+            };
             let hooks = LaunchHooks {
-                launch: std::sync::Arc::new(|app: &tauri::AppHandle| {
-                    let profile = crate::plugins::active_profile(app);
-                    let paths = crate::plugins::plugin_paths_for(app, &profile);
-                    LaunchContext {
-                        profile,
-                        bundle_dir: paths.bundle_dir,
-                        plugins_root: paths.plugins_root,
-                    }
-                }),
-                preflight: std::sync::Arc::new(|app: &tauri::AppHandle| {
-                    let r = crate::plugins::preflight(app);
-                    PreflightStatus {
-                        ok: r.ok,
-                        profile: r.profile,
-                        safe_mode: r.safe_mode,
-                        problems: r.problems,
-                        quarantined: r.quarantined,
-                    }
-                }),
+                launch: std::sync::Arc::new(
+                    |app: &tauri::AppHandle, scope: &LaunchScope| {
+                        // 多实例：按本 sidecar 的 COS_HOME 解析 profile / 插件布局；
+                        // active 未注入 home 时走全局（含旧壳层 profile 迁移）。
+                        let (profile, paths) = match &scope.cos_home {
+                            Some(home) => {
+                                let profile =
+                                    crate::config::profile::active_profile_at(home, home);
+                                let paths =
+                                    crate::plugins::plugin_paths_at(app, home, &profile);
+                                (profile, paths)
+                            }
+                            None => {
+                                let profile = crate::plugins::active_profile(app);
+                                let paths =
+                                    crate::plugins::plugin_paths_for(app, &profile);
+                                (profile, paths)
+                            }
+                        };
+                        LaunchContext {
+                            profile,
+                            bundle_dir: paths.bundle_dir,
+                            plugins_root: paths.plugins_root,
+                        }
+                    },
+                ),
+                preflight: std::sync::Arc::new(
+                    |app: &tauri::AppHandle, scope: &LaunchScope| {
+                        let r = match &scope.cos_home {
+                            Some(home) => crate::plugins::preflight_at(app, home),
+                            None => crate::plugins::preflight(app),
+                        };
+                        PreflightStatus {
+                            ok: r.ok,
+                            profile: r.profile,
+                            safe_mode: r.safe_mode,
+                            problems: r.problems,
+                            quarantined: r.quarantined,
+                        }
+                    },
+                ),
                 safe_profile_name: crate::plugins::SAFE_PROFILE.to_string(),
             };
             crate::core::sidecar::SidecarManager::global().set_hooks(hooks);

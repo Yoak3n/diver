@@ -22,8 +22,8 @@ pub use catalog::{
 };
 pub(crate) use catalog::{catalog_for, package_present};
 pub use install::{install_profile_plugin, is_internal, profile_plugin_infos};
-pub use paths::{active_profile, plugin_paths, plugin_paths_for};
-pub use preflight::preflight;
+pub use paths::{active_profile, plugin_paths, plugin_paths_at, plugin_paths_for};
+pub use preflight::{preflight, preflight_at};
 pub use profile::{ensure_profile, switch_profile_and_restart};
 pub(crate) use profile::load_disabled_ids_public;
 pub use registry::{installed_ids, ProfilePluginRecord, ProfilePluginsFile};

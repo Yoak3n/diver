@@ -35,39 +35,54 @@ export interface NativeStatus {
   activeProfile: string;
 }
 
-export function listPluginsApi(): Promise<PluginsResponse> {
-  return json("/plugins");
+export function listPluginsApi(instanceId?: string): Promise<PluginsResponse> {
+  return json("/plugins", undefined, instanceId);
 }
 
 export function togglePluginApi(
   id: string,
   enabled: boolean,
   restart = true,
+  instanceId?: string,
 ): Promise<PluginsResponse & { restart: boolean }> {
-  return json("/plugins/toggle", {
-    method: "POST",
-    body: JSON.stringify({ id, enabled, restart }),
-  });
+  return json(
+    "/plugins/toggle",
+    {
+      method: "POST",
+      body: JSON.stringify({ id, enabled, restart }),
+    },
+    instanceId,
+  );
 }
 
 export function installProfilePluginApi(
   spec: string,
   restart = true,
+  instanceId?: string,
 ): Promise<PluginsResponse & { restart: boolean }> {
-  return json("/plugins/install", {
-    method: "POST",
-    body: JSON.stringify({ spec, restart }),
-  });
+  return json(
+    "/plugins/install",
+    {
+      method: "POST",
+      body: JSON.stringify({ spec, restart }),
+    },
+    instanceId,
+  );
 }
 
 export function uninstallProfilePluginApi(
   id: string,
   restart = true,
+  instanceId?: string,
 ): Promise<PluginsResponse & { restart: boolean }> {
-  return json("/plugins/uninstall", {
-    method: "POST",
-    body: JSON.stringify({ id, restart }),
-  });
+  return json(
+    "/plugins/uninstall",
+    {
+      method: "POST",
+      body: JSON.stringify({ id, restart }),
+    },
+    instanceId,
+  );
 }
 
 export interface PluginConfigFieldView {
@@ -77,6 +92,8 @@ export interface PluginConfigFieldView {
   secret?: boolean;
   required?: boolean;
   description?: string;
+  /** 可选分组标题：同 section 的字段渲染在同一块。 */
+  section?: string;
   options?: Array<{ value: string; label: string }>;
   default?: string | number | boolean;
   value?: string;
@@ -89,6 +106,8 @@ export interface PluginConfigView {
   title?: string;
   hasConfig: boolean;
   fields: PluginConfigFieldView[];
+  /** 配置由独立设置页维护时的入口（产品层描述，前端不写死映射）。 */
+  page?: { tab: string; label: string };
 }
 
 /** 插件配置读面（缺省 active 实例；传 instanceId 时直连该实例的 backend）。 */
@@ -119,13 +138,18 @@ export function getProfileApi(): Promise<ProfileInfo> {
 export function switchProfileApi(
   profile: "companion" | "safe",
   restart = true,
+  instanceId?: string,
 ): Promise<{ activeProfile: string; restart: boolean }> {
-  return json("/profile", {
-    method: "POST",
-    body: JSON.stringify({ profile, restart }),
-  });
+  return json(
+    "/profile",
+    {
+      method: "POST",
+      body: JSON.stringify({ profile, restart }),
+    },
+    instanceId,
+  );
 }
 
-export function getNativeStatusApi(): Promise<NativeStatus> {
-  return json("/native/status");
+export function getNativeStatusApi(instanceId?: string): Promise<NativeStatus> {
+  return json("/native/status", undefined, instanceId);
 }

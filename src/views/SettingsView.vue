@@ -90,7 +90,7 @@ const tabs = SETTINGS_TABS;
         />
         <VoiceTab v-else-if="state.activeTab === 'voice'" :state="state" />
         <McpTab v-else-if="state.activeTab === 'mcp'" :state="state" @restart="doRestartSidecar" />
-        <PluginsTab v-else-if="state.activeTab === 'plugins'" />
+        <PluginsTab v-else-if="state.activeTab === 'plugins'" @open-tab="selectTab" />
         <ShortcutsTab v-else-if="state.activeTab === 'shortcuts'" />
         <ScheduleTab v-else-if="state.activeTab === 'schedule'" />
         <PresenceTab v-else-if="state.activeTab === 'presence'" />

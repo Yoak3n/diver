@@ -35,6 +35,16 @@ export interface PluginConfigView {
   title?: string
   hasConfig: boolean
   fields: PluginConfigFieldView[]
+  /** 该插件的配置由独立设置页维护时给出入口；通用插件页只渲染跳转。 */
+  page?: { tab: string; label: string }
+}
+
+/**
+ * 产品层设置面：插件只声明字段（configDecl），「哪个插件有专属页面」属于产品知识，
+ * 放在这里而不是插件或引擎里，前端也不再写死映射。
+ */
+const SETTINGS_PAGES: Record<string, { tab: string; label: string }> = {
+  onebot: { tab: 'onebot', label: 'QQ 接入' },
 }
 
 const declCache = new Map<string, PluginConfigDecl | null>()
@@ -218,6 +228,7 @@ export async function listPluginConfigs(): Promise<PluginConfigView[]> {
       title: decl?.title,
       hasConfig: (decl?.fields.length ?? 0) > 0,
       fields,
+      ...(SETTINGS_PAGES[id] ? { page: SETTINGS_PAGES[id] } : {}),
     })
   }
   return out

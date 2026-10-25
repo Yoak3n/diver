@@ -11,6 +11,10 @@ import {
   type PluginConfigView,
 } from "../../api";
 import PluginConfigForm from "./children/PluginConfigForm.vue";
+import {
+  buildPluginConfigValues,
+  type PluginConfigDraft,
+} from "./children/pluginConfigValues";
 
 const { instances, error, notice, onebotOwner, refresh, setQqOwner } = useInstances();
 
@@ -19,7 +23,7 @@ const ownerPick = ref("");
 /** 运行中的实例 id 集（注册表行）；refreshInstanceRuntimes 同时水合按实例寻址表。 */
 const runningIds = ref<Set<string>>(new Set());
 const configView = ref<PluginConfigView | null>(null);
-const draft = ref<Record<string, string | boolean>>({});
+const draft = ref<PluginConfigDraft>({});
 const cfgError = ref("");
 const cfgNotice = ref("");
 const busy = ref(false);
@@ -54,7 +58,7 @@ async function loadConfig(): Promise<void> {
       return;
     }
     configView.value = view;
-    const values: Record<string, string | boolean> = {};
+    const values: PluginConfigDraft = {};
     for (const f of view.fields) {
       if (f.type === "boolean") values[f.key] = f.value === "true" || f.default === true;
       else values[f.key] = f.value ?? (f.default != null ? String(f.default) : "");
@@ -71,17 +75,7 @@ async function onSave(): Promise<void> {
   const view = configView.value;
   const owner = onebotOwner.value;
   if (view === null || owner === null) return;
-  const values: Record<string, string | number | boolean | null> = {};
-  for (const f of view.fields) {
-    const raw = draft.value[f.key];
-    if (f.type === "boolean") values[f.key] = raw === true || raw === "true";
-    else if (f.type === "number") {
-      const s = String(raw ?? "");
-      values[f.key] = s === "" ? null : Number(s);
-    } else {
-      values[f.key] = raw === "" || raw == null ? null : String(raw);
-    }
-  }
+  const values = buildPluginConfigValues(view.fields, draft.value);
   busy.value = true;
   cfgError.value = "";
   cfgNotice.value = "";
@@ -122,6 +116,7 @@ onMounted(reload);
     wsUrl 也不会重复回复）。连接与行为参数（wsUrl / token / 群白名单 / 插话概率等）
     保存在归属实例自己的插件配置里，在下方编辑；未配置 wsUrl 时插件保持休眠。
     绑定与配置改动均需重启应用后生效。也可在「实例」页通过每行的「接 QQ」勾选调整归属。
+    「插件」页只负责 OneBot 插件的启停，连接与行为配置统一在本页维护。
   </p>
 
   <div v-if="notice" class="ok-msg">{{ notice }}</div>
@@ -142,7 +137,10 @@ onMounted(reload);
   </div>
 
   <label class="group-title">连接与行为（归属实例的插件配置）</label>
-  <p v-if="onebotOwner === null" class="hint">先在上方选择归属实例。</p>
+  <p v-if="onebotOwner === null" class="hint">
+    先在上方选择归属实例。未绑定归属时 OneBot 仍是旧的「配置即归属」行为，但本页不编辑任何实例的配置；
+    绑定后即可在此维护（也可在「实例」页勾选目标实例的「接 QQ」）。
+  </p>
   <p v-else-if="!ownerRunning" class="hint">
     实例 {{ onebotOwner }} 未在运行（未启用或未随应用启动）。启用并重启应用后，可在此编辑它的
     OneBot 配置。

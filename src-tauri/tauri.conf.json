@@ -6,7 +6,8 @@
   "build": {
     "beforeDevCommand": "pnpm dev",
     "devUrl": "http://127.0.0.1:1420",
-    "beforeBuildCommand": "pnpm build && node scripts/bundle-release.mjs --assemble-only --skip-frontend",
+    "beforeBuildCommand": "pnpm build && node scripts/preflight.mjs && node scripts/bundle-release.mjs --assemble-only --skip-frontend",
+    "beforeBundleCommand": "node scripts/before-bundle.mjs",
     "frontendDist": "../dist"
   },
   "app": {

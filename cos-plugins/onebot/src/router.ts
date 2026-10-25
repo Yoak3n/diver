@@ -1,8 +1,8 @@
 // @diver/onebot — 入站路由（群/私聊 → 缓冲 → 触发 → 唤醒）。
 //
 // 持有每群门控状态、锚点、发送记账与 debounce 定时器；唤醒只做一件事：
-// 拼窗口快照 → companion.message → agent.followup（安全收权由 index.ts 的
-// 回合沙箱钩子负责）。
+// 拼窗口快照 → companion.message → 按 deliveryTier 投递（忙且来源域一致时
+// 触发类 steer 插话、其余 followup 排队；安全收权由 index.ts 的回合沙箱钩子负责）。
 
 import type { Agent, UserMessage } from '@cos/plugin-api'
 
@@ -18,8 +18,11 @@ import {
   toSegments,
   type GroupMessageEvent,
   type PrivateMessageEvent,
+  type Segment,
 } from './protocol.ts'
+import { collectWakeImages, type WakeImages } from './image.ts'
 import {
+  deliveryTier,
   evaluateGate,
   evaluatePrivateGate,
   evaluateTrigger,
@@ -31,12 +34,18 @@ import {
   type PrivateGate,
 } from './trigger.ts'
 import type { OnebotClient } from './ws.ts'
+import type { OnebotSource } from './sandbox.ts'
 import type { TriggerAnchor } from './tools.ts'
 
 /** backend 的 CompanionService 形状（ctx.companion；本地声明避免跨包类型耦合）。 */
 export interface CompanionLike {
   agent(): Promise<Agent>
-  message(text: string, detail?: string, id?: string): UserMessage
+  message(
+    text: string,
+    detail?: string,
+    id?: string,
+    images?: ReadonlyArray<{ mime: string; data: string; name?: string }>,
+  ): UserMessage
 }
 
 /** 引用锚点可回溯的最长时间：群缺省值只认 10 分钟内的触发。 */
@@ -46,6 +55,8 @@ export interface RouterDeps {
   companion: CompanionLike
   cfg: ResolvedConfig
   client: OnebotClient
+  /** 忙时插话准入：来源域与当前回合一致才允许 steer（沙箱/记忆作用域按回合唯一）。 */
+  canSteer: (source: OnebotSource) => boolean
 }
 
 export interface Router {
@@ -61,7 +72,7 @@ export interface Router {
 }
 
 export function createRouter(deps: RouterDeps): Router {
-  const { companion, cfg, client } = deps
+  const { companion, cfg, client, canSteer } = deps
   const gates = new Map<string, GateState>()
   const privateGates = new Map<string, PrivateGate>()
   const groupNames = new Map<string, string>()
@@ -120,14 +131,26 @@ export function createRouter(deps: RouterDeps): Router {
     hasTrigger: boolean
     messageId: number
     bufferFile: string
+    /** 触发消息段（普通档无触发消息给 null，不取图）。 */
+    segments: readonly Segment[] | null
   }): Promise<void> {
     const snapshot = selectWindow(readMessages(input.bufferFile), cfg.context)
+    const collected: WakeImages = input.segments === null
+      ? { images: [], notes: [] }
+      : await collectWakeImages(input.segments, { client })
+    // 纯图无文字：正文给兜底文案，模型才知道图是这条消息的主体
+    const triggerText = input.text !== ''
+      ? input.text
+      : collected.images.length > 0 ? '（对方只发了一张图片，未配文字）' : ''
+    const noteSuffix = collected.notes.length > 0
+      ? `\n（图片获取提示：${collected.notes.join('；')}）`
+      : ''
     const text = formatWake({
       kind: input.kind,
       group: input.group,
       senderId: input.senderId,
       senderName: input.senderName,
-      text: input.text,
+      text: triggerText + noteSuffix,
       isTrigger: input.hasTrigger,
       snapshot,
     })
@@ -138,7 +161,15 @@ export function createRouter(deps: RouterDeps): Router {
       ? `ob-${input.group === null ? `u${input.senderId}` : `g${input.group.id}`}-${input.messageId}`
       : undefined
     const agent = await companion.agent()
-    agent.followup(companion.message(text, detail, messageId))
+    const message = companion.message(text, detail, messageId, collected.images)
+    // 插话准入 = 忙 + 来源域一致：沙箱与记忆作用域都是一回合一个来源，
+    // 跨来源合批会让后到消息借用先到来源的工具面与记忆命名空间。
+    const source: OnebotSource = input.group === null
+      ? { kind: 'private', userId: input.senderId }
+      : { kind: 'group', groupId: input.group.id, userId: input.senderId }
+    const steerable = agent.status === 'running' && canSteer(source)
+    if (deliveryTier(input.kind, steerable) === 'steer') agent.steer(message)
+    else agent.followup(message)
   }
 
   async function handleGroup(event: GroupMessageEvent): Promise<void> {
@@ -183,13 +214,15 @@ export function createRouter(deps: RouterDeps): Router {
       hasTrigger: true,
       messageId: event.message_id,
       bufferFile: groupBufferPath(groupId),
+      segments,
     })
   }
 
   async function handlePrivate(event: PrivateMessageEvent): Promise<void> {
     if (event.user_id === event.self_id) return
     const userId = String(event.user_id)
-    const text = segmentsToText(toSegments(event.message))
+    const segments = toSegments(event.message)
+    const text = segmentsToText(segments)
     // 私聊回合不继承群锚点（避免把该发私聊的话误发到旧群）
     lastAnchor = undefined
     appendMessage(privateBufferPath(userId), {
@@ -211,6 +244,7 @@ export function createRouter(deps: RouterDeps): Router {
       hasTrigger: true,
       messageId: event.message_id,
       bufferFile: privateBufferPath(userId),
+      segments,
     })
   }
 
@@ -239,6 +273,7 @@ export function createRouter(deps: RouterDeps): Router {
       hasTrigger: false,
       messageId: 0,
       bufferFile: groupBufferPath(groupId),
+      segments: null,
     })
   }
 

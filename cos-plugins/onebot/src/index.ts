@@ -7,15 +7,21 @@
 // 接入：bundle insert `{ id: onebot, name: '@diver/onebot' }`；配置见 config.ts。
 
 import type { Context } from 'cordis'
+import { realpath } from 'node:fs/promises'
+import { join, resolve } from 'node:path'
+
 import { nativeRpc } from '@diver/native-bridge/rpc'
 
 import { configDecl, ownerGate, resolveConfig, type Config } from './config.ts'
 import { trimAllBuffers } from './buffer-store.ts'
+import { buildFsPolicy, fsCheckCall, type FsPolicy } from './fs-jail.ts'
 import {
   TurnSandbox,
   allowedToolNames,
   allowedToolNamesForSource,
+  canSteerInto,
   filterToolsForTurn,
+  isOwnerPrivateSource,
   vetoIfActive,
   type OnebotSource,
   type TurnScopeEvent,
@@ -26,6 +32,7 @@ import { applyPrompt } from './prompt.ts'
 import { replaceRelationCard, safeRelationCard, type ShallowCardFacts } from './relation-card.ts'
 import { createRouter, type CompanionLike } from './router.ts'
 import { voiceCooldownOk } from './voice.ts'
+import { RecentImages, imagesInContent } from './out-image.ts'
 
 export const name = 'onebot'
 
@@ -104,13 +111,37 @@ export function apply(ctx: Context, config: Config = {}): void {
         isOwner: cfg.ownerIds.includes(source.userId),
       }
 
-  // ---- 安全钩子：可见性 + 执行双闸 + QQ 安全卡片 ----
+  // ---- 文件囚笼（fs-jail.ts）：根一次性 realpath，两档策略缓存 ----
+  // COS_HOME 缺省回退与 basic-tools 同约定；额外根来自配置（dev 期插件源码 repo）。
+  // 相对路径基准假定 workspace 根（basic-tools 未覆写 workspaceRoot 时的默认）。
+  const realRoot = (p: string): Promise<string> =>
+    realpath(p).catch(() => Promise.resolve(resolve(p)))
+  const fsPolicies: Promise<{ baseline: FsPolicy; ownerPrivate: FsPolicy; workspaceBase: string }> =
+    (async () => {
+      const cosHome = await realRoot(process.env.COS_HOME ?? join(process.cwd(), '.cos-home'))
+      const extraRoots = await Promise.all(cfg.sandbox.fsExtraRoots.map(realRoot))
+      return {
+        baseline: buildFsPolicy(cosHome, extraRoots, false),
+        ownerPrivate: buildFsPolicy(cosHome, extraRoots, true),
+        workspaceBase: join(cosHome, 'workspace'),
+      }
+    })()
+
+  // ---- 安全钩子：可见性 + 执行双闸 + 路径囚笼 + QQ 安全卡片 ----
   // 回合来源由 router 唤醒消息的 `onebot:` detail 标记（inbox/claimed 判定）。
 
   ctx.on('system-prompt/assemble', async (assembly, _context, next) => {
     if (sandbox.isActive()) {
       const source = sandbox.currentSource()
       assembly.tools = filterToolsForTurn(assembly.tools, true, allowedForTurn(source))
+      const ownerPrivate = isOwnerPrivateSource(source, cfg.ownerIds)
+      assembly.sections = [...assembly.sections, {
+        name: 'diver:onebot:fs-scope',
+        order: 60,
+        text: ownerPrivate
+          ? 'File access this turn is read-only (read/ls/find/grep) and nearly unrestricted under the COS home; only secret/credential files are blocked. Relative paths resolve against the workspace root. write/edit/sh remain unavailable.'
+          : 'File access this turn is read-only (read/ls/find/grep) and restricted to the COS home: the session-log directory and sensitive files (secrets, group send logs, settings) are blocked. Relative paths resolve against the workspace root. write/edit/sh are unavailable.',
+      }]
       if (source !== undefined) {
         const facts = await loadShallowCard()
         assembly.sections = replaceRelationCard(
@@ -122,9 +153,22 @@ export function apply(ctx: Context, config: Config = {}): void {
     return next()
   })
 
-  ctx.on('tools/pre-execute', (payload, next) => {
-    const veto = vetoIfActive(payload.name, sandbox.isActive(), allowedForTurn(sandbox.currentSource()))
-    return veto === undefined ? next() : Promise.resolve({ veto })
+  ctx.on('tools/pre-execute', async (payload, next) => {
+    const source = sandbox.currentSource()
+    const active = sandbox.isActive()
+    const veto = vetoIfActive(payload.name, active, allowedForTurn(source))
+    if (veto !== undefined) return { veto }
+    if (active) {
+      const { baseline, ownerPrivate, workspaceBase } = await fsPolicies
+      const fsVeto = await fsCheckCall(
+        payload.name,
+        payload.args,
+        isOwnerPrivateSource(source, cfg.ownerIds) ? ownerPrivate : baseline,
+        workspaceBase,
+      )
+      if (fsVeto !== undefined) return { veto: fsVeto }
+    }
+    return next()
   })
 
   ctx.on('agent/inbox/claimed', (payload) => {
@@ -135,7 +179,16 @@ export function apply(ctx: Context, config: Config = {}): void {
       ctx.emit('onebot/turn-scope', scopeEvent(activated))
     }
   })
+  // 近期图片缓存：会话里真人发来的图（QQ 收到的 / 桌面端附件）统一喂入，
+  // 出话工具用句柄引用转发。subagent/注入消息不进（只认 kind=human）。
+  const recentImages = new RecentImages()
   ctx.on('session/event', (session, event) => {
+    if (event.type === 'user/message' && event.data?.source?.kind === 'human') {
+      const from = typeof event.data.source?.detail === 'string' && event.data.source.detail !== ''
+        ? event.data.source.detail
+        : 'desktop'
+      for (const img of imagesInContent(event.data.content)) recentImages.add(img, from)
+    }
     if (event.type !== 'turn/end') return
     if (activeSessionId !== undefined && session.id !== activeSessionId) return
     sandbox.markTurnEnd()
@@ -166,7 +219,13 @@ export function apply(ctx: Context, config: Config = {}): void {
     },
   })
 
-  const router = createRouter({ companion, cfg, client })
+  // 忙时插话只允许同来源域：跨来源合批会借用先到来源的工具面与记忆命名空间。
+  const router = createRouter({
+    companion,
+    cfg,
+    client,
+    canSteer: (source) => canSteerInto(source, sandbox.currentSource(), cfg.ownerIds),
+  })
 
   // 语音出话：mode=off 时完全不接线（工具不暴露语音分支）；
   // 合成走壳层 TTS（Rust RPC，全局 TTS 总开关/凭据在壳层判定）。
@@ -200,6 +259,7 @@ export function apply(ctx: Context, config: Config = {}): void {
   applyTools(ctx, {
     client,
     cfg,
+    images: recentImages,
     voice,
     anchor: router.anchor,
     rememberSent: router.rememberSent,

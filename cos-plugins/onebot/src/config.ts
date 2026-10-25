@@ -4,10 +4,12 @@
 // resolveConfig 负责归一化与夹紧。安全默认：
 // - 未配置 wsUrl → 插件休眠（不连接、不注册任何工具）
 // - groups 空 → 不监听任何群（私聊不受此限）
-// - OneBot 回合工具白名单基座固定（出话 + 联网检索 + 作用域记忆），
-//   allowedTools 只做增量；本机控制类工具由 sandbox.ts 硬性禁止
+// - OneBot 回合工具白名单基座固定（出话 + 联网检索 + 作用域记忆 + 只读文件
+//   四件套），allowedTools 只做增量；写入/shell 等本机控制类工具由 sandbox.ts
+//   硬性禁止，只读四件套的目标路径由 fs-jail.ts 囚笼约束
 
 import type { PluginConfigDecl } from '@cos/plugin-api'
+import { isAbsolute } from 'node:path'
 
 import type { VoiceMode } from './voice.ts'
 
@@ -36,6 +38,8 @@ export interface Config {
   privateMaxPerHour?: number
   /** OneBot 回合在固定基座之上放行的工具名，逗号分隔；硬禁工具会被忽略。 */
   allowedTools?: string
+  /** 文件囚笼的额外允许根（绝对路径，逗号分隔）；如 dev 期的插件源码 repo。 */
+  fsExtraRoots?: string
   /** 出站遮蔽词条（字面量），逗号分隔。 */
   maskTerms?: string
   /** 出站遮蔽额外正则（JS RegExp source），分号分隔。 */
@@ -66,7 +70,7 @@ export interface ResolvedConfig {
   rate: { mention: number; quoted: number; plain: number }
   cooldownMinutes: number
   privateMaxPerHour: number
-  sandbox: { allowedTools: string[] }
+  sandbox: { allowedTools: string[]; fsExtraRoots: string[] }
   privacy: { maskTerms: string[]; extraPatterns: string[] }
   sendIntervalMs: number
   voice: {
@@ -81,7 +85,7 @@ export interface ResolvedConfig {
 
 /**
  * OneBot 回合的固定基座（见 sandbox.ts）：
- * 出话三件套 + 受控联网 + 作用域记忆（不含 web_read / 本机工具）。
+ * 出话三件套 + 受控联网 + 作用域记忆 + 只读文件四件套（路径囚笼见 fs-jail.ts）。
  */
 export const BASELINE_TOOLS = [
   'send_qq_group',
@@ -91,6 +95,12 @@ export const BASELINE_TOOLS = [
   'web_explore',
   'recall',
   'remember',
+  // 只读环境感知：COS_HOME 囚笼内可读（含 workspace 与 profiles 插件源码），
+  // 基线扣会话记录/敏感落盘，主人私聊近全开。
+  'read',
+  'ls',
+  'find',
+  'grep',
 ] as const
 
 /** 普通消息唤醒后的群聊静默窗（毫秒）：等话头停了再评估，不打断进行中对话。 */
@@ -149,7 +159,10 @@ export function resolveConfig(config: Config = {}): ResolvedConfig {
     },
     cooldownMinutes: num(config.cooldownMinutes, 15, 0, 720),
     privateMaxPerHour: Math.round(num(config.privateMaxPerHour, 30, 0, 600)),
-    sandbox: { allowedTools: splitList(config.allowedTools, ',') },
+    sandbox: {
+      allowedTools: splitList(config.allowedTools, ','),
+      fsExtraRoots: splitList(config.fsExtraRoots, ',').filter((p) => isAbsolute(p)),
+    },
     privacy: {
       maskTerms: splitList(config.maskTerms, ','),
       extraPatterns: splitList(config.extraPatterns, ';'),
@@ -173,28 +186,46 @@ export const configDecl: PluginConfigDecl = {
       key: 'wsUrl',
       label: '正向 WebSocket 地址',
       type: 'text',
+      section: '连接',
       description: '如 ws://127.0.0.1:3001；留空 = 插件休眠',
     },
-    { key: 'token', label: 'access token', type: 'password', description: 'OneBot 实现的 access_token，可留空' },
+    {
+      key: 'token',
+      label: 'access token',
+      type: 'password',
+      secret: true,
+      section: '连接',
+      description: 'OneBot 实现的 access_token，可留空',
+    },
+    { key: 'sendIntervalMs', label: '发送间隔（毫秒）', type: 'number', section: '连接', default: 1500, description: '实现侧风控节流' },
     {
       key: 'ownerIds',
       label: '主人 QQ 号',
       type: 'text',
-      description: '逗号分隔；只用于提示词与记忆作用域，不会因此开放本机文件/shell 工具',
+      section: '身份与监听',
+      description: '逗号分隔；用于提示词、记忆作用域与文件囚笼层级（主人私聊近全开，群内仍走基线）',
     },
-    { key: 'groups', label: '监听的群', type: 'text', description: '逗号分隔群号；空 = 不监听任何群' },
-    { key: 'aliases', label: '昵称/别名', type: 'text', description: '逗号分隔；群消息提到即高概率回应' },
-    { key: 'maxMessages', label: '上下文条数上限', type: 'number', default: 40 },
-    { key: 'maxAgeMinutes', label: '上下文时间窗（分钟）', type: 'number', default: 30 },
-    { key: 'maxChars', label: '上下文字符上限', type: 'number', default: 4000 },
-    { key: 'rateMention', label: '提及回应概率', type: 'number', default: 0.9 },
-    { key: 'rateQuoted', label: '被引用回应概率', type: 'number', default: 0.8 },
-    { key: 'ratePlain', label: '主动插话概率', type: 'number', default: 0.05, description: '普通群消息经冷却/退避门控后的抽样概率' },
-    { key: 'cooldownMinutes', label: '插话冷却（分钟）', type: 'number', default: 15 },
+    { key: 'groups', label: '监听的群', type: 'text', section: '身份与监听', description: '逗号分隔群号；空 = 不监听任何群' },
+    { key: 'aliases', label: '昵称/别名', type: 'text', section: '身份与监听', description: '逗号分隔；群消息提到即高概率回应' },
+    { key: 'maxMessages', label: '上下文条数上限', type: 'number', section: '回合上下文', default: 40 },
+    { key: 'maxAgeMinutes', label: '上下文时间窗（分钟）', type: 'number', section: '回合上下文', default: 30 },
+    { key: 'maxChars', label: '上下文字符上限', type: 'number', section: '回合上下文', default: 4000 },
+    { key: 'rateMention', label: '提及回应概率', type: 'number', section: '触发与节流', default: 0.9 },
+    { key: 'rateQuoted', label: '被引用回应概率', type: 'number', section: '触发与节流', default: 0.8 },
+    {
+      key: 'ratePlain',
+      label: '主动插话概率',
+      type: 'number',
+      section: '触发与节流',
+      default: 0.05,
+      description: '普通群消息经冷却/退避门控后的抽样概率',
+    },
+    { key: 'cooldownMinutes', label: '插话冷却（分钟）', type: 'number', section: '触发与节流', default: 15 },
     {
       key: 'privateMaxPerHour',
       label: '私聊唤醒上限（次/小时）',
       type: 'number',
+      section: '触发与节流',
       default: 30,
       description: '每用户每小时最多唤醒的私聊回合；超出只记入缓冲不回应（防刷）。0 = 不限制',
     },
@@ -202,15 +233,23 @@ export const configDecl: PluginConfigDecl = {
       key: 'allowedTools',
       label: 'OneBot 回合额外放行工具',
       type: 'text',
-      description: '逗号分隔工具名；基座（出话/联网/记忆）之外的白名单。本机文件、shell、截图、委派、MCP、web_read 等硬禁名称会被忽略',
+      section: '工具与文件',
+      description: '逗号分隔工具名；基座（出话/联网/记忆/只读文件）之外的白名单。写入/编辑、shell、截图、委派、MCP、web_read 等硬禁名称会被忽略',
     },
-    { key: 'maskTerms', label: '出站遮蔽词条', type: 'text', description: '逗号分隔字面量（如真名/住址），发出前替换为 [已遮蔽]' },
-    { key: 'extraPatterns', label: '出站遮蔽正则', type: 'text', description: '分号分隔 RegExp source' },
-    { key: 'sendIntervalMs', label: '发送间隔（毫秒）', type: 'number', default: 1500, description: '实现侧风控节流' },
+    {
+      key: 'fsExtraRoots',
+      label: '文件囚笼额外根',
+      type: 'text',
+      section: '工具与文件',
+      description: '逗号分隔绝对路径；在 COS_HOME 之外追加可读目录（如开发期的插件源码 repo）。留空 = 仅 COS_HOME',
+    },
+    { key: 'maskTerms', label: '出站遮蔽词条', type: 'text', section: '出站遮蔽', description: '逗号分隔字面量（如真名/住址），发出前替换为 [已遮蔽]' },
+    { key: 'extraPatterns', label: '出站遮蔽正则', type: 'text', section: '出站遮蔽', description: '分号分隔 RegExp source' },
     {
       key: 'voiceMode',
       label: '语音出话',
       type: 'select',
+      section: '语音',
       options: [
         { value: 'off', label: '关闭（默认，配了才开）' },
         { value: 'ask', label: '仅在模型要求时' },
@@ -219,10 +258,10 @@ export const configDecl: PluginConfigDecl = {
       default: 'off',
       description: '需先在「语音」设置里启用在线 TTS；任何合成失败都会降级发文本',
     },
-    { key: 'voiceName', label: '语音声线覆盖', type: 'text', description: '留空 = 跟随全局 TTS 音色' },
-    { key: 'voiceMaxChars', label: '语音最大字数', type: 'number', default: 100, description: '超出改发文本（QQ 语音上限 60 秒）' },
-    { key: 'voiceRate', label: '自动语音概率', type: 'number', default: 0.15, description: '仅 auto 模式生效' },
-    { key: 'voiceCooldownMinutes', label: '语音冷却（分钟）', type: 'number', default: 10, description: '同一群/私聊两次语音的最小间隔' },
-    { key: 'voiceTimeoutMs', label: '语音合成超时（毫秒）', type: 'number', default: 20000 },
+    { key: 'voiceName', label: '语音声线覆盖', type: 'text', section: '语音', description: '留空 = 跟随全局 TTS 音色' },
+    { key: 'voiceMaxChars', label: '语音最大字数', type: 'number', section: '语音', default: 100, description: '超出改发文本（QQ 语音上限 60 秒）' },
+    { key: 'voiceRate', label: '自动语音概率', type: 'number', section: '语音', default: 0.15, description: '仅 auto 模式生效' },
+    { key: 'voiceCooldownMinutes', label: '语音冷却（分钟）', type: 'number', section: '语音', default: 10, description: '同一群/私聊两次语音的最小间隔' },
+    { key: 'voiceTimeoutMs', label: '语音合成超时（毫秒）', type: 'number', section: '语音', default: 20000 },
   ],
 }

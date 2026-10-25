@@ -204,6 +204,34 @@ export function atsUser(segments: Segment[], selfId: number): boolean {
   )
 }
 
+/** image 段里可用于取回的引用：url 为实现侧直链，file 为本地路径或缓存名。 */
+export interface ImageRef {
+  url?: string
+  file?: string
+}
+
+/** 提取全部 image 段的取回引用（顺序保留；两者皆缺的段跳过）。 */
+export function imageRefsOf(segments: readonly Segment[]): ImageRef[] {
+  const refs: ImageRef[] = []
+  for (const seg of segments) {
+    if (seg.type !== 'image') continue
+    const url = typeof seg.data.url === 'string' && seg.data.url !== '' ? seg.data.url : undefined
+    const file = typeof seg.data.file === 'string' && seg.data.file !== '' ? seg.data.file : undefined
+    if (url !== undefined || file !== undefined) refs.push({ url, file })
+  }
+  return refs
+}
+
+/** 第一处引用回复指向的 message_id（取被引用消息里的图用）；无有效 reply 段为 undefined。 */
+export function quotedMessageId(segments: readonly Segment[]): number | undefined {
+  for (const seg of segments) {
+    if (seg.type !== 'reply') continue
+    const id = Number(seg.data.id ?? NaN)
+    if (Number.isFinite(id) && id > 0) return id
+  }
+  return undefined
+}
+
 /** 消息是否为对指定消息的引用回复。 */
 export function repliesTo(segments: Segment[], messageId: number): boolean {
   return segments.some(

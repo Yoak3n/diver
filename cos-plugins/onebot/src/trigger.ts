@@ -33,6 +33,22 @@ export function evaluateTrigger(input: TriggerInput, cfg: ResolvedConfig, roll: 
   return { fire: false, kind }
 }
 
+// ---- 唤醒投递档位 ----
+
+/** 投递档位：followup = 排队 next-turn；steer = 忙时插话 next-step（step 边界认领）。 */
+export type DeliveryTier = 'followup' | 'steer'
+
+/**
+ * 投递档位判定：steerable（忙 + 来源域一致，见 canSteerInto）时触发类
+ * （at/mention/quoted/private）插话——消息在下一个 step 边界被认领进当前
+ * 回合，模型可当场以 send_qq_* 工具回复，不必等整个回合跑完。plain 档、
+ * 空闲态与跨来源一律 next-turn：机会性插话不挤占忙回合，跨来源合批会
+ * 破坏「一回合一个来源」的沙箱/记忆作用域前提。
+ */
+export function deliveryTier(kind: TriggerKind, steerable: boolean): DeliveryTier {
+  return steerable && kind !== 'plain' ? 'steer' : 'followup'
+}
+
 // ---- 普通档门控状态（每群一份） ----
 
 export interface GateState {

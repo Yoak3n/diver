@@ -1,0 +1,128 @@
+// 入站图片取回单测：mime 嗅探、引用回图解析、逐图容错与去重。
+import test from 'node:test'
+import assert from 'node:assert/strict'
+
+import { collectWakeImages, sniffMime } from './image.ts'
+import type { OnebotClient } from './ws.ts'
+
+const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0])
+const JPEG = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0, 0])
+const GIF = new Uint8Array([0x47, 0x49, 0x46, 0x38, 0x39, 0x61, 0, 0])
+const WEBP = new Uint8Array([0x52, 0x49, 0x46, 0x46, 0, 0, 0, 0, 0x57, 0x45, 0x42, 0x50, 0, 0])
+
+/** 假 client：按 action 返回预设或抛错。 */
+function fakeClient(handlers: Record<string, () => unknown>): OnebotClient {
+  return {
+    call: async <T>(action: string): Promise<T> => {
+      const h = handlers[action]
+      if (h === undefined) throw new Error(`unexpected action ${action}`)
+      return h() as T
+    },
+  } as unknown as OnebotClient
+}
+
+test('sniffMime：magic bytes 四类；认不出为 undefined', () => {
+  assert.equal(sniffMime(JPEG), 'image/jpeg')
+  assert.equal(sniffMime(PNG), 'image/png')
+  assert.equal(sniffMime(GIF), 'image/gif')
+  assert.equal(sniffMime(WEBP), 'image/webp')
+  assert.equal(sniffMime(new Uint8Array([0, 0, 0, 0])), undefined)
+  assert.equal(sniffMime(new Uint8Array([])), undefined)
+})
+
+test('collectWakeImages：url 直链取回 + base64 编码', async () => {
+  const client = fakeClient({})
+  const { images, notes } = await collectWakeImages(
+    [{ type: 'image', data: { url: 'https://m.example/a.png', file: 'a.png' } }],
+    { client, fetchUrl: async () => PNG },
+  )
+  assert.deepEqual(notes, [])
+  assert.equal(images.length, 1)
+  assert.equal(images[0].mime, 'image/png')
+  assert.equal(images[0].data, Buffer.from(PNG).toString('base64'))
+  assert.equal(images[0].name, 'a.png')
+})
+
+test('collectWakeImages：引用回图——get_msg 取被引用消息里的图', async () => {
+  const client = fakeClient({
+    get_msg: () => ({ message: [{ type: 'image', data: { url: 'https://m.example/quoted.jpg' } }] }),
+  })
+  const { images } = await collectWakeImages(
+    [
+      { type: 'reply', data: { id: '1417386915' } },
+      { type: 'at', data: { qq: '3143775623' } },
+      { type: 'text', data: { text: '这张图看到不？' } },
+    ],
+    { client, fetchUrl: async (url) => {
+      assert.equal(url, 'https://m.example/quoted.jpg')
+      return JPEG
+    } },
+  )
+  assert.equal(images.length, 1)
+  assert.equal(images[0].mime, 'image/jpeg')
+})
+
+test('collectWakeImages：get_msg 失败不拖垮自身图；同 url 去重', async () => {
+  const client = fakeClient({
+    get_msg: () => {
+      throw new Error('消息不存在')
+    },
+  })
+  const segs = [
+    { type: 'reply', data: { id: '1' } },
+    { type: 'image', data: { url: 'https://m.example/a.png' } },
+    { type: 'image', data: { url: 'https://m.example/a.png' } },
+  ]
+  const { images, notes } = await collectWakeImages(segs, { client, fetchUrl: async () => PNG })
+  assert.equal(images.length, 1)
+  assert.deepEqual(notes, [])
+})
+
+test('collectWakeImages：单图失败记 note，格式认不出记 note', async () => {
+  let first = true
+  const { images, notes } = await collectWakeImages(
+    [
+      { type: 'image', data: { url: 'https://m.example/dead.png' } },
+      { type: 'image', data: { url: 'https://m.example/weird.bin' } },
+    ],
+    {
+      client: fakeClient({}),
+      fetchUrl: async () => {
+        if (first) {
+          first = false
+          throw new Error('HTTP 404')
+        }
+        return new Uint8Array([1, 2, 3, 4])
+      },
+    },
+  )
+  assert.deepEqual(images, [])
+  assert.equal(notes.length, 2)
+  assert.ok(notes[0].includes('HTTP 404'))
+  assert.ok(notes[1].includes('格式认不出'))
+})
+
+test('collectWakeImages：缓存名走 get_image 换直链', async () => {
+  const client = fakeClient({
+    get_image: () => ({ url: 'https://m.example/resolved.jpg' }),
+  })
+  const { images } = await collectWakeImages(
+    [{ type: 'image', data: { file: 'ABC123.image' } }],
+    { client, fetchUrl: async (url) => {
+      assert.equal(url, 'https://m.example/resolved.jpg')
+      return JPEG
+    } },
+  )
+  assert.equal(images.length, 1)
+  assert.equal(images[0].mime, 'image/jpeg')
+})
+
+test('collectWakeImages：超张数封顶并记 note', async () => {
+  const segs = Array.from({ length: 6 }, (_, i) => ({
+    type: 'image',
+    data: { url: `https://m.example/${i}.png` },
+  }))
+  const { images, notes } = await collectWakeImages(segs, { client: fakeClient({}), fetchUrl: async () => PNG })
+  assert.equal(images.length, 4)
+  assert.ok(notes.some((n) => n.includes('图片过多')))
+})

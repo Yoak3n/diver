@@ -6,9 +6,11 @@ import {
   TurnSandbox,
   allowedToolNames,
   allowedToolNamesForSource,
+  canSteerInto,
   filterToolsForTurn,
   isForbiddenTool,
   isOnebotDetail,
+  isOwnerPrivateSource,
   isOwnerTool,
   parseOnebotSource,
   vetoIfActive,
@@ -73,7 +75,7 @@ const wireTools = [
 test('可见性：受限回合只留基座+增量，顺序保持', () => {
   const allowed = allowedToolNames(['web_search'])
   const visible = filterToolsForTurn(wireTools, true, allowed)
-  assert.deepEqual(visible.map((t) => t.function.name), ['send_qq_group', 'stay_silent', 'web_search'])
+  assert.deepEqual(visible.map((t) => t.function.name), ['send_qq_group', 'stay_silent', 'read', 'web_search'])
 })
 
 test('可见性：非受限回合原样放行', () => {
@@ -95,7 +97,8 @@ test('执行否决：受限回合点名隐藏工具被拒，白名单放行', ()
 })
 
 test('硬禁：本机控制/任意 URL 工具即使被配置也不放行', () => {
-  for (const name of ['sh', 'write', 'read', 'web_read', 'screenshot', 'restart_agent', 'send_to_peer', 'mcp__x__y']) {
+  // read 已移入「受限可见」层（fs-jail.ts 路径囚笼），不再整类硬禁。
+  for (const name of ['sh', 'write', 'edit', 'web_read', 'screenshot', 'restart_agent', 'send_to_peer', 'mcp__x__y']) {
     assert.equal(isForbiddenTool(name), true, name)
   }
   const allowed = allowedToolNames(['sh', 'write', 'web_read', 'mcp__x__y'])
@@ -104,6 +107,14 @@ test('硬禁：本机控制/任意 URL 工具即使被配置也不放行', () =>
   assert.equal(allowed.includes('web_read'), false)
   assert.match(vetoIfActive('sh', true, allowed) ?? '', /永久不可用/)
   assert.match(vetoIfActive('web_read', true, allowed) ?? '', /永久不可用/)
+})
+
+test('主人私聊判定：私聊且在 ownerIds 才算；群内主人走基线', () => {
+  const owners = ['10086']
+  assert.equal(isOwnerPrivateSource({ kind: 'private', userId: '10086' }, owners), true)
+  assert.equal(isOwnerPrivateSource({ kind: 'private', userId: '10000' }, owners), false)
+  assert.equal(isOwnerPrivateSource({ kind: 'group', groupId: '1', userId: '10086' }, owners), false)
+  assert.equal(isOwnerPrivateSource(undefined, owners), false)
 })
 
 test('主人发起的回合专属工具：普通群友/陌生私聊不可通过配置放行', () => {
@@ -167,4 +178,31 @@ test('拒因文案列出可用工具，便于模型自纠', () => {
   const veto = vetoIfActive('write', true, allowedToolNames([]))
   assert.match(veto ?? '', /send_qq_group/)
   assert.match(veto ?? '', /stay_silent/)
+})
+
+test('忙时插话准入：来源域一致（同群+同主人属性 / 同一私聊用户）才允许 steer', () => {
+  const owners = ['10001']
+  const groupA = { kind: 'group' as const, groupId: '1', userId: '20002' }
+  const groupAOther = { kind: 'group' as const, groupId: '1', userId: '30003' }
+  const groupAOwner = { kind: 'group' as const, groupId: '1', userId: '10001' }
+  const groupB = { kind: 'group' as const, groupId: '2', userId: '20002' }
+  const privateA = { kind: 'private' as const, userId: '20002' }
+  const privateAOwner = { kind: 'private' as const, userId: '10001' }
+  const privateB = { kind: 'private' as const, userId: '30003' }
+
+  // 无活动回合（本地桌面）：不插话
+  assert.equal(canSteerInto(groupA, undefined, owners), false)
+  // 同群且主人属性一致：放行（同群不同群友合批，命名空间与工具面一致）
+  assert.equal(canSteerInto(groupAOther, groupA, owners), true)
+  // 跨群：命名空间不同，排队
+  assert.equal(canSteerInto(groupB, groupA, owners), false)
+  // 同群但主人属性不同：主人工具面不同，排队
+  assert.equal(canSteerInto(groupAOwner, groupA, owners), false)
+  assert.equal(canSteerInto(groupA, groupAOwner, owners), false)
+  // 私聊：同一用户放行；不同用户 / 群私跨类型排队
+  assert.equal(canSteerInto(privateA, privateA, owners), true)
+  assert.equal(canSteerInto(privateAOwner, privateAOwner, owners), true)
+  assert.equal(canSteerInto(privateB, privateA, owners), false)
+  assert.equal(canSteerInto(privateA, groupA, owners), false)
+  assert.equal(canSteerInto(groupA, privateA, owners), false)
 })

@@ -1,9 +1,11 @@
 // @diver/onebot — OneBot 回合沙箱（纯逻辑）。
 //
 // 判定粒度是「回合」而非「消息」：同一陪伴会话既服务本地桌面又服务 QQ，
-// 工具可见性与执行许可按回合动态切换。两条防线：
+// 工具可见性与执行许可按回合动态切换。三条防线：
 //  1) 可见性：system-prompt/assemble 时过滤 assembly.tools（模型看不到）
 //  2) 执行：tools/pre-execute 时否决（提示注入点名调用也调不动）
+//  3) 路径：read/ls/find/grep 四个只读工具「受限可见」，目标路径必须落在
+//     fs-jail.ts 的囚笼内（基线扣会话记录与敏感落盘；主人私聊近乎全开）
 // 混合批次保守：一批认领消息里混有 OneBot 消息 → 整回合按受限处理。
 //
 // 硬禁清单独立于 allowedTools：即使有人把 sh / write / web_read 填进配置，
@@ -76,8 +78,8 @@ export class TurnSandbox {
 export const FORBIDDEN_TOOLS: ReadonlySet<string> = new Set([
   // 任意 URL 抓取（web_search / web_explore 已覆盖联网需求）
   'web_read',
-  // 本地文件与 shell
-  'read', 'write', 'edit', 'multi_edit', 'sh', 'ls', 'find', 'grep',
+  // 本地文件写入与 shell（只读四件套 read/ls/find/grep 走 fs-jail.ts 囚笼）
+  'write', 'edit', 'multi_edit', 'sh',
   // 屏幕
   'screenshot', 'list_displays',
   // 进程 / 实例控制
@@ -113,6 +115,41 @@ export function isOwnerSource(
   ownerIds: readonly string[],
 ): boolean {
   return source !== undefined && ownerIds.includes(source.userId)
+}
+
+/**
+ * 本回合是否为主人私聊：文件囚笼的近全开层级（仅扣明文凭据）。
+ * 主人在**群里**的发言仍走基线囚笼——群内有其他听众。
+ */
+export function isOwnerPrivateSource(
+  source: OnebotSource | undefined,
+  ownerIds: readonly string[],
+): boolean {
+  return source?.kind === 'private' && isOwnerSource(source, ownerIds)
+}
+
+/**
+ * 忙时插话（steer）准入：只有「来源域一致」才允许插入当前回合，否则排队
+ * 下一回合（followup）。沙箱与记忆作用域都是「一回合一个来源」，跨来源合批
+ * 会让后到消息借用先到来源的工具面（主人专属工具）与记忆命名空间。
+ *  - 无活动回合（本地桌面）：不插话，避免中途激活沙箱 / 切换记忆作用域
+ *  - 群：同群且主人属性一致（不同群 = 不同命名空间；主人/非主人 = 不同工具面）
+ *  - 私聊：同一用户（命名空间按用户隔离）
+ */
+export function canSteerInto(
+  source: OnebotSource,
+  current: OnebotSource | undefined,
+  ownerIds: readonly string[],
+): boolean {
+  if (current === undefined) return false
+  if (source.kind === 'group' && current.kind === 'group') {
+    return source.groupId === current.groupId
+      && isOwnerSource(source, ownerIds) === isOwnerSource(current, ownerIds)
+  }
+  if (source.kind === 'private' && current.kind === 'private') {
+    return source.userId === current.userId
+  }
+  return false
 }
 
 /** 受限回合的全量放行名单 = 基座 + 配置增量（去重，硬禁/主人专属项剔除）。 */

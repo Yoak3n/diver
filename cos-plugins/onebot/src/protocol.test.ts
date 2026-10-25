@@ -5,9 +5,11 @@ import assert from 'node:assert/strict'
 import {
   atsUser,
   escapeCq,
+  imageRefsOf,
   mentionsAlias,
   parseCq,
   parseEvent,
+  quotedMessageId,
   repliesTo,
   segmentsToText,
   senderName,
@@ -91,4 +93,26 @@ test('toSegments：数组与 CQ 字符串同形归一', () => {
   const cq = toSegments('[CQ:at,qq=1]b')
   assert.equal(cq.length, 2)
   assert.equal(cq[0].type, 'at')
+})
+
+test('imageRefsOf：提取 url/file，跳过空段与其他类型', () => {
+  const segs = [
+    { type: 'image', data: { url: 'https://gchat.qpic.cn/a.jpg', file: 'ABC.image' } },
+    { type: 'text', data: { text: '看图' } },
+    { type: 'image', data: { file: '/tmp/b.jpg' } },
+    { type: 'image', data: {} },
+  ]
+  assert.deepEqual(imageRefsOf(segs), [
+    { url: 'https://gchat.qpic.cn/a.jpg', file: 'ABC.image' },
+    { url: undefined, file: '/tmp/b.jpg' },
+  ])
+  // CQ 码字符串形态（部分实现侧把 message 发成 CQ 码）同样能提
+  const cq = toSegments('图[CQ:image,file=xyz.image,url=https://m.example/x.jpg]')
+  assert.deepEqual(imageRefsOf(cq), [{ url: 'https://m.example/x.jpg', file: 'xyz.image' }])
+})
+
+test('quotedMessageId：第一处有效 reply 段的 id', () => {
+  assert.equal(quotedMessageId([{ type: 'reply', data: { id: '777' } }]), 777)
+  assert.equal(quotedMessageId([{ type: 'reply', data: {} }, { type: 'reply', data: { id: '9' } }]), 9)
+  assert.equal(quotedMessageId([{ type: 'text', data: { text: '无引用' } }]), undefined)
 })

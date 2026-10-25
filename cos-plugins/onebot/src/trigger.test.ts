@@ -4,6 +4,7 @@ import assert from 'node:assert/strict'
 
 import { resolveConfig } from './config.ts'
 import {
+  deliveryTier,
   evaluateGate,
   evaluatePrivateGate,
   evaluateTrigger,
@@ -89,5 +90,15 @@ test('私聊限频：窗口内超额静默，窗口滚动恢复，0 不限制', 
   const unlimited = newPrivateGate()
   for (let i = 0; i < 100; i += 1) {
     assert.equal(evaluatePrivateGate(unlimited, 0, t0).open, true)
+  }
+})
+
+test('投递档位：可插话（忙且来源域一致）时触发类 steer，plain 与其余一律 followup', () => {
+  for (const kind of ['at', 'mention', 'quoted', 'private'] as const) {
+    assert.equal(deliveryTier(kind, true), 'steer')
+  }
+  assert.equal(deliveryTier('plain', true), 'followup')
+  for (const kind of ['at', 'mention', 'quoted', 'plain', 'private'] as const) {
+    assert.equal(deliveryTier(kind, false), 'followup')
   }
 })

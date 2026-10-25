@@ -17,6 +17,8 @@
       name: '@diver/peer'
 
     # OneBot 11 接入：QQ 群潜水 / 被 @ 必回 / 偶尔插话（缺省休眠；配置 wsUrl 后启用）
+    # 运行配置由 profile 补丁层（设置页「QQ 接入」）提供，plugin-include ≥1.1
+    # 已支持 insert 后按 id 合并 profile 行的 config。
     - id: onebot
       name: '@diver/onebot'
 

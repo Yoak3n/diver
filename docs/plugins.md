@@ -118,12 +118,12 @@ import z from '@deepseek-ai/schemastery'
 export const name = 'my-tool'
 export const inject = ['tools', 'systemPrompt']
 
-/** 可选：设置页表单（Desktop model-config 风格） */
+/** 可选：设置页表单（Desktop model-config 风格；section 可选分组） */
 export const configDecl = {
   title: '我的工具',
   fields: [
-    { key: 'greeting', label: '问候语', type: 'text' as const, default: 'hello' },
-    { key: 'verbose', label: '详细日志', type: 'boolean' as const, default: false },
+    { key: 'greeting', label: '问候语', type: 'text' as const, section: '基础', default: 'hello' },
+    { key: 'verbose', label: '详细日志', type: 'boolean' as const, section: '基础', default: false },
   ],
 }
 
@@ -156,10 +156,16 @@ export function apply(ctx: Context, config: { greeting: string; verbose: boolean
 - **插件配置校验**：可选 `export const Config = z.object({...})`。字段可选为省略 /
   `.default()`，必选用 `.required()`（非 zod 的 `.optional()`）。
 - **设置页可编辑配置**：`export const configDecl`（`PluginConfigField`：
-  `key/label/type/secret/required/default/description/options`）。设置 → 插件会出现
-  表单；保存写入 profile `cordis.patch.yml` 的 `config` 覆盖并 `requestRestart`，
+  `key/label/type/secret/required/default/description/options`，可选 `section` 分组）。
+  同 `section` 的字段在设置页渲染为一块（组顺序按首次出现，组内按声明顺序）；
+  引擎只定义字段形状，**渲染在产品层**（`@diver/backend` 发现 + Vue 表单）。
+  保存写入 profile `cordis.patch.yml` 的 `config` 覆盖并 `requestRestart`，
   `apply(ctx, config)` 生效。API：`GET/POST /api/plugins/config`。
   示例：`@diver/basic-tools`。
+- **多实例作用域**：插件启停 / `configDecl` 配置 / profile / 安装卸载都是**逐实例**的
+  （每实例一份 COS_HOME、profile 补丁和独立 sidecar）。设置「插件」页先选实例，
+  所有读写按该实例 backend 寻址，写入与重启只影响该实例；未运行实例的 backend
+  不可达，页面只提示、不发起请求。运行态由 `sidecar://status` 全实例广播跟进。
 - 相对导入带 `.ts` 扩展名（Node ESM + tsx）。
 - 组合包（bundle）用 `package.json` 的 `dsh.bundle.patch` 或目录式 `cordis.patch.yml` + `bundle.yml`。
 
@@ -527,3 +533,11 @@ Rust crates / services ──POST /rpc──► @diver/native-bridge（internal�
 | 2026-10-23 | **onebot 隐私与缓冲**：QQ 安全卡片不再展示主人 QQ 号（仅保留「本条消息是否来自主人」代码判定行，模型无法报出号码）；缓冲体积控制双管——启动扫目录全量截断（群/私聊含旧文件，各留 2000 行）+ 运行期同一文件每累计 500 条追加滚动截断 |
 | 2026-10-24 | **onebot 归属绑定（多实例单选）**：`instances.json` 新增全局字段 `onebotOwner`（壳层元配置，实例内插件配置仍走各 COS_HOME）；设置「实例」页每行新增「接 QQ」勾选，勾选即取代其它实例（多选一），取消勾选 = 解绑。壳层拉起每个 sidecar 时经 `DIVER_ONEBOT_OWNER` env 下发归属，`@diver/onebot` 启动闸门（`ownerGate`：绑定存在且非本实例 → 休眠）——多实例配同一 wsUrl 不再双回复。未绑定时保持旧「配置即归属」行为（单实例零迁移）；删除归属实例自动解绑；绑定实例的 wsUrl 仍在各自插件设置中配置，重启应用后生效 |
 | 2026-10-24 | **设置「QQ 接入」页 + 插件配置面修复**：新增设置 tab（归属单选 + 归属实例的 onebot 插件配置编辑）。配置读写经前端 `json()` 按实例寻址直连归属实例 backend（复用 P2-3 注册表水合端口 + Bearer/CORS 通道），未绑定/实例未运行时给出兜底提示。同时修复存量 bug：`getPluginConfigsApi`/`savePluginConfigApi` 曾带 `/api` 前缀调用 `json()`（基址已含 `/api`，实际请求 `/api/api/plugins/config` 404），插件配置表单此前从未渲染过——修正后「插件」页的各插件配置表单也随之恢复 |
+| 2026-10-25 | **onebot 忙时插话（来源域一致才启用）**：唤醒投递分档（`deliveryTier` + `canSteerInto`）——agent 忙且**来源域与当前回合一致**时（同群且主人属性相同 / 同一私聊用户），触发类唤醒（@/引用/别名/私聊）走 `agent.steer`（next-step）：在下一个 step 边界被认领进当前回合，模型当场以 `send_qq_*` 工具回复，不必等回合跑完。来源域不同、plain 档、空闲态与本地桌面回合一律 `followup`（next-turn 排队）——沙箱与记忆作用域都是「一回合一个来源」，跨来源合批会让后到消息借用先到来源的工具面（主人专属工具）与记忆命名空间（跨群原文泄漏）。沙箱收权逻辑本身不变 |
+| 2026-10-25 | **onebot 文件囚笼（环境感知）**：QQ 回合开放只读四件套 `read` / `ls` / `find` / `grep`（移出硬禁，进基座），目标路径经 `fs-jail.ts` 囚笼判定——realpath containment（`..`/符号链接逃逸都解析后比对），路径解析复用 `@diver/basic-tools` 的 `resolveLocalTarget` 保证与工具同语义。层级：基线（群聊/普通私聊）= COS_HOME 全域扣 `sessions/`（会话记录）与敏感落盘（`secrets.yml|yaml`、`group-sent.jsonl`、`cos-settings.json`、`instances.json`，按文件名任意层级拒）；主人**私聊** = COS_HOME 全域仅扣凭据文件（`secrets.*`），主人在群里仍走基线。写入/edit/sh 维持硬禁。新配置 `fsExtraRoots`（额外允许根，dev 期插件源码 repo）；`read`/`ls`/`find`/`grep` 的路径字段（`file_path`/`path`）缺省时按 workspace 根代查。回合提示新增 `diver:onebot:fs-scope` section 说明当前层级。**注意**：`find` 遍历忽略 `node_modules`，发现插件源码（`$COS_HOME/profiles/node_modules`）用 grep 或显式路径 |
+| 2026-10-25 | **grep 超时兜底**：grep 链路此前无任何取消/超时（executor 不接 signal、`nativeRpc` fetch 裸调、Rust `spawn_blocking` 无 deadline），稀疏 pattern 扫大目录会挂住回合。修复三层：executor 接 `AbortSignal` → `nativeRpc` 透传 fetch；`SearchInput` 新增 `timeout_ms`（walk 循环墙钟检查，到期返回部分结果 `truncated + timed_out`）；`grep::search` RPC 参数 `timeoutMs`，basic-tools 默认 30s，超时在结果尾部提示收窄 |
+| 2026-10-25 | **设置「插件」页二级菜单**：左侧按内置 / 已安装分组的插件列表，右侧只显示选中插件的说明、启停、卸载与 `configDecl` 表单——不再把所有插件的配置项平铺在一页。配置有独立设置页的插件（入口由后端随配置视图下发，目前是 onebot）在详情里只留「打开 QQ 接入」入口：onebot 的连接/行为配置统一由「QQ 接入」页按**归属实例**维护，通用插件页的配置面按 **active 实例**寻址，两处都可写会改到不同实例的 profile 补丁。配置读取失败不再静默显示「无配置项」，改为显式报错 |
+| 2026-10-25 | **configDecl 分组 + 设置面描述归产品层**：`PluginConfigField` 新增可选 `section`（引擎只定义字段形状，不含任何产品概念）；`PluginConfigForm` 按 section 分块渲染，OneBot（连接 / 身份与监听 / 上下文 / 触发与节流 / 工具与文件 / 出站遮蔽 / 语音）与 web-tools（搜索 / 阅读与预算 / 主机策略）已补齐。插件 → 独立设置页的映射从壳内 `PLUGIN_CONFIG_TAB` 移到 `@diver/backend` 的 `PluginConfigView.page`，前端只校验 tab 合法性——渲染与产品页面描述都留在产品层，harness 不新增设置页概念 |
+| 2026-10-25 | **插件配置 secret 语义**：`secret: true` 字段后端不回显，原通用表单留空保存会把该键当作删除；现在留空 = 保持已保存值，字段旁提供「清除 / 取消清除」，只有显式清除才写 `null` 删除。OneBot 的 access token 标记为 secret，不再随配置读面回传前端。表单值 → patch 值的转换收口到 `buildPluginConfigValues`，插件页与「QQ 接入」页共用 |
+| 2026-10-25 | **插件设置适配多实例**：设置「插件」页新增实例选择（实例清单 + 运行态徽标），插件列表、启停、配置、profile 切换、安装/卸载全部按所选实例的 backend 寻址，写入该实例自己的 COS_HOME / profile 补丁，由该实例 sidecar 重启生效——同一插件在不同实例可以处于不同状态且互不影响。实例未运行（未启用 / 启动中 / 崩溃）时只提示、不发起请求；运行态由 `sidecar://status` 全实例广播更新（重启过程中保持可管理）。请求带序号，切换实例时丢弃过期响应。OneBot 的连接/行为配置仍按归属实例走「QQ 接入」页 |
+| 2026-10-25 | **多实例启动作用域（壳层）**：`LaunchHooks` 新增 `LaunchScope`（实例 id + COS_HOME），extras 不再克隆 active 的 profile / 插件根——launch 与 preflight 按各自 `$COS_HOME/active-profile.json` 和 `$COS_HOME/plugins` 解析（release；dev 插件包仍共享仓库，profile 补丁逐实例）；preflight 失败自动降级 safe 也写本实例的 `active-profile.json`，不再改到 active 实例。新增 `plugins::plugin_paths_at` / `preflight_at`；active 路径保留旧壳层 profile 迁移 |

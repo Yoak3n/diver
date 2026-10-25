@@ -110,11 +110,13 @@ export function nativeRpcConfigured(): boolean {
  * @param method - e.g. `stats` / `grep::search`
  * @param params - JSON object params
  * @param options.label - error prefix (default = method)
+ * @param options.signal - 取消信号（回合中止时传播到 fetch；Rust 侧计算不中断，
+ *   靠自身 deadline 兜底，见 grep::search 的 timeoutMs）
  */
 export async function nativeRpc<T>(
   method: string,
   params: Record<string, unknown> = {},
-  options: { label?: string } = {},
+  options: { label?: string; signal?: AbortSignal } = {},
 ): Promise<T> {
   const label = options.label ?? method
   const url = nativeRpcUrl()
@@ -132,6 +134,7 @@ export async function nativeRpc<T>(
     method: 'POST',
     headers,
     body: JSON.stringify({ method, params }),
+    ...(options.signal !== undefined ? { signal: options.signal } : {}),
   })
   let body: NativeRpcEnvelope<T>
   try {

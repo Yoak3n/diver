@@ -66,6 +66,9 @@ pub struct SearchOutput {
     pub matches: Vec<Match>,
     pub truncated: bool,
     pub total_matches: usize,
+    /// 是否因 deadline 到期而提前停止（此时结果是部分结果）。
+    #[serde(rename = "timedOut")]
+    pub timed_out: bool,
 }
 
 /// 搜索输入。
@@ -86,6 +89,9 @@ pub struct SearchInput {
     pub max_bytes_per_line: usize,
     /// 工作目录：用于把绝对路径转成展示用相对路径。
     pub workdir: String,
+    /// 墙钟 deadline（毫秒）；到期停止遍历并返回部分结果（truncated + timed_out）。
+    /// None = 不限时。稀疏 pattern 扫大目录可能长时间无命中，外层回合需要兜底。
+    pub timeout_ms: Option<u64>,
 }
 
 impl Default for SearchInput {
@@ -98,6 +104,7 @@ impl Default for SearchInput {
             max_matches: 250,
             max_bytes_per_line: 2000,
             workdir: String::new(),
+            timeout_ms: None,
         }
     }
 }

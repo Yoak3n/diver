@@ -97,12 +97,14 @@ pub fn dispatch(method: &str, params: &Value, workdir: &str) -> Result<Value, Rp
                     .unwrap_or(250),
                 max_bytes_per_line: usize_opt(params, "maxBytesPerLine").unwrap_or(2000),
                 workdir: workdir.to_string(),
+                timeout_ms: usize_opt(params, "timeoutMs").map(|n| n as u64),
             };
             let output = diver_search::search::search(&input).map_err(RpcFailure::from)?;
             Ok(json!({
                 "matches": output.matches,
                 "truncated": output.truncated,
                 "totalMatches": output.total_matches,
+                "timedOut": output.timed_out,
             }))
         }
         other => Err(RpcFailure::new(format!("unknown method: {other}"))),

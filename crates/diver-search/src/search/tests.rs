@@ -125,6 +125,26 @@ fn preview_truncates_long_lines_utf8_safe() {
 }
 
 #[test]
+fn timeout_ms_stops_with_partial_flag() {
+    let dir = tmpdir("timeout");
+    write_file(&dir, "a.txt", "hit\n");
+    write_file(&dir, "b.txt", "hit\n");
+    // timeout 0 = 首轮即到期：确定性命中 deadline 分支。
+    let input = SearchInput {
+        pattern: "hit".to_string(),
+        path: dir.to_string_lossy().into_owned(),
+        timeout_ms: Some(0),
+        workdir: dir.to_string_lossy().into_owned(),
+        ..Default::default()
+    };
+    let out = search(&input).unwrap();
+    assert!(out.matches.is_empty());
+    assert!(out.timed_out);
+    assert!(out.truncated);
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
 fn single_file_target_works() {
     let dir = tmpdir("file");
     let file = write_file(&dir, "a.txt", "alpha\nbeta\nalpha\n");

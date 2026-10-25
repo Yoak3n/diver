@@ -31,7 +31,8 @@ use types::{invalid_params, invalid_pattern, invalid_target};
 /// - 目标不存在/不可访问 → InvalidTarget；
 /// - include glob 非法 → InvalidParams（OverrideBuilder 构造期错误）；
 /// - 目录递归中的个别路径错误（权限等）→ 记录告警并继续（rg 语义：不中止）；
-/// - 达到 max_matches 时 sink 返回 Ok(false) 提前停止，truncated=true。
+/// - 达到 max_matches 时 sink 返回 Ok(false) 提前停止，truncated=true；
+/// - 达到 timeout_ms 墙钟时提前停止，返回部分结果（truncated + timed_out=true）。
 pub fn search(input: &SearchInput) -> Result<SearchOutput, SearchError> {
     if input.pattern.trim().is_empty() {
         return Err(invalid_params("pattern must be a non-empty string".to_string()));
@@ -96,11 +97,22 @@ pub fn search(input: &SearchInput) -> Result<SearchOutput, SearchError> {
     let mut matches: Vec<Match> = Vec::new();
     let mut total = 0usize;
     let mut truncated = false;
+    let mut timed_out = false;
     let mut warnings: Vec<String> = Vec::new();
+    let deadline = input
+        .timeout_ms
+        .map(|ms| std::time::Instant::now() + std::time::Duration::from_millis(ms));
 
     for result in walker.build() {
         if truncated {
             break;
+        }
+        if let Some(dl) = deadline {
+            if std::time::Instant::now() >= dl {
+                timed_out = true;
+                truncated = true;
+                break;
+            }
         }
         let entry = match result {
             Ok(entry) => entry,
@@ -146,5 +158,6 @@ pub fn search(input: &SearchInput) -> Result<SearchOutput, SearchError> {
         matches,
         truncated,
         total_matches: total,
+        timed_out,
     })
 }

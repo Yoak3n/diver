@@ -21,6 +21,12 @@ export const GREP_MAX_MATCHES = 250
 /** 单行预览的最大字节数（与上游 GREP_MAX_LINE_BYTES 一致）。 */
 export const GREP_MAX_LINE_BYTES = 2000
 
+/**
+ * 墙钟 deadline（Rust 端 walk 循环兜底）：稀疏 pattern 扫大目录可能长时间
+ * 无命中又停不下来，到期返回部分结果而不是挂住回合。
+ */
+export const GREP_TIMEOUT_MS = 30_000
+
 export interface GrepCaps {
   workspaceRoot: string
 }
@@ -83,8 +89,12 @@ export function parseGrepArgs(args: GrepArgs): {
 }
 
 /** 本地 RPC 通道（统一经 @diver/native-bridge）。 */
-async function rpc<T>(method: string, params: Record<string, unknown>): Promise<T> {
-  return nativeRpc<T>(method, params, { label: `grep:${method}` })
+async function rpc<T>(
+  method: string,
+  params: Record<string, unknown>,
+  options?: { label?: string; signal?: AbortSignal },
+): Promise<T> {
+  return nativeRpc<T>(method, params, { label: `grep:${method}`, ...options })
 }
 
 /** 单行预览按字节截断（UTF-8 边界安全），超长加后缀。 */
@@ -127,18 +137,25 @@ export function applyGrepTool(ctx: Context, caps: GrepCaps): void {
     text: 'Use the grep tool — not shell grep or rg — to search file contents. Narrow with include/exclude globs (e.g. include:["*.ts"], exclude:["*.min.js"]). Use read on a matched file when you need surrounding context.',
   })
 
-  ctx.tools.register('grep', async (args) => {
+  ctx.tools.register('grep', async (args, signal) => {
     const input = parseGrepArgs(args as GrepArgs)
 
-    const result = await rpc<{ matches: GrepMatch[] }>('grep::search', {
+    const result = await rpc<{ matches: GrepMatch[]; timedOut?: boolean }>('grep::search', {
       pattern: input.pattern,
       path: input.path ?? caps.workspaceRoot,
       includes: input.globs,
       maxMatches: input.maxCount,
-    })
+      timeoutMs: GREP_TIMEOUT_MS,
+    }, { label: 'grep:search', signal })
 
     const matches = result.matches ?? []
-    if (matches.length === 0) return { content: 'No matches found' }
+    if (matches.length === 0) {
+      return {
+        content: result.timedOut === true
+          ? `No matches found before the search timed out (${GREP_TIMEOUT_MS}ms). Narrow the path or pattern.`
+          : 'No matches found',
+      }
+    }
 
     const kept = matches.slice(0, GREP_MAX_MATCHES).map(match => ({
       ...match,
@@ -148,9 +165,11 @@ export function applyGrepTool(ctx: Context, caps: GrepCaps): void {
       ? `Found ${GREP_MAX_MATCHES} of ${matches.length} matches`
       : `Found ${matches.length} ${matches.length === 1 ? 'match' : 'matches'}`
     const body = formatGrepMatches(kept)
-    const footer = matches.length > GREP_MAX_MATCHES
-      ? `(Result capped at ${GREP_MAX_MATCHES} matches; narrow pattern, path, or include to see more.)`
-      : undefined
+    const footer = result.timedOut === true
+      ? `(Search timed out after ${GREP_TIMEOUT_MS}ms — results are partial. Narrow the path or pattern.)`
+      : matches.length > GREP_MAX_MATCHES
+        ? `(Result capped at ${GREP_MAX_MATCHES} matches; narrow pattern, path, or include to see more.)`
+        : undefined
 
     return { content: footer === undefined ? `${header}\n\n${body}` : `${header}\n\n${body}\n\n${footer}` }
   }, {

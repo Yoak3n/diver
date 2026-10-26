@@ -109,7 +109,10 @@ async function speak(msg: ChatMessage) {
       </div>
       <div v-else-if="error && !healthOk" class="center-hint error">
         <p>连接失败：{{ error }}</p>
-        <button class="btn" @click="emit('retry')">重试</button>
+        <div class="center-actions">
+          <button class="btn" @click="emit('retry')">重试</button>
+          <button v-if="tauriAvailable()" class="btn" @click="emit('restart')">重启 sidecar</button>
+        </div>
       </div>
 
       <template v-else>
@@ -224,6 +227,10 @@ async function speak(msg: ChatMessage) {
 }
 .center-hint.error p {
   color: var(--err);
+}
+.center-actions {
+  display: flex;
+  gap: 8px;
 }
 .hint-rule {
   width: 32px;

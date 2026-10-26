@@ -14,13 +14,19 @@ use super::shutdown::{request_shutdown, wait_exit, GRACEFUL_EXIT_TIMEOUT};
 use super::status::SidecarState;
 use super::SidecarJob;
 
-/// 监控线程进程退出轮询间隔（不持有 Child，保证 stop() 能拿到句柄）。
-const MONITOR_POLL_INTERVAL: Duration = Duration::from_millis(200);
+/// 状态机是否拒绝本次启动（幂等检查）。
+///
+/// 单独抽出来便于测试：自动重启必须先由 monitor 把状态落回 Stopped，
+/// 否则进程已退出但状态仍在 Running，这里会把重启静默丢弃。
+fn start_blocked_by_state(state: SidecarState) -> bool {
+    matches!(state, SidecarState::Running | SidecarState::Starting)
+}
 
 pub(super) fn start_impl(mgr: &'static SidecarManager, app: &AppHandle) -> bool {
     {
-        let status = mgr.status.lock();
-        if status.state == SidecarState::Running || status.state == SidecarState::Starting {
+        let state = mgr.status.lock().state;
+        if start_blocked_by_state(state) {
+            log::debug!("跳过 sidecar 启动：当前状态 {state:?}");
             return false;
         }
     }
@@ -209,50 +215,8 @@ pub(super) fn start_impl(mgr: &'static SidecarManager, app: &AppHandle) -> bool 
         }
     });
 
-    // 监控线程：进程退出时更新状态（除非是主动停止）。
-    // 注意：不能 take() 掉 Child —— stop() 的优雅退出流程需要持有进程句柄
-    // 轮询退出；这里只轮询 try_wait()，退出后由 stop() 清理句柄。
-    let app_clone = app.clone();
-    let stop_flag = stop_flag.clone();
-    std::thread::spawn(move || {
-        loop {
-            if stop_flag.load(Ordering::SeqCst) {
-                break;
-            }
-            let exited = {
-                let mut guard = mgr.child.lock();
-                match guard.as_mut() {
-                    Some(child) => child.try_wait().ok().flatten().is_some(),
-                    None => true,
-                }
-            };
-            if exited {
-                break;
-            }
-            std::thread::sleep(MONITOR_POLL_INTERVAL);
-        }
-        if !mgr.stopping.load(Ordering::SeqCst) {
-            // backend 请求的业务重启：见 $COS_HOME/restart.requested 则自动再拉起。
-            // P1-2 多实例：重启标志按本实例 COS_HOME 查（不共用 active 的）。
-            let cos_home = mgr
-                .cos_home()
-                .unwrap_or_else(|| crate::config::cos_home(&app_clone));
-            let flag = cos_home.join("restart.requested");
-            if flag.exists() {
-                let _ = std::fs::remove_file(&flag);
-                log::info!("sidecar 请求重启（restart.requested）→ 自动再启动");
-                mgr.push_log("[diver] 检测到重启请求，正在拉起 sidecar…".into());
-                std::thread::sleep(Duration::from_millis(300));
-                mgr.start(&app_clone);
-                return;
-            }
-            log::warn!("sidecar 进程意外退出");
-            mgr.push_log("[diver] sidecar 进程退出".into());
-            mgr.registry_gone();
-            mgr.set_state(SidecarState::Crashed);
-            mgr.emit_status(&app_clone);
-        }
-    });
+    // 监控线程：进程退出时落态；backend 留下 restart.requested 时自动再拉起。
+    super::monitor::spawn(mgr, app.clone(), stop_flag.clone());
 
     true
 }
@@ -300,4 +264,23 @@ pub(super) fn stop_impl(mgr: &SidecarManager) {
     mgr.registry_gone();
     mgr.push_log("[diver] sidecar 已停止".into());
     log::info!("sidecar 已停止");
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::core::sidecar::monitor::reset_state_before_restart;
+    use super::*;
+
+    /// 回归：进程已退出但状态仍是 Running 时，自动重启必须先放行启动闸门。
+    #[test]
+    fn auto_restart_opens_start_gate() {
+        let mgr = SidecarManager::with_port(0);
+        mgr.set_state(SidecarState::Running);
+        assert!(start_blocked_by_state(mgr.status().state));
+
+        reset_state_before_restart(&mgr);
+
+        assert_eq!(mgr.status().state, SidecarState::Stopped);
+        assert!(!start_blocked_by_state(mgr.status().state));
+    }
 }

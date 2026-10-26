@@ -20,6 +20,7 @@ mod command;
 mod job_object;
 mod launch;
 mod lifecycle;
+mod monitor;
 mod paths;
 mod ports;
 mod process;

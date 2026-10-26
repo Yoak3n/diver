@@ -8,6 +8,11 @@ export function getSidecarStatus(): Promise<SidecarStatus> {
   return invoke<SidecarStatus>("get_sidecar_status");
 }
 
+/** 壳层日志文件路径（启动失败遮罩「请查看日志」指向处）。 */
+export function getLogFile(): Promise<string> {
+  return invoke<string>("get_log_file");
+}
+
 /**
  * sidecar API 基址（不含 /api 后缀），如 `http://127.0.0.1:53620`。
  *

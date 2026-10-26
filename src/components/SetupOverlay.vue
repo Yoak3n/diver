@@ -86,7 +86,13 @@ async function pullLatest() {
         active.value = false;
       }, 200);
     } else if (s.state === "crashed" && !error.value) {
-      error.value = "助手启动失败，请查看日志";
+      let logPath = "";
+      try {
+        logPath = await invoke<string>("get_log_file");
+      } catch {
+        /* 路径拿不到就退回通用文案 */
+      }
+      error.value = logPath ? `助手启动失败，日志：${logPath}` : "助手启动失败，请查看日志";
       active.value = true;
     }
   } catch {

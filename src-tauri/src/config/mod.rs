@@ -35,6 +35,26 @@ pub fn config_dir(app: &AppHandle) -> PathBuf {
         .unwrap_or_else(|_| PathBuf::from("."))
 }
 
+/// 壳层数据目录名（与 tauri.conf identifier 一致；日志与数据家园同根）。
+pub const APP_DATA_DIR_NAME: &str = "com.diver.companion";
+
+/// 壳层日志目录（tauri-plugin-log 文件 target 落点）。
+///
+/// 历史落点 `data_dir()/diver/logs` 与其它数据的 identifier 目录不一致，
+/// 「请查看日志」无从找起；统一挂到 identifier 根下。插件 target 在 setup
+/// 前装配（拿不到 AppHandle），用 dirs 直解而非 `app.path().app_data_dir()`。
+pub fn log_dir() -> PathBuf {
+    dirs::data_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join(APP_DATA_DIR_NAME)
+        .join("logs")
+}
+
+/// 当前日志文件路径（启动失败遮罩等「请查看日志」指向处）。
+pub fn log_file() -> PathBuf {
+    log_dir().join("app.log")
+}
+
 /// cos 数据家园根目录（与 sidecar 注入的 `COS_HOME` 完全一致）。
 ///
 /// P1-1 起按实例分叉（不保留旧 `cos/` / `.cos-home` 命名，见 `instances::paths`）：

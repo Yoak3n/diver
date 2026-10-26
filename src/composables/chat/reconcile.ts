@@ -37,6 +37,9 @@ export function mergeHistoryIntoPool(
     const at = out.findIndex((m) => m.time > h.time);
     if (at < 0) out.push(msg);
     else out.splice(at, 0, msg);
+    // 同一批历史里若带重复 id（旧落盘文件跨重启撞号时仍会出现）：补一条就
+    // 记一条，否则本批第二条会再插一次，Vue 按 id 做 key 时互相挤掉。
+    known.add(msg.id);
     added += 1;
   }
   return { merged: out, added };

@@ -34,18 +34,19 @@ pub fn configure(builder: Builder<tauri::Wry>) -> Builder<tauri::Wry> {
                 Target::new(TargetKind::Stdout),
                 // 输出到前端控制台
                 Target::new(TargetKind::Webview),
-                // 输出到日志文件
+                // 输出到日志文件（GUI 启动没有 stdout，落盘是「请查看日志」的
+                // 唯一去处；目录统一在 identifier 数据根下，路径经 get_log_file 暴露）
                 Target::new(TargetKind::Folder {
-                    path: dirs::data_dir()
-                        .unwrap_or_default()
-                        .join("diver")
-                        .join("logs"),
+                    path: crate::config::log_dir(),
                     file_name: Some("app".into()),
                 }),
             ])
             // 插件默认 UTC，会与本地时间差 8 小时；统一用系统本地时区
             .timezone_strategy(TimezoneStrategy::UseLocal)
             .level(log::LevelFilter::Info)
+            // 文件体积封顶：超限轮转，只保留一份旧档（app.log / app_old.log）
+            .max_file_size(5_000_000)
+            .rotation_strategy(tauri_plugin_log::RotationStrategy::KeepOne)
             .build(),
     );
 

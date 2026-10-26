@@ -8,6 +8,7 @@ pub fn generate_handlers() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + 
 {
     generate_handler![
         get_sidecar_status,
+        get_log_file,
         get_setup_progress,
         restart_sidecar,
         get_sidecar_url,

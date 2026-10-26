@@ -18,6 +18,16 @@ import type { createChatState } from "./state";
 
 export type ChatState = ReturnType<typeof createChatState>;
 
+/**
+ * 异常 → 可读文案。SSE 的 `onerror` 给的是 DOM Event，直接 String() 只会得到
+ * `[object Event]`，用户看不出发生了什么。
+ */
+function errorText(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  if (typeof Event !== "undefined" && err instanceof Event) return "与后端的连接已断开";
+  return String(err);
+}
+
 /** 打开时只加载最近几轮对话（用户拍板：最后一两轮，更早的懒加载）。 */
 const INITIAL_ROUNDS = 2;
 /** 上翻懒加载的单段条数（用户拍板 2026-09-29：加载更多要分段给，不能一次铺完剩余）。 */
@@ -115,7 +125,7 @@ export function createChatTransport(state: ChatState, instanceId: string) {
       if (!streamOpen) openStream();
       void loadHistory();
     } catch (err) {
-      state.error.value = err instanceof Error ? err.message : String(err);
+      state.error.value = errorText(err);
       state.healthInfo.value = null;
     }
   }
@@ -173,7 +183,7 @@ export function createChatTransport(state: ChatState, instanceId: string) {
         state.handleStreamEvent(e);
       },
       (err) => {
-        state.error.value = err instanceof Error ? err.message : String(err);
+        state.error.value = errorText(err);
         // 寻址失败（实例未运行，流从未建立）或网络层断开：标记待重开，由
         // 健康轮询 / sidecar://status running 重建。JSON 解析错误不算——
         // 连接还活着，重开反而制造断缝漏事件。
@@ -249,7 +259,7 @@ export function createChatTransport(state: ChatState, instanceId: string) {
         if (idx >= 0) state.messages.value[idx] = { ...state.messages.value[idx], id: res.messageId };
       }
     } catch (err) {
-      state.error.value = err instanceof Error ? err.message : String(err);
+      state.error.value = errorText(err);
       const idx = state.messages.value.findIndex((m) => m.id === localId);
       if (idx >= 0) state.messages.value.splice(idx, 1);
       state.busy.value = false;
@@ -263,7 +273,7 @@ export function createChatTransport(state: ChatState, instanceId: string) {
       await answerQuestion(q.requestId, answers, instanceId);
       state.pendingQuestion.value = null;
     } catch (err) {
-      state.error.value = err instanceof Error ? err.message : String(err);
+      state.error.value = errorText(err);
       // 保持卡片可见，用户可重试
     }
   }

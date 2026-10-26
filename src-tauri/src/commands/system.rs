@@ -10,6 +10,12 @@ pub fn get_sidecar_status() -> SidecarStatus {
     SidecarManager::global().status()
 }
 
+/// 壳层日志文件路径（启动失败遮罩「请查看日志」指向处）。
+#[tauri::command]
+pub fn get_log_file() -> String {
+    crate::config::log_file().to_string_lossy().to_string()
+}
+
 /// 首启/启动准备进度（WebView 晚挂载时回放，避免遮罩卡 0%）。
 #[tauri::command]
 pub fn get_setup_progress() -> Option<crate::core::setup_progress::SetupProgress> {

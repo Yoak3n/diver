@@ -1,13 +1,20 @@
-// @diver/onebot — 出站图片：近期图片句柄缓存 + image 参数解析/段构造（纯逻辑）。
+// @diver/onebot — 出站图片：近期图片句柄缓存 + image 参数解析（句柄/直链/本地路径）。
 //
-// agent 在 QQ 回合里拿不到本机文件（read/sh/screenshot 均硬禁），能发出去的图只有
-// 两种来源：会话里近期收到过的图（句柄引用，桌面端收的图也能转发到 QQ），以及
-// http(s) 直链（实现侧自行拉取）。句柄由 session 事件统一喂入缓存（index.ts 接线），
-// `image="list"` 或传错句柄会返回可用清单——模型自描述自纠，不占提示词。
+// 三种来源，最终都归一成 base64:// 段（不依赖 OneBot 实现端的下载能力）：
+//  1. 会话里近期收到过的图（句柄引用，桌面端收的图也能转发到 QQ）；
+//  2. http(s) 直链：本机取回后转发——URL 本身不离开本机，比把直链交给实现端更严；
+//  3. 本地图片路径：与 read/ls/find/grep 同一文件囚笼（fs-jail，主人私聊近全开），
+//     magic bytes 嗅探保证只有真图片格式能发出（挡掉把任意二进制伪装成图外带）。
+// 句柄由 session 事件统一喂入缓存（index.ts 接线）；`image="list"` 或解析失败会
+// 返回可用清单与写法说明——模型自描述自纠，不占提示词。
+
+import { basename } from 'node:path'
+
+import { resolveLocalTarget, type LocalTarget } from '@diver/basic-tools/fsio'
 
 import type { Segment } from './protocol.ts'
-import { maskOutbound } from './mask.ts'
-import type { ResolvedConfig } from './config.ts'
+import { fsVetoReason, type FsPolicy } from './fs-jail.ts'
+import { fetchImageBytes, readImageFile, sniffMime, type UrlFetcher } from './img-bytes.ts'
 
 /** 缓存条目（data 为 base64，不含前缀）。 */
 export interface CachedImage {
@@ -61,47 +68,22 @@ export class RecentImages {
 export type ImageArg =
   | { kind: 'url'; url: string }
   | { kind: 'handle'; token: string }
+  | { kind: 'path'; path: string }
   | { kind: 'list' }
 
-/** `image` 参数 → 结构化意图；空/非字符串返回 undefined。 */
+/**
+ * `image` 参数 → 结构化意图；空/非字符串返回 undefined。除 list / 直链 /
+ * 句柄（img-N 或纯数字）外一律按本地路径处理（相对路径按 workspace 根解析，
+ * 与 read 工具同语义）。
+ */
 export function parseImageArg(raw: unknown): ImageArg | undefined {
   if (typeof raw !== 'string') return undefined
   const value = raw.trim()
   if (value === '') return undefined
   if (value === 'list' || value === '列表') return { kind: 'list' }
   if (/^https?:\/\//i.test(value)) return { kind: 'url', url: value }
-  return { kind: 'handle', token: value }
-}
-
-/**
- * 解析后的出站图片段：URL 过遮蔽总闸（凭据/内网信息不离开本机），句柄取缓存
- * 字节转 base64://。失败返回 undefined 并由调用方把错误说明给模型。
- */
-export function imageSegmentOf(
-  arg: ImageArg,
-  images: RecentImages,
-  cfg: ResolvedConfig,
-  now = Date.now(),
-): { segment: Segment; info: Record<string, unknown> } | { error: string; list?: unknown } {
-  if (arg.kind === 'url') {
-    const masked = maskOutbound(arg.url, cfg.privacy)
-    if (masked.text === '') return { error: '图片 URL 遮蔽后为空，未发送' }
-    return {
-      segment: { type: 'image', data: { file: masked.text } },
-      info: { source: 'url', ...(masked.masked.length > 0 ? { masked: masked.masked } : {}) },
-    }
-  }
-  if (arg.kind === 'list') {
-    return { error: 'list 是查询指令不是图片来源；请从清单里选句柄', list: describeImages(images, now) }
-  }
-  const cached = images.resolve(arg.token, now)
-  if (cached === undefined) {
-    return { error: `图片句柄 ${arg.token} 无效或已过期`, list: describeImages(images, now) }
-  }
-  return {
-    segment: { type: 'image', data: { file: `base64://${cached.data}` } },
-    info: { source: cached.handle, name: cached.name ?? cached.mime, from: cached.from },
-  }
+  if (/^(?:img-)?\d+$/i.test(value)) return { kind: 'handle', token: value }
+  return { kind: 'path', path: value }
 }
 
 /** image 参数在出话工具里的三态：未传 / 可发送段（随正文附图）/ 本地短路回执。 */
@@ -110,27 +92,99 @@ export type ImageOutcome =
   | { kind: 'segment'; segment: Segment; info: Record<string, unknown> }
   | { kind: 'reply'; content: string }
 
+/** image 参数解析依赖：句柄缓存 + 按当前回合现算的文件囚笼（可注入直链取回器）。 */
+export interface ImageResolveDeps {
+  images: RecentImages
+  /** 本地路径的囚笼策略与相对路径基准（QQ 回合按来源两档；桌面回合同一基线档）。 */
+  imageFs: () => Promise<{ policy: FsPolicy; workspaceBase: string }>
+  /** 直链取回器；缺省真实 fetch（超时 + 大小守卫在 img-bytes）。 */
+  fetchUrl?: UrlFetcher
+}
+
+const USAGE_NOTE =
+  'image 参数三种写法：近期图片句柄（本清单）、http(s) 直链（本机取回后发出）、' +
+  '本地图片路径（相对路径按 workspace 根解析，与 read 同界，须为真实图片文件）。'
+
+function base64Segment(bytes: Uint8Array): Segment {
+  return { type: 'image', data: { file: `base64://${Buffer.from(bytes).toString('base64')}` } }
+}
+
+/** 取回/读取失败 → 本地短路回执（不占发送配额）。 */
+function replyJson(payload: Record<string, unknown>): ImageOutcome {
+  return { kind: 'reply', content: JSON.stringify(payload) }
+}
+
+function errText(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
+
 /** image 参数三态解析：清单/错误本地短路（不占发送配额），可发送时给段与回执信息。 */
-export function resolveImageArg(raw: unknown, images: RecentImages, cfg: ResolvedConfig): ImageOutcome {
+export async function resolveImageArg(raw: unknown, deps: ImageResolveDeps): Promise<ImageOutcome> {
   const arg = parseImageArg(raw)
   if (arg === undefined) return { kind: 'none' }
+
   if (arg.kind === 'list') {
+    return replyJson({ images: describeImages(deps.images), note: USAGE_NOTE })
+  }
+
+  if (arg.kind === 'handle') {
+    const cached = deps.images.resolve(arg.token)
+    if (cached === undefined) {
+      return replyJson({
+        error: `图片句柄 ${arg.token} 无效或已过期`,
+        images: describeImages(deps.images),
+        note: USAGE_NOTE,
+      })
+    }
     return {
-      kind: 'reply',
-      content: JSON.stringify({
-        images: describeImages(images),
-        note: '把句柄（或 http(s) 直链）填进 image 参数即可随消息发图；本地文件路径不可直接发送。',
-      }),
+      kind: 'segment',
+      segment: { type: 'image', data: { file: `base64://${cached.data}` } },
+      info: { source: cached.handle, name: cached.name ?? cached.mime, from: cached.from },
     }
   }
-  const got = imageSegmentOf(arg, images, cfg)
-  if ('error' in got) {
-    return {
-      kind: 'reply',
-      content: JSON.stringify({ error: got.error, ...(got.list !== undefined ? { images: got.list } : {}) }),
+
+  if (arg.kind === 'url') {
+    try {
+      const bytes = await (deps.fetchUrl ?? fetchImageBytes)(arg.url)
+      const mime = sniffMime(bytes)
+      if (mime === undefined) {
+        return replyJson({ error: '直链取回的内容不是可识别的图片（jpeg/png/gif/webp），未发送' })
+      }
+      return { kind: 'segment', segment: base64Segment(bytes), info: { source: 'url', url: arg.url, mime } }
+    } catch (error) {
+      return replyJson({ error: `直链取回失败（${errText(error)}），未发送` })
     }
   }
-  return { kind: 'segment', ...got }
+
+  // 本地路径：file:// 前缀剥掉后与 read 工具同一解析 + 囚笼判定
+  const rawPath = arg.path.startsWith('file://') ? arg.path.slice('file://'.length) : arg.path
+  const { policy, workspaceBase } = await deps.imageFs()
+  let target: LocalTarget
+  try {
+    target = await resolveLocalTarget(workspaceBase, rawPath)
+  } catch (error) {
+    return replyJson({
+      error: `图片路径无法解析（${errText(error)}）`,
+      images: describeImages(deps.images),
+      note: USAGE_NOTE,
+    })
+  }
+  const veto = fsVetoReason(target.displayPath, target.targetKey, policy)
+  if (veto !== undefined) return replyJson({ error: veto })
+  try {
+    const bytes = await readImageFile(target.targetKey)
+    const mime = sniffMime(bytes)
+    if (mime === undefined) {
+      return replyJson({ error: `"${basename(target.displayPath)}" 不是可识别的图片文件（jpeg/png/gif/webp）` })
+    }
+    return {
+      kind: 'segment',
+      segment: base64Segment(bytes),
+      info: { source: 'file', name: basename(target.displayPath), mime },
+    }
+  } catch (error) {
+    return replyJson({ error: `读取图片失败（${errText(error)}）` })
+  }
 }
 
 /** 可用清单（模型自纠用）：句柄 + 名字 + 来源 + 时间。 */

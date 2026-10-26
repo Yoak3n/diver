@@ -68,6 +68,8 @@ export interface Router {
   settleTurn(): void
   anchor(groupId?: string): TriggerAnchor | undefined
   rememberSent(groupId: string, messageId: number): void
+  /** 群号 → 群名（RPC + 缓存，兜底 `群<id>`；自己发言落账署名用）。 */
+  groupName(groupId: string): Promise<string>
   clearTimers(): void
 }
 
@@ -306,6 +308,7 @@ export function createRouter(deps: RouterDeps): Router {
       ids.add(messageId)
       if (awaiting !== undefined) awaiting.spoke = true
     },
+    groupName: groupNameOf,
     clearTimers: () => {
       for (const timer of plainTimers.values()) clearTimeout(timer)
       plainTimers.clear()

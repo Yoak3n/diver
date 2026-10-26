@@ -10,6 +10,7 @@ import { sendJson, serveStatic } from './http.ts'
 import { handleChat } from './routes/chat.ts'
 import { handleHistory } from './routes/history.ts'
 import { handleMemory } from './routes/memory.ts'
+import { handleOnebotStatus } from './routes/onebot-status.ts'
 import { handlePlugins } from './routes/plugins.ts'
 import { handlePresence } from './routes/presence.ts'
 import { handleProviders } from './routes/providers.ts'
@@ -57,6 +58,7 @@ export async function handleRequest(
     if (await handleMemory(req, res, pathname, deps)) return
     if (await handleHistory(req, res, pathname, deps)) return
     if (await handlePlugins(req, res, pathname, deps)) return
+    if (await handleOnebotStatus(req, res, pathname, deps)) return
     if (await handlePresence(req, res, pathname, deps)) return
     if (await handleProviders(req, res, pathname, deps)) return
     if (await handleSettings(req, res, pathname, deps)) return

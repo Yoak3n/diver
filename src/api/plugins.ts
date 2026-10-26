@@ -131,6 +131,38 @@ export function savePluginConfigApi(
   );
 }
 
+/** OneBot 运行时连接状态（状态灯）：服务缺失 = 插件未加载/已停用。 */
+export type OnebotLinkState =
+  | "sleeping"
+  | "connecting"
+  | "online"
+  | "offline"
+  | "unavailable";
+
+export interface OnebotStatus {
+  available: boolean;
+  state: OnebotLinkState;
+  /** 休眠原因（state=sleeping）。 */
+  reason?: string;
+  /** 连接目标（不含 token）。 */
+  url?: string;
+  selfId?: number;
+  nickname?: string;
+  /** 进入当前状态的时间（epoch ms）。 */
+  since?: number;
+  lastError?: string;
+  attempts?: number;
+  /** 距离下次重连的毫秒数（state=offline）。 */
+  retryInMs?: number;
+  /** 状态读取降级原因。 */
+  error?: string;
+}
+
+/** 归属实例的 OneBot 连接状态（设置页轮询；instanceId 必传）。 */
+export function getOnebotStatusApi(instanceId: string): Promise<OnebotStatus> {
+  return json("/plugins/onebot/status", undefined, instanceId);
+}
+
 export function getProfileApi(): Promise<ProfileInfo> {
   return json("/profile");
 }

@@ -27,7 +27,10 @@ import {
   type TurnScopeEvent,
 } from './sandbox.ts'
 import { OnebotClient } from './ws.ts'
-import { applyTools, type VoiceSendDeps } from './tools.ts'
+import { OnebotStatusService } from './status.ts'
+import { applyTools } from './tools.ts'
+import type { VoiceSendDeps } from './outbox.ts'
+import { createSelfRecorder } from './self-ledger.ts'
 import { applyPrompt } from './prompt.ts'
 import { replaceRelationCard, safeRelationCard, type ShallowCardFacts } from './relation-card.ts'
 import { createRouter, type CompanionLike } from './router.ts'
@@ -58,22 +61,27 @@ function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promi
 }
 
 export function apply(ctx: Context, config: Config = {}): void {
+  const cfg = resolveConfig(config)
+  // 运行时连接状态（设置「QQ 接入」页状态灯）：先注册，休眠分支也能说明原因。
+  const status = new OnebotStatusService(ctx, cfg.wsUrl)
   // 归属闸门（先于 wsUrl 判定）：壳层绑定了 QQ 归属实例时，非归属实例一律休眠，
   // 多实例配同一 wsUrl 也不会出现双回复；未绑定保持旧「配置即归属」行为。
   // （变量名避开下方登录账号 selfId——那是 OneBot 侧 QQ 号，与本实例 id 无关。）
   const onebotOwner = (process.env.DIVER_ONEBOT_OWNER ?? '').trim()
   const myInstanceId = (process.env.DIVER_INSTANCE_ID ?? '').trim()
   if (!ownerGate(onebotOwner, myInstanceId)) {
+    status.sleep(`QQ 已绑定实例 ${onebotOwner}，本实例休眠`)
     console.log(`[onebot] QQ 已绑定实例 ${onebotOwner}（本实例 ${myInstanceId || '?'}），插件休眠`)
     return
   }
-  const cfg = resolveConfig(config)
   if (cfg.wsUrl === '') {
+    status.sleep('未配置 wsUrl')
     console.log('[onebot] 未配置 wsUrl，插件休眠（设置「OneBot 11」后重启 sidecar 生效）')
     return
   }
   const companionRaw = (ctx as Context & { companion?: CompanionLike }).companion
   if (companionRaw === undefined) {
+    status.sleep('伴聊服务（ctx.companion）不可用')
     console.warn('[onebot] ctx.companion 不可用（backend 未挂载？），插件休眠')
     return
   }
@@ -84,6 +92,8 @@ export function apply(ctx: Context, config: Config = {}): void {
   const allowedForTurn = (source: OnebotSource | undefined): string[] =>
     allowedToolNamesForSource(allowed, source, cfg.ownerIds)
   let selfId = 0
+  /** 登录昵称（自己发言落账署名；未取到前兜底「我」）。 */
+  let selfName = ''
   /** 本回合主会话 id：避免 subagent 的 turn/end 提前解除沙箱。 */
   let activeSessionId: string | undefined
   /** 每回合只读一次身份卡片：只取名字；性格/说话方式由 self-prompt 的 prompts 负责。 */
@@ -139,8 +149,8 @@ export function apply(ctx: Context, config: Config = {}): void {
         name: 'diver:onebot:fs-scope',
         order: 60,
         text: ownerPrivate
-          ? 'File access this turn is read-only (read/ls/find/grep) and nearly unrestricted under the COS home; only secret/credential files are blocked. Relative paths resolve against the workspace root. write/edit/sh remain unavailable.'
-          : 'File access this turn is read-only (read/ls/find/grep) and restricted to the COS home: the session-log directory and sensitive files (secrets, group send logs, settings) are blocked. Relative paths resolve against the workspace root. write/edit/sh are unavailable.',
+          ? 'File access this turn is read-only (read/ls/find/grep) and nearly unrestricted under the COS home; only secret/credential files are blocked. Relative paths resolve against the workspace root. write/edit/sh remain unavailable. Image files inside the same scope can be sent to QQ via the image parameter of the send tools.'
+          : 'File access this turn is read-only (read/ls/find/grep) and restricted to the COS home: the session-log directory and sensitive files (secrets, group send logs, settings) are blocked. Relative paths resolve against the workspace root. write/edit/sh are unavailable. Image files inside the same scope can be sent to QQ via the image parameter of the send tools.',
       }]
       if (source !== undefined) {
         const facts = await loadShallowCard()
@@ -205,17 +215,37 @@ export function apply(ctx: Context, config: Config = {}): void {
     token: cfg.token,
     onGroupMessage: (event) => void router.handleGroup(event),
     onPrivateMessage: (event) => void router.handlePrivate(event),
-    onStatus: (status) => {
-      if (status !== 'connected') return
-      client.call<{ user_id?: number }>('get_login_info', {}, 5000)
+    onStatus: (event) => {
+      if (event.status === 'connecting') {
+        status.connecting()
+        return
+      }
+      if (event.status === 'disconnected') {
+        const reason = event.reason !== undefined && event.reason !== ''
+          ? event.reason
+          : event.code !== undefined
+            ? `连接已关闭（code ${event.code}）`
+            : '连接已断开'
+        status.offline(reason, event.retryMs)
+        return
+      }
+      // WS open 只代表握手成功：认证失败的服务端会 open 后立刻 close，
+      // 拿到 get_login_info 才算真正 online（状态灯据此亮绿）。
+      status.connecting()
+      client.call<{ user_id?: number; nickname?: string }>('get_login_info', {}, 5000)
         .then((data) => {
           const id = Number(data?.user_id ?? 0)
-          if (id > 0) {
-            selfId = id
-            console.log(`[onebot] 登录账号 ${selfId}`)
-          }
+          if (id > 0) selfId = id
+          const nick = typeof data?.nickname === 'string' ? data.nickname.trim() : ''
+          if (nick !== '') selfName = nick
+          if (selfId > 0) console.log(`[onebot] 登录账号 ${selfId}${selfName !== '' ? `（${selfName}）` : ''}`)
+          status.online(selfId, selfName)
+          client.markHealthy()
         })
-        .catch(() => { /* 拿不到只影响日志；回声过滤用事件自带 self_id */ })
+        .catch((error: unknown) => {
+          // 拿不到不阻断入站（回声过滤用事件自带 self_id）；只在状态灯留下原因。
+          status.loginFailed(error instanceof Error ? error.message : String(error))
+        })
     },
   })
 
@@ -260,10 +290,24 @@ export function apply(ctx: Context, config: Config = {}): void {
     client,
     cfg,
     images: recentImages,
+    // image 参数本地路径的囚笼：与 read/ls/find/grep 同一策略——按当前回合来源
+    // 两档现算（主人私聊近全开；桌面回合无来源，走基线档）。
+    imageFs: async () => {
+      const { baseline, ownerPrivate, workspaceBase } = await fsPolicies
+      return {
+        policy: isOwnerPrivateSource(sandbox.currentSource(), cfg.ownerIds) ? ownerPrivate : baseline,
+        workspaceBase,
+      }
+    },
     voice,
     anchor: router.anchor,
     rememberSent: router.rememberSent,
     onSpoke: router.noteSpoke,
+    // 自己发言记账：出站即进会话缓冲（背景窗时间线）+ 群发落 group-sent.jsonl
+    recordSend: createSelfRecorder({
+      selfIdentity: () => ({ id: selfId, name: selfName !== '' ? selfName : '我' }),
+      groupNameOf: router.groupName,
+    }),
   })
 
   applyPrompt(ctx)

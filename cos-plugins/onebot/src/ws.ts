@@ -7,14 +7,25 @@
 import type { GroupMessageEvent, PrivateMessageEvent } from './protocol.ts'
 import { parseEvent } from './protocol.ts'
 
+export type OnebotLinkStatus = 'connecting' | 'connected' | 'disconnected'
+
+export interface OnebotLinkEvent {
+  status: OnebotLinkStatus
+  /** WS 关闭码 / 建连异常（disconnected 时）。 */
+  code?: number
+  reason?: string
+  /** 距离下次重连的等待（毫秒，disconnected 时）。 */
+  retryMs?: number
+}
+
 export interface OnebotClientOptions {
   /** 如 ws://127.0.0.1:3001。 */
   url: string
   token: string
   onGroupMessage: (event: GroupMessageEvent) => void
   onPrivateMessage: (event: PrivateMessageEvent) => void
-  /** 连接状态变化（index.ts 用 connected 拉 get_login_info）。 */
-  onStatus?: (status: 'connected' | 'disconnected') => void
+  /** 连接状态变化（index.ts 用 connected 拉 get_login_info，失败原因进状态灯）。 */
+  onStatus?: (event: OnebotLinkEvent) => void
 }
 
 interface PendingCall {
@@ -26,6 +37,11 @@ interface PendingCall {
 const RECONNECT_BASE_MS = 1000
 const RECONNECT_CAP_MS = 60_000
 const CALL_TIMEOUT_MS = 15_000
+/**
+ * open 后稳定存活多久算健康（无 get_login_info 的实现也退避复位）。
+ * 认证失败的服务端会 open 后立即 close，不能一 open 就重置退避。
+ */
+const HEALTHY_AFTER_OPEN_MS = 10_000
 
 export class OnebotClient {
   private ws: WebSocket | undefined
@@ -34,6 +50,7 @@ export class OnebotClient {
   private seq = 0
   private readonly pending = new Map<string, PendingCall>()
   private reconnectTimer: NodeJS.Timeout | undefined
+  private healthyTimer: NodeJS.Timeout | undefined
 
   constructor(private readonly options: OnebotClientOptions) {}
 
@@ -46,12 +63,25 @@ export class OnebotClient {
     this.stopped = true
     if (this.reconnectTimer !== undefined) clearTimeout(this.reconnectTimer)
     this.reconnectTimer = undefined
+    this.clearHealthyTimer()
     try {
       this.ws?.close()
     } catch {
       // 关闭失败不影响退出
     }
     this.ws = undefined
+  }
+
+  /** 连接已确认可用（登录成功或稳定存活）：重置重连退避。 */
+  markHealthy(): void {
+    this.clearHealthyTimer()
+    if (this.ws?.readyState === WebSocket.OPEN) this.backoffMs = RECONNECT_BASE_MS
+  }
+
+  private clearHealthyTimer(): void {
+    if (this.healthyTimer === undefined) return
+    clearTimeout(this.healthyTimer)
+    this.healthyTimer = undefined
   }
 
   /** OneBot API 调用：echo 匹配 JSON 响应；超时/断连拒绝。 */
@@ -83,6 +113,7 @@ export class OnebotClient {
 
   private connect(): void {
     if (this.stopped) return
+    this.options.onStatus?.({ status: 'connecting' })
     const url = this.options.token === ''
       ? this.options.url
       : `${this.options.url}${this.options.url.includes('?') ? '&' : '?'}access_token=${encodeURIComponent(this.options.token)}`
@@ -90,22 +121,26 @@ export class OnebotClient {
     try {
       ws = new WebSocket(url)
     } catch (error) {
-      console.warn(`[onebot] 建连失败（将重试）：${String(error)}`)
+      const reason = String(error)
+      console.warn(`[onebot] 建连失败（将重试）：${reason}`)
+      this.options.onStatus?.({ status: 'disconnected', reason, retryMs: this.backoffMs })
       this.scheduleReconnect()
       return
     }
     this.ws = ws
 
     ws.addEventListener('open', () => {
-      this.backoffMs = RECONNECT_BASE_MS
       console.log(`[onebot] 已连接 ${this.options.url}`)
-      this.options.onStatus?.('connected')
+      this.options.onStatus?.({ status: 'connected' })
+      // 不在这里重置退避：token 错误时服务端同样会 open 后立刻 close。
+      this.healthyTimer = setTimeout(() => this.markHealthy(), HEALTHY_AFTER_OPEN_MS)
     })
     ws.addEventListener('message', (event: MessageEvent) => this.handleMessage(event))
     ws.addEventListener('error', () => {
       // close 紧随其后，重连逻辑统一在 close
     })
-    ws.addEventListener('close', () => {
+    ws.addEventListener('close', (event: CloseEvent) => {
+      this.clearHealthyTimer()
       for (const [echo, call] of this.pending) {
         clearTimeout(call.timer)
         call.reject(new Error('OneBot 连接已断开'))
@@ -113,7 +148,12 @@ export class OnebotClient {
       }
       if (this.stopped) return
       console.warn(`[onebot] 连接断开，${Math.round(this.backoffMs / 1000)}s 后重连`)
-      this.options.onStatus?.('disconnected')
+      this.options.onStatus?.({
+        status: 'disconnected',
+        code: event.code,
+        reason: event.reason,
+        retryMs: this.backoffMs,
+      })
       this.scheduleReconnect()
     })
   }

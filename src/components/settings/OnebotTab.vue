@@ -2,12 +2,14 @@
 // 设置页「QQ 接入」页：OneBot 归属绑定（全局单选）+ 归属实例的 onebot 插件配置编辑。
 // 归属走壳层 IPC（instances.json onebotOwner）；配置表单经 json() 按实例寻址
 // 直连归属实例的 backend（运行时注册表水合端口，P2-3 通道），未绑定 / 未运行无配置面。
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, onUnmounted, ref } from "vue";
 import { useInstances } from "../../composables/useInstances";
 import {
+  getOnebotStatusApi,
   getPluginConfigsApi,
   savePluginConfigApi,
   refreshInstanceRuntimes,
+  type OnebotStatus,
   type PluginConfigView,
 } from "../../api";
 import PluginConfigForm from "./children/PluginConfigForm.vue";
@@ -27,10 +29,76 @@ const draft = ref<PluginConfigDraft>({});
 const cfgError = ref("");
 const cfgNotice = ref("");
 const busy = ref(false);
+/** 归属实例的 OneBot 运行时状态（轮询后端状态灯接口）。 */
+const status = ref<OnebotStatus | null>(null);
+const statusError = ref("");
+const statusBusy = ref(false);
+/** 轮询句柄：设置页卸载时清掉，避免后台一直打请求。 */
+let statusTimer: number | undefined;
+const STATUS_POLL_MS = 3000;
 
 const ownerRunning = computed(
   () => onebotOwner.value !== null && runningIds.value.has(onebotOwner.value),
 );
+
+/** 状态灯颜色：绿=已登录，黄=连接中，红=断开，灰=休眠/未就绪。 */
+const statusTone = computed<"ok" | "warn" | "bad" | "idle">(() => {
+  if (statusError.value !== "") return "bad";
+  const s = status.value;
+  if (s === null || !s.available) return "idle";
+  if (s.state === "online") return "ok";
+  if (s.state === "connecting") return "warn";
+  if (s.state === "offline") return "bad";
+  return "idle";
+});
+
+const statusTitle = computed(() => {
+  if (onebotOwner.value === null) return "未绑定归属实例";
+  if (!ownerRunning.value) return "归属实例未运行";
+  if (statusError.value !== "") return "状态读取失败";
+  const s = status.value;
+  if (s === null) return "正在读取连接状态…";
+  if (!s.available || s.state === "unavailable") return "OneBot 插件未加载";
+  if (s.state === "sleeping") return "插件休眠";
+  if (s.state === "online") return "已连接";
+  if (s.state === "connecting") return "连接中…";
+  return "未连接";
+});
+
+const statusDetail = computed(() => {
+  if (onebotOwner.value === null) {
+    return "先选择归属实例；绑定后这里显示它的 OneBot 连接状态。";
+  }
+  if (!ownerRunning.value) return "启用归属实例并重启应用后，这里会显示连接状态。";
+  if (statusError.value !== "") return statusError.value;
+  const s = status.value;
+  if (s === null) return "";
+  if (!s.available || s.state === "unavailable") {
+    return "实例里没有可用的 onebot 插件（可能被停用或未安装）。";
+  }
+  if (s.state === "sleeping") return s.reason ?? "插件未接线";
+  const target = s.url ?? "";
+  if (s.state === "online") {
+    const who =
+      s.nickname !== undefined && s.nickname !== ""
+        ? `${s.nickname}${s.selfId !== undefined ? `（${s.selfId}）` : ""}`
+        : s.selfId !== undefined
+          ? `QQ ${s.selfId}`
+          : "OneBot";
+    return [who, target].filter(Boolean).join(" · ");
+  }
+  if (s.state === "connecting") {
+    const why =
+      s.lastError !== undefined && s.lastError !== "" ? `上次失败：${s.lastError}` : "";
+    return [target, why].filter(Boolean).join(" · ");
+  }
+  const retry =
+    s.retryInMs !== undefined
+      ? `${Math.max(1, Math.ceil(s.retryInMs / 1000))} 秒后重连`
+      : "等待重连";
+  const attempts = s.attempts !== undefined && s.attempts > 0 ? `第 ${s.attempts} 次` : "";
+  return [s.lastError ?? "连接已断开", attempts, retry, target].filter(Boolean).join(" · ");
+});
 
 async function loadRuntimes(): Promise<void> {
   try {
@@ -71,6 +139,26 @@ async function loadConfig(): Promise<void> {
   }
 }
 
+/** 读归属实例的 OneBot 连接状态（状态灯；3 秒轮询 + 手动刷新）。 */
+async function loadStatus(): Promise<void> {
+  const owner = onebotOwner.value;
+  if (owner === null || !runningIds.value.has(owner)) {
+    status.value = null;
+    statusError.value = "";
+    return;
+  }
+  statusBusy.value = true;
+  try {
+    status.value = await getOnebotStatusApi(owner);
+    statusError.value = "";
+  } catch (err) {
+    status.value = null;
+    statusError.value = err instanceof Error ? err.message : String(err);
+  } finally {
+    statusBusy.value = false;
+  }
+}
+
 async function onSave(): Promise<void> {
   const view = configView.value;
   const owner = onebotOwner.value;
@@ -103,10 +191,20 @@ async function pickOwner(): Promise<void> {
 async function reload(): Promise<void> {
   ownerPick.value = onebotOwner.value ?? "";
   await Promise.all([refresh(), loadRuntimes()]);
-  await loadConfig();
+  await Promise.all([loadConfig(), loadStatus()]);
 }
 
-onMounted(reload);
+onMounted(() => {
+  void reload();
+  statusTimer = window.setInterval(() => {
+    void loadStatus();
+  }, STATUS_POLL_MS);
+});
+
+onUnmounted(() => {
+  if (statusTimer !== undefined) window.clearInterval(statusTimer);
+  statusTimer = undefined;
+});
 </script>
 
 <template>
@@ -134,6 +232,23 @@ onMounted(reload);
       <span v-if="!inst.enabled" class="state-note">（已停用）</span>
       <span v-if="runningIds.has(inst.id)" class="state-note run">运行中</span>
     </label>
+  </div>
+
+  <label class="group-title">连接状态</label>
+  <div class="link-card" :class="`tone-${statusTone}`">
+    <span class="link-dot" aria-hidden="true"></span>
+    <div class="link-copy">
+      <div class="link-title">{{ statusTitle }}</div>
+      <div v-if="statusDetail" class="link-detail">{{ statusDetail }}</div>
+    </div>
+    <button
+      v-if="onebotOwner !== null && ownerRunning"
+      class="btn small link-refresh"
+      :disabled="statusBusy"
+      @click="loadStatus"
+    >
+      刷新
+    </button>
   </div>
 
   <label class="group-title">连接与行为（归属实例的插件配置）</label>
@@ -195,6 +310,56 @@ onMounted(reload);
 }
 .state-note.run {
   color: var(--accent, inherit);
+}
+.link-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  margin: 4px 0 12px;
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius);
+  background: var(--paper-raised);
+}
+.link-dot {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  margin-top: 4px;
+  border-radius: 50%;
+  background: var(--ink-dim);
+}
+.tone-ok .link-dot {
+  background: var(--ok);
+  box-shadow: 0 0 0 3px rgba(47, 158, 107, 0.16);
+}
+.tone-warn .link-dot {
+  background: var(--warn);
+  box-shadow: 0 0 0 3px rgba(196, 130, 42, 0.16);
+}
+.tone-bad .link-dot {
+  background: var(--err);
+  box-shadow: 0 0 0 3px rgba(196, 75, 60, 0.16);
+}
+.link-copy {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.link-title {
+  font-size: 12px;
+  font-weight: 500;
+}
+.link-detail {
+  font-size: 11px;
+  color: var(--ink-dim);
+  line-height: 1.6;
+  word-break: break-all;
+}
+.link-refresh {
+  flex: none;
 }
 .reload {
   margin-top: 12px;

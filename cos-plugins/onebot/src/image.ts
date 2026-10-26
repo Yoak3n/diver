@@ -8,6 +8,7 @@
 import { readFile } from 'node:fs/promises'
 
 import { imageRefsOf, quotedMessageId, toSegments, type ImageRef, type Segment } from './protocol.ts'
+import { fetchImageBytes, guardImageSize, sniffMime, type UrlFetcher } from './img-bytes.ts'
 import type { OnebotClient } from './ws.ts'
 
 /** 唤醒消息附带的图片（@cos/types createUserMessage 的 images 同形）。 */
@@ -23,48 +24,17 @@ export interface WakeImages {
   notes: string[]
 }
 
-/** 直链取回器（测试可注入；缺省 fetch + 超时）。 */
-export type UrlFetcher = (url: string) => Promise<Uint8Array>
-
-/** 病态大文件的内存守卫；常规 QQ 图远小于此。 */
-const MAX_IMAGE_BYTES = 20 * 1024 * 1024
 /** 单次唤醒最多附图（防图海轰炸）。 */
 const MAX_IMAGES_PER_WAKE = 4
-/** 直链下载 / API 调用超时。 */
-const FETCH_TIMEOUT_MS = 15_000
+/** API 调用超时。 */
 const API_TIMEOUT_MS = 5_000
-
-/** magic bytes 嗅探（QQ 常见四类）；认不出的格式返回 undefined。 */
-export function sniffMime(bytes: Uint8Array): string | undefined {
-  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return 'image/jpeg'
-  if (bytes.length >= 8 && bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47) {
-    return 'image/png'
-  }
-  if (bytes.length >= 6 && bytes[0] === 0x47 && bytes[1] === 0x49 && bytes[2] === 0x46) return 'image/gif'
-  // webp：RIFF 头 + 8..11 偏移的 WEBP 标记
-  if (bytes.length >= 12 && bytes[8] === 0x57 && bytes[9] === 0x45 && bytes[10] === 0x42 && bytes[11] === 0x50) {
-    return 'image/webp'
-  }
-  return undefined
-}
-
-async function fetchUrlBytes(url: string): Promise<Uint8Array> {
-  const res = await fetch(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) })
-  if (!res.ok) throw new Error(`HTTP ${res.status}`)
-  return guardSize(new Uint8Array(await res.arrayBuffer()))
-}
-
-async function guardSize(bytes: Uint8Array): Promise<Uint8Array> {
-  if (bytes.byteLength > MAX_IMAGE_BYTES) throw new Error(`图片过大（${bytes.byteLength} 字节）`)
-  return bytes
-}
 
 /** 单个引用 → 字节（按 url / 本地路径 / 缓存名依次尝试）。 */
 async function refToBytes(ref: ImageRef, client: OnebotClient, fetchUrl: UrlFetcher): Promise<Uint8Array> {
   if (ref.url !== undefined) return fetchUrl(ref.url)
   const file = ref.file ?? ''
-  if (file.startsWith('file://')) return guardSize(await readFile(file.slice('file://'.length)))
-  if (file.startsWith('/')) return guardSize(await readFile(file))
+  if (file.startsWith('file://')) return guardImageSize(await readFile(file.slice('file://'.length)))
+  if (file.startsWith('/')) return guardImageSize(await readFile(file))
   if (file !== '') {
     // 缓存名（如 ABC123.image）：扩展 API 换直链再下载
     const info = await client.call<{ url?: string }>('get_image', { file }, API_TIMEOUT_MS)
@@ -87,7 +57,7 @@ export async function collectWakeImages(
   segments: readonly Segment[],
   deps: CollectDeps,
 ): Promise<WakeImages> {
-  const fetchUrl = deps.fetchUrl ?? fetchUrlBytes
+  const fetchUrl = deps.fetchUrl ?? fetchImageBytes
   const refs = imageRefsOf(segments)
   const quoted = quotedMessageId(segments)
   if (quoted !== undefined) {

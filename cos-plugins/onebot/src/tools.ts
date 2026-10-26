@@ -1,17 +1,19 @@
 // @diver/onebot — 出话工具（send_qq_group / send_qq_private / stay_silent）。
 //
-// 工具是发往 QQ 的唯一出口：出站文本在此过遮蔽总闸，发送经串行队列 + 间隔
-// 节流（QQ 风控优先于拟人化）。群回复缺省引用触发消息（5 分钟内），群友知道
-// 在答谁——模型不碰协议细节。
+// 工具是发往 QQ 的唯一出口：出站文本在此过遮蔽总闸，发送经 outbox.ts 的串行
+// 队列 + 间隔节流（QQ 风控优先于拟人化）。群回复缺省引用触发消息（5 分钟内），
+// 群友知道在答谁——模型不碰协议细节。
 
 import type { Context } from 'cordis'
 import type {} from '@cos/plugin-api'
 
 import type { ResolvedConfig } from './config.ts'
 import { maskOutbound } from './mask.ts'
-import { SendBreaker, breakerErrorMessage } from './send-breaker.ts'
-import { decideVoice, recordSegment, voiceKey, type VoicePolicy } from './voice.ts'
+import { voiceKey } from './voice.ts'
+import { SendQueue, settleMessage, type VoiceSendDeps } from './outbox.ts'
 import { resolveImageArg, type ImageOutcome, type RecentImages } from './out-image.ts'
+import type { SelfSendInput } from './self-ledger.ts'
+import type { FsPolicy } from './fs-jail.ts'
 import type { OnebotClient } from './ws.ts'
 
 export interface TriggerAnchor {
@@ -21,19 +23,13 @@ export interface TriggerAnchor {
   at: number
 }
 
-export interface VoiceSendDeps {
-  policy: VoicePolicy
-  /** 合成（文本已遮蔽；壳层 TTS 全局开关/凭据在 Rust 侧判定）。 */
-  synth(text: string): Promise<{ base64: string }>
-  cooldownOk(key: string, now: number): boolean
-  noteUsed(key: string, now: number): void
-}
-
 export interface SendDeps {
   client: OnebotClient
   cfg: ResolvedConfig
   /** 近期图片句柄缓存（出站 image 参数引用）。 */
   images: RecentImages
+  /** image 参数本地路径的囚笼（按当前回合来源现算；与 read 等只读工具同界）。 */
+  imageFs: () => Promise<{ policy: FsPolicy; workspaceBase: string }>
   /** 语音出话（mode=off 时为 undefined：工具不暴露语音分支）。 */
   voice?: VoiceSendDeps
   /** 近期群触发锚点（无参 = 最近任一；有参 = 该群）。 */
@@ -42,107 +38,26 @@ export interface SendDeps {
   rememberSent(groupId: string, messageId: number): void
   /** 本回合实际发言（沉默退避记账）。 */
   onSpoke(): void
+  /** 自己发言记账：进会话缓冲（背景窗时间线）+ 群发落 group-sent.jsonl。 */
+  recordSend(send: SelfSendInput): Promise<void>
 }
 
 /** 引用锚定有效期：超过则发裸消息（避免答非所问）。 */
 const QUOTE_MAX_AGE_MS = 5 * 60_000
 
-/** 出站消息段（数组形态；text 段为字面文本，无需 CQ 转义）。 */
-function buildMessage(text: string, quoteId?: number): Array<{ type: string; data: Record<string, unknown> }> {
-  const segments: Array<{ type: string; data: Record<string, unknown> }> = []
-  if (quoteId !== undefined) segments.push({ type: 'reply', data: { id: String(quoteId) } })
-  segments.push({ type: 'text', data: { text } })
-  return segments
-}
-
-/** 发送失败回执：记录熔断并提示模型停止重试。 */
-function sendFailJson(breaker: SendBreaker, error: unknown): { content: string; isError: true } {
-  breaker.recordFail(Date.now())
-  const message = error instanceof Error ? error.message : String(error)
-  return {
-    content: JSON.stringify({ error: message, hint: '发送失败；连续失败会暂停出话，不要在本回合反复重试。' }),
-    isError: true,
-  }
-}
-
-/** 熔断检查：阻断时给出停止文案（本地短路，不打实现侧、不合成语音）。 */
-function breakerJson(breaker: SendBreaker): { content: string } | undefined {
-  if (!breaker.blocked(Date.now())) return undefined
-  return { content: JSON.stringify({ error: breakerErrorMessage(breaker.failCount()) }) }
-}
-
 export function applyTools(ctx: Context, deps: SendDeps): void {
-  // 串行队列 + 最小间隔（同一实现侧连续发送易触发风控）
-  let chain: Promise<unknown> = Promise.resolve()
-  let lastSendAt = 0
-  // 连续失败熔断（账号级：群发与私聊共享）
-  const breaker = new SendBreaker()
-  function enqueue<T>(job: () => Promise<T>): Promise<T> {
-    const run = chain.then(async () => {
-      const wait = deps.cfg.sendIntervalMs - (Date.now() - lastSendAt)
-      if (lastSendAt > 0 && wait > 0) await new Promise((resolve) => setTimeout(resolve, wait))
-      try {
-        return await job()
-      } finally {
-        lastSendAt = Date.now()
-      }
-    })
-    chain = run.catch(() => undefined)
-    return run
-  }
-
-  /**
-   * 出站形态决策：语音（合成成功才用）或文本。
-   * 文本必须已遮蔽；语音合成的是同一段遮蔽后文本（无第二条内容通道）。
-   */
-  async function settleMessage(
-    maskedText: string,
-    requested: boolean | undefined,
-    key: string,
-    quoteId?: number,
-  ): Promise<{ segments: Array<{ type: string; data: Record<string, unknown> }>; voiceInfo?: Record<string, unknown> }> {
-    const voice = deps.voice
-    if (voice === undefined) {
-      return { segments: buildMessage(maskedText, quoteId) }
-    }
-    const now = Date.now()
-    const decision = decideVoice({
-      policy: voice.policy,
-      requested,
-      textLength: maskedText.length,
-      cooldownOk: voice.cooldownOk(key, now),
-      roll: Math.random(),
-    })
-    if (!decision.voice) {
-      return {
-        segments: buildMessage(maskedText, quoteId),
-        voiceInfo: { voice: false, voiceSkip: decision.reason },
-      }
-    }
-    try {
-      const audio = await voice.synth(maskedText)
-      voice.noteUsed(key, now)
-      return { segments: [recordSegment(audio.base64)], voiceInfo: { voice: true } }
-    } catch (error) {
-      // 合成失败/未配置/超时：消息绝不丢，降级发文本并告知模型原因
-      const reason = error instanceof Error ? error.message : String(error)
-      return {
-        segments: buildMessage(maskedText, quoteId),
-        voiceInfo: { voice: false, voiceFallback: reason },
-      }
-    }
-  }
+  const queue = new SendQueue(deps.cfg.sendIntervalMs)
 
   const voiceFlag = (raw: unknown): boolean | undefined =>
     raw === true ? true : raw === false ? false : undefined
 
-  /** image 参数三态解析（清单/错误本地短路，不占发送配额）。 */
-  const resolveImage = (raw: unknown): ImageOutcome =>
-    resolveImageArg(raw, deps.images, deps.cfg)
+  /** image 参数三态解析（清单/错误本地短路，不占发送配额；直链/本地路径含取回 IO）。 */
+  const resolveImage = async (raw: unknown): Promise<ImageOutcome> =>
+    resolveImageArg(raw, { images: deps.images, imageFs: deps.imageFs })
 
   ctx.tools.register('send_qq_group', async (args: unknown) => {
     const a = (args ?? {}) as { text?: unknown; group?: unknown; voice?: unknown; image?: unknown }
-    const image = resolveImage(a.image)
+    const image = await resolveImage(a.image)
     if (image.kind === 'reply') return { content: image.content }
     const text = String(a.text ?? '').trim()
     if (text === '' && image.kind !== 'segment') return { content: JSON.stringify({ error: 'text 必填（或提供 image）' }) }
@@ -152,7 +67,7 @@ export function applyTools(ctx: Context, deps: SendDeps): void {
     if (groupId === undefined || groupId === '') {
       return { content: JSON.stringify({ error: 'group 必填（未发现可用的近期群聊来源）' }) }
     }
-    const blocked = breakerJson(breaker)
+    const blocked = queue.blockedJson()
     if (blocked !== undefined) return blocked
     const quoteId =
       anchor !== undefined
@@ -167,20 +82,29 @@ export function applyTools(ctx: Context, deps: SendDeps): void {
       // 纯图无文字时跳过语音（空文本合成无意义，图照发）
       (text === '' && image.kind === 'segment' ? false : voiceFlag(a.voice)),
       voiceKey('group', groupId),
+      deps.voice,
       quoteId,
     )
     if (image.kind === 'segment') segments.push(image.segment)
     try {
-      const data = await enqueue(() =>
+      const data = await queue.run(() =>
         deps.client.call<{ message_id?: number }>('send_group_msg', {
           group_id: Number(groupId),
           message: segments,
         }),
       )
       const messageId = Number(data?.message_id ?? 0)
-      breaker.recordOk()
+      queue.recordOk()
       if (messageId > 0) deps.rememberSent(groupId, messageId)
       deps.onSpoke()
+      await deps.recordSend({
+        kind: 'group',
+        peerId: groupId,
+        text: masked.text,
+        voice: voiceInfo?.voice === true,
+        hasImage: image.kind === 'segment',
+        messageId,
+      })
       return {
         content: JSON.stringify({
           sent: true,
@@ -192,7 +116,7 @@ export function applyTools(ctx: Context, deps: SendDeps): void {
         }),
       }
     } catch (error) {
-      return sendFailJson(breaker, error)
+      return queue.failJson(error)
     }
   }, {
     description:
@@ -200,7 +124,8 @@ export function applyTools(ctx: Context, deps: SendDeps): void {
       '你直接输出的文字只有本地桌面可见，不会进 QQ——在群里说话必须调用本工具。' +
       '被 @ 时必须回应；闲聊不必每条都回。出站会自动遮蔽本地路径/凭据/联系方式，' +
       '返回里的 masked 是遮蔽统计，不要尝试绕过。' +
-      '图片：image 参数可传近期图片句柄（image="list" 查看可用清单；会话里收到过的图都在）或 http(s) 直链；' +
+      '图片：image 参数可传近期图片句柄（image="list" 查看可用清单；会话里收到过的图都在）、' +
+      'http(s) 直链（本机取回后发出）或囚笼内本地图片路径（相对路径按 workspace 根解析，与 read 同界）；' +
       '只发图不配文字也可以。' +
       '语音：仅当确实适合时才传 voice=true（默认未开启语音，此时会自动改发文本）。',
     parameters: {
@@ -208,7 +133,7 @@ export function applyTools(ctx: Context, deps: SendDeps): void {
       properties: {
         text: { type: 'string', description: '发言内容（会被隐私遮蔽后发出；只发图可留空）' },
         group: { type: 'string', description: '群号（可选；缺省 = 最近唤醒你的群）' },
-        image: { type: 'string', description: '随消息附图：近期图片句柄（"list" 列出可用）或 http(s) 直链（可选）' },
+        image: { type: 'string', description: '随消息附图：近期图片句柄（"list" 列出可用）、http(s) 直链或本地图片路径（相对路径按 workspace 根解析；可选）' },
         voice: { type: 'boolean', description: '是否用语音发送（可选；语音与文字二选一，不要重复发）' },
       },
       required: [],
@@ -217,13 +142,13 @@ export function applyTools(ctx: Context, deps: SendDeps): void {
 
   ctx.tools.register('send_qq_private', async (args: unknown) => {
     const a = (args ?? {}) as { text?: unknown; user?: unknown; voice?: unknown; image?: unknown }
-    const image = resolveImage(a.image)
+    const image = await resolveImage(a.image)
     if (image.kind === 'reply') return { content: image.content }
     const text = String(a.text ?? '').trim()
     if (text === '' && image.kind !== 'segment') return { content: JSON.stringify({ error: 'text 必填（或提供 image）' }) }
     const user = String(a.user ?? '').trim()
     if (user === '') return { content: JSON.stringify({ error: 'user 必填（QQ 号）' }) }
-    const blocked = breakerJson(breaker)
+    const blocked = queue.blockedJson()
     if (blocked !== undefined) return blocked
     const masked = maskOutbound(text, deps.cfg.privacy)
     const { segments, voiceInfo } = await settleMessage(
@@ -231,18 +156,27 @@ export function applyTools(ctx: Context, deps: SendDeps): void {
       // 纯图无文字时跳过语音（空文本合成无意义，图照发）
       (text === '' && image.kind === 'segment' ? false : voiceFlag(a.voice)),
       voiceKey('private', user),
+      deps.voice,
     )
     if (image.kind === 'segment') segments.push(image.segment)
     try {
-      const data = await enqueue(() =>
+      const data = await queue.run(() =>
         deps.client.call<{ message_id?: number }>('send_private_msg', {
           user_id: Number(user),
           message: segments,
         }),
       )
       const messageId = Number(data?.message_id ?? 0)
-      breaker.recordOk()
+      queue.recordOk()
       deps.onSpoke()
+      await deps.recordSend({
+        kind: 'private',
+        peerId: user,
+        text: masked.text,
+        voice: voiceInfo?.voice === true,
+        hasImage: image.kind === 'segment',
+        messageId,
+      })
       return {
         content: JSON.stringify({
           sent: true,
@@ -254,13 +188,14 @@ export function applyTools(ctx: Context, deps: SendDeps): void {
         }),
       }
     } catch (error) {
-      return sendFailJson(breaker, error)
+      return queue.failJson(error)
     }
   }, {
     description:
       '给 QQ 用户发私聊。私聊是直接对话，不必沉默；对方发来消息后优先回应。' +
       '你直接输出的文字只有本地桌面可见，私聊必须调用本工具。出站自动遮蔽隐私信息。' +
-      '图片：image 参数可传近期图片句柄（image="list" 查看可用清单；会话里收到过的图都在）或 http(s) 直链；' +
+      '图片：image 参数可传近期图片句柄（image="list" 查看可用清单；会话里收到过的图都在）、' +
+      'http(s) 直链（本机取回后发出）或囚笼内本地图片路径（相对路径按 workspace 根解析，与 read 同界）；' +
       '只发图不配文字也可以。' +
       '语音：私聊场景适合语音时可以传 voice=true（未配置语音时会自动改发文本）。',
     parameters: {
@@ -268,7 +203,7 @@ export function applyTools(ctx: Context, deps: SendDeps): void {
       properties: {
         text: { type: 'string', description: '私聊内容（会被隐私遮蔽后发出；只发图可留空）' },
         user: { type: 'string', description: '对方 QQ 号' },
-        image: { type: 'string', description: '随消息附图：近期图片句柄（"list" 列出可用）或 http(s) 直链（可选）' },
+        image: { type: 'string', description: '随消息附图：近期图片句柄（"list" 列出可用）、http(s) 直链或本地图片路径（相对路径按 workspace 根解析；可选）' },
         voice: { type: 'boolean', description: '是否用语音发送（可选；语音与文字二选一）' },
       },
       required: ['user'],

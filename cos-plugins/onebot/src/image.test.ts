@@ -1,14 +1,12 @@
-// 入站图片取回单测：mime 嗅探、引用回图解析、逐图容错与去重。
+// 入站图片取回单测：引用回图解析、逐图容错与去重。
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { collectWakeImages, sniffMime } from './image.ts'
+import { collectWakeImages } from './image.ts'
 import type { OnebotClient } from './ws.ts'
 
 const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0])
 const JPEG = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0, 0])
-const GIF = new Uint8Array([0x47, 0x49, 0x46, 0x38, 0x39, 0x61, 0, 0])
-const WEBP = new Uint8Array([0x52, 0x49, 0x46, 0x46, 0, 0, 0, 0, 0x57, 0x45, 0x42, 0x50, 0, 0])
 
 /** 假 client：按 action 返回预设或抛错。 */
 function fakeClient(handlers: Record<string, () => unknown>): OnebotClient {
@@ -20,15 +18,6 @@ function fakeClient(handlers: Record<string, () => unknown>): OnebotClient {
     },
   } as unknown as OnebotClient
 }
-
-test('sniffMime：magic bytes 四类；认不出为 undefined', () => {
-  assert.equal(sniffMime(JPEG), 'image/jpeg')
-  assert.equal(sniffMime(PNG), 'image/png')
-  assert.equal(sniffMime(GIF), 'image/gif')
-  assert.equal(sniffMime(WEBP), 'image/webp')
-  assert.equal(sniffMime(new Uint8Array([0, 0, 0, 0])), undefined)
-  assert.equal(sniffMime(new Uint8Array([])), undefined)
-})
 
 test('collectWakeImages：url 直链取回 + base64 编码', async () => {
   const client = fakeClient({})

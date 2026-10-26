@@ -11,6 +11,10 @@ const CODE_RE = /\.(ts|tsx|mts|cts|js|mjs|cjs)$/
 // ② 裸 import '…' ③ require()/import()
 const FROM_RE = /(?<![\w.$])from\s*['"]([^'"]+)['"]/g
 const BARE_RE = /\bimport\s*['"]([^'"]+)['"]|\brequire\s*\(\s*['"]([^'"]+)['"]|\bimport\s*\(\s*['"]([^'"]+)['"]/g
+// 纯类型从句（import type … from / export type … from）：tsx 运行时整句剥除，不构成
+// 运行时闭包——类型专用模块（如 plugin-include 1.2 的 lib/patch.ts，盘上只有 .d.ts）
+// 无运行时文件，Node 解析必挂。span 禁 `=`/`;`/引号：防类型别名的赋值段桥到后面的真实从句。
+const TYPE_FROM_RE = /\b(?:import|export)\s+type\s+[^'"=;]*?from\s*['"][^'"]+['"]/g
 // 说明符形态：包名/子路径（@scope/name/sub、name/sub、含版本或 URL 片段）
 const SPEC_SHAPE_RE = /^[@a-zA-Z0-9][\w@.~:%/+-]*$/
 
@@ -79,7 +83,7 @@ export function scanFiles(files) {
     } catch {
       continue
     }
-    text = stripComments(text)
+    text = stripComments(text).replace(TYPE_FROM_RE, (m) => m.replace(/[^\n]/g, ' '))
     for (const re of [FROM_RE, BARE_RE]) {
       for (const m of text.matchAll(re)) {
         const spec = bareSpec(m[1] || m[2] || m[3])

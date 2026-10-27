@@ -83,6 +83,23 @@ test('唤醒消息：普通档无触发正文，结尾给沉默出口', () => {
   assert.match(text, /不必每条都回/)
 })
 
+test('唤醒消息：主人普通档带触发正文与主人章，结尾给接话/沉默双出口', () => {
+  const text = formatWake({
+    kind: 'owner',
+    group: { id: '123456', name: '摸鱼群' },
+    senderId: '42',
+    senderName: '阿明',
+    text: '今天几点吃饭',
+    isTrigger: true,
+    snapshot: [msg({ name: '阿明', text: '今天几点吃饭' })],
+  })
+  assert.match(text, /^\[QQ群 摸鱼群\(123456\) \| 阿明\(42\) 说了话\]/)
+  assert.match(text, /今天几点吃饭/)
+  assert.match(text, /send_qq_group/)
+  assert.match(text, /stay_silent/)
+  assert.doesNotMatch(text, /必须回应/)
+})
+
 test('唤醒消息：私聊给私聊章与 send_qq_private 指令', () => {
   const text = formatWake({
     kind: 'private',

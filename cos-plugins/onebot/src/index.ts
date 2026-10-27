@@ -7,32 +7,27 @@
 // 接入：bundle insert `{ id: onebot, name: '@diver/onebot' }`；配置见 config.ts。
 
 import type { Context } from 'cordis'
-import { realpath } from 'node:fs/promises'
-import { join, resolve } from 'node:path'
+import { join } from 'node:path'
 
 import { nativeRpc } from '@diver/native-bridge/rpc'
 
 import { configDecl, ownerGate, resolveConfig, type Config } from './config.ts'
 import { trimAllBuffers } from './buffer-store.ts'
-import { buildFsPolicy, fsCheckCall, type FsPolicy } from './fs-jail.ts'
+import { createFsScope } from './fs-scope.ts'
+import { applyNotesTool } from './notes-tool.ts'
 import {
   TurnSandbox,
   allowedToolNames,
-  allowedToolNamesForSource,
   canSteerInto,
-  filterToolsForTurn,
-  isOwnerPrivateSource,
-  vetoIfActive,
-  type OnebotSource,
-  type TurnScopeEvent,
 } from './sandbox.ts'
+import { applyTurnGate } from './turn-gate.ts'
 import { OnebotClient } from './ws.ts'
 import { OnebotStatusService } from './status.ts'
 import { applyTools } from './tools.ts'
 import type { VoiceSendDeps } from './outbox.ts'
 import { createSelfRecorder } from './self-ledger.ts'
 import { applyPrompt } from './prompt.ts'
-import { replaceRelationCard, safeRelationCard, type ShallowCardFacts } from './relation-card.ts'
+import type { ShallowCardFacts } from './relation-card.ts'
 import { createRouter, type CompanionLike } from './router.ts'
 import { voiceCooldownOk } from './voice.ts'
 import { RecentImages, imagesInContent } from './out-image.ts'
@@ -89,123 +84,42 @@ export function apply(ctx: Context, config: Config = {}): void {
 
   const sandbox = new TurnSandbox()
   const allowed = allowedToolNames(cfg.sandbox.allowedTools)
-  const allowedForTurn = (source: OnebotSource | undefined): string[] =>
-    allowedToolNamesForSource(allowed, source, cfg.ownerIds)
   let selfId = 0
   /** 登录昵称（自己发言落账署名；未取到前兜底「我」）。 */
   let selfName = ''
-  /** 本回合主会话 id：避免 subagent 的 turn/end 提前解除沙箱。 */
-  let activeSessionId: string | undefined
-  /** 每回合只读一次身份卡片：只取名字；性格/说话方式由 self-prompt 的 prompts 负责。 */
-  let turnCardFacts: Promise<ShallowCardFacts> | undefined
-
-  const loadShallowCard = (): Promise<ShallowCardFacts> => {
-    turnCardFacts ??= withTimeout(
+  /** 身份卡片原始 IO；按回合缓存由 turn-gate 负责。 */
+  const loadCardFacts = (): Promise<ShallowCardFacts> =>
+    withTimeout(
       nativeRpc<{ name?: string | null }>('get_card', {}, { label: 'memory:get_card' }),
       1_500,
       '读取身份卡片超时',
     )
       .then((card) => ({ name: card?.name ?? '' }))
       .catch(() => ({ name: '' }))
-    return turnCardFacts
+
+  // 文件作用域：COS_HOME 缺省回退与 basic-tools 同约定；笔记根在基线里整棵拒绝，
+  // 只对当前来源自己的 scope 开例外（策略按 scope 缓存在 fs-scope.ts）。
+  const fsScope = createFsScope({
+    cosHome: process.env.COS_HOME ?? join(process.cwd(), '.cos-home'),
+    extraRoots: cfg.sandbox.fsExtraRoots,
+  })
+
+  // 回合级笔记预算：新回合激活 / turn/end 时重置，同一回合的多次 steer 不重置。
+  const noteBudget = { appends: 0, bytes: 0 }
+  const resetNoteBudget = (): void => {
+    noteBudget.appends = 0
+    noteBudget.bytes = 0
   }
 
-  /** 把来源转成记忆插件可消费的作用域事件（主人标记只影响提示词/记忆，不升权）。 */
-  const scopeEvent = (source: OnebotSource | undefined): TurnScopeEvent => source === undefined
-    ? { active: false }
-    : {
-        active: true,
-        kind: source.kind,
-        userId: source.userId,
-        ...(source.kind === 'group' ? { groupId: source.groupId } : {}),
-        isOwner: cfg.ownerIds.includes(source.userId),
-      }
-
-  // ---- 文件囚笼（fs-jail.ts）：根一次性 realpath，两档策略缓存 ----
-  // COS_HOME 缺省回退与 basic-tools 同约定；额外根来自配置（dev 期插件源码 repo）。
-  // 相对路径基准假定 workspace 根（basic-tools 未覆写 workspaceRoot 时的默认）。
-  const realRoot = (p: string): Promise<string> =>
-    realpath(p).catch(() => Promise.resolve(resolve(p)))
-  const fsPolicies: Promise<{ baseline: FsPolicy; ownerPrivate: FsPolicy; workspaceBase: string }> =
-    (async () => {
-      const cosHome = await realRoot(process.env.COS_HOME ?? join(process.cwd(), '.cos-home'))
-      const extraRoots = await Promise.all(cfg.sandbox.fsExtraRoots.map(realRoot))
-      return {
-        baseline: buildFsPolicy(cosHome, extraRoots, false),
-        ownerPrivate: buildFsPolicy(cosHome, extraRoots, true),
-        workspaceBase: join(cosHome, 'workspace'),
-      }
-    })()
-
-  // ---- 安全钩子：可见性 + 执行双闸 + 路径囚笼 + QQ 安全卡片 ----
-  // 回合来源由 router 唤醒消息的 `onebot:` detail 标记（inbox/claimed 判定）。
-
-  ctx.on('system-prompt/assemble', async (assembly, _context, next) => {
-    if (sandbox.isActive()) {
-      const source = sandbox.currentSource()
-      assembly.tools = filterToolsForTurn(assembly.tools, true, allowedForTurn(source))
-      const ownerPrivate = isOwnerPrivateSource(source, cfg.ownerIds)
-      assembly.sections = [...assembly.sections, {
-        name: 'diver:onebot:fs-scope',
-        order: 60,
-        text: ownerPrivate
-          ? 'File access this turn is read-only (read/ls/find/grep) and nearly unrestricted under the COS home; only secret/credential files are blocked. Relative paths resolve against the workspace root. write/edit/sh remain unavailable. Image files inside the same scope can be sent to QQ via the image parameter of the send tools.'
-          : 'File access this turn is read-only (read/ls/find/grep) and restricted to the COS home: the session-log directory and sensitive files (secrets, group send logs, settings) are blocked. Relative paths resolve against the workspace root. write/edit/sh are unavailable. Image files inside the same scope can be sent to QQ via the image parameter of the send tools.',
-      }]
-      if (source !== undefined) {
-        const facts = await loadShallowCard()
-        assembly.sections = replaceRelationCard(
-          assembly.sections,
-          safeRelationCard(source, cfg.ownerIds, facts),
-        )
-      }
-    }
-    return next()
-  })
-
-  ctx.on('tools/pre-execute', async (payload, next) => {
-    const source = sandbox.currentSource()
-    const active = sandbox.isActive()
-    const veto = vetoIfActive(payload.name, active, allowedForTurn(source))
-    if (veto !== undefined) return { veto }
-    if (active) {
-      const { baseline, ownerPrivate, workspaceBase } = await fsPolicies
-      const fsVeto = await fsCheckCall(
-        payload.name,
-        payload.args,
-        isOwnerPrivateSource(source, cfg.ownerIds) ? ownerPrivate : baseline,
-        workspaceBase,
-      )
-      if (fsVeto !== undefined) return { veto: fsVeto }
-    }
-    return next()
-  })
-
-  ctx.on('agent/inbox/claimed', (payload) => {
-    const activated = sandbox.markClaimed([payload.message])
-    if (activated !== undefined) {
-      activeSessionId = payload.agent.session.id
-      turnCardFacts = undefined
-      ctx.emit('onebot/turn-scope', scopeEvent(activated))
-    }
-  })
   // 近期图片缓存：会话里真人发来的图（QQ 收到的 / 桌面端附件）统一喂入，
   // 出话工具用句柄引用转发。subagent/注入消息不进（只认 kind=human）。
   const recentImages = new RecentImages()
-  ctx.on('session/event', (session, event) => {
-    if (event.type === 'user/message' && event.data?.source?.kind === 'human') {
-      const from = typeof event.data.source?.detail === 'string' && event.data.source.detail !== ''
-        ? event.data.source.detail
-        : 'desktop'
-      for (const img of imagesInContent(event.data.content)) recentImages.add(img, from)
-    }
-    if (event.type !== 'turn/end') return
-    if (activeSessionId !== undefined && session.id !== activeSessionId) return
-    sandbox.markTurnEnd()
-    activeSessionId = undefined
-    turnCardFacts = undefined
-    ctx.emit('onebot/turn-scope', scopeEvent(undefined))
-    router.settleTurn()
+  ctx.on('session/event', (_session, event) => {
+    if (event.type !== 'user/message' || event.data?.source?.kind !== 'human') return
+    const from = typeof event.data.source?.detail === 'string' && event.data.source.detail !== ''
+      ? event.data.source.detail
+      : 'desktop'
+    for (const img of imagesInContent(event.data.content)) recentImages.add(img, from)
   })
 
   // ---- 客户端 + 入站路由 + 出话工具 ----
@@ -291,14 +205,11 @@ export function apply(ctx: Context, config: Config = {}): void {
     cfg,
     images: recentImages,
     // image 参数本地路径的囚笼：与 read/ls/find/grep 同一策略——按当前回合来源
-    // 两档现算（主人私聊近全开；桌面回合无来源，走基线档）。
-    imageFs: async () => {
-      const { baseline, ownerPrivate, workspaceBase } = await fsPolicies
-      return {
-        policy: isOwnerPrivateSource(sandbox.currentSource(), cfg.ownerIds) ? ownerPrivate : baseline,
-        workspaceBase,
-      }
-    },
+    // 现算（主人私聊近全开；群/私聊只开自己的笔记 scope；桌面回合走基线档）。
+    imageFs: async () => ({
+      policy: await fsScope.policyFor(sandbox.currentSource(), cfg.ownerIds),
+      workspaceBase: await fsScope.workspaceBase(),
+    }),
     voice,
     anchor: router.anchor,
     rememberSent: router.rememberSent,
@@ -308,6 +219,25 @@ export function apply(ctx: Context, config: Config = {}): void {
       selfIdentity: () => ({ id: selfId, name: selfName !== '' ? selfName : '我' }),
       groupNameOf: router.groupName,
     }),
+  })
+
+  // 笔记追加（唯一写入口）：按当前回合来源选作用域，写不了就报错。
+  applyNotesTool(ctx, {
+    sandbox,
+    ownerIds: cfg.ownerIds,
+    notesRoot: () => fsScope.notesRoot(),
+    budget: noteBudget,
+  })
+
+  // 回合闸门：可见性/执行/路径囚笼/来源广播/收入结算。
+  applyTurnGate(ctx, {
+    sandbox,
+    ownerIds: cfg.ownerIds,
+    allowed,
+    fs: fsScope,
+    loadCardFacts,
+    resetNoteBudget,
+    onMainTurnEnd: (source) => router.settleTurn(source),
   })
 
   applyPrompt(ctx)

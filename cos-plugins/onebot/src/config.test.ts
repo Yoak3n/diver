@@ -16,7 +16,9 @@ test('缺省配置取安全默认：不连接、不监听群', () => {
   assert.equal(cfg.rate.plain, 0.05)
   assert.equal(cfg.rate.mention, 0.9)
   assert.equal(cfg.rate.quoted, 0.8)
+  assert.equal(cfg.rate.ownerPlain, 0.3)
   assert.equal(cfg.cooldownMinutes, 15)
+  assert.equal(cfg.ownerCooldownMinutes, 5)
   assert.equal(cfg.privateMaxPerHour, 30)
   assert.equal(cfg.sendIntervalMs, 1500)
   // 语音默认关闭（配了才开）
@@ -39,6 +41,11 @@ test('数值越界被夹紧（而非拒绝）', () => {
   assert.equal(cfg.rate.plain, 1)
   assert.equal(cfg.cooldownMinutes, 0)
   assert.equal(cfg.sendIntervalMs, 200)
+  // 主人档概率与冷却同样夹紧
+  assert.equal(resolveConfig({ rateOwnerPlain: 7 }).rate.ownerPlain, 1)
+  assert.equal(resolveConfig({ rateOwnerPlain: -1 }).rate.ownerPlain, 0)
+  assert.equal(resolveConfig({ ownerCooldownMinutes: -3 }).ownerCooldownMinutes, 0)
+  assert.equal(resolveConfig({ ownerCooldownMinutes: 9_999 }).ownerCooldownMinutes, 720)
   // 私聊限频：上限 600，负数落 0 = 不限制
   assert.equal(resolveConfig({ privateMaxPerHour: 9_999 }).privateMaxPerHour, 600)
   assert.equal(resolveConfig({ privateMaxPerHour: -1 }).privateMaxPerHour, 0)

@@ -28,8 +28,9 @@ import {
   evaluateTrigger,
   newGateState,
   newPrivateGate,
-  plainRateForHour,
+  opportunityRate,
   recordTurnOutcome,
+  type DeliveryTier,
   type GateState,
   type PrivateGate,
 } from './trigger.ts'
@@ -51,6 +52,20 @@ export interface CompanionLike {
 /** 引用锚点可回溯的最长时间：群缺省值只认 10 分钟内的触发。 */
 const ANCHOR_MAX_AGE_MS = 10 * 60_000
 
+/**
+ * 机会档待评估候选：debounce 结束后按「最后一条消息」决定档位。
+ * plain 无触发正文（空 sender/text/segments）；owner 带主人那条消息，
+ * 让模型知道是谁在说话。
+ */
+interface Opportunity {
+  kind: 'plain' | 'owner'
+  senderId: string
+  senderName: string
+  text: string
+  messageId: number
+  segments: readonly Segment[] | null
+}
+
 export interface RouterDeps {
   companion: CompanionLike
   cfg: ResolvedConfig
@@ -64,8 +79,8 @@ export interface Router {
   handlePrivate(event: PrivateMessageEvent): Promise<void>
   /** 工具侧记账：本回合实际发言（沉默退避结算用）。 */
   noteSpoke(): void
-  /** turn/end：结算普通档唤醒的回合结局。 */
-  settleTurn(): void
+  /** turn/end：结算机会档（plain/owner）唤醒的回合结局；source = 刚结束回合的来源。 */
+  settleTurn(source: OnebotSource | undefined): void
   anchor(groupId?: string): TriggerAnchor | undefined
   rememberSent(groupId: string, messageId: number): void
   /** 群号 → 群名（RPC + 缓存，兜底 `群<id>`；自己发言落账署名用）。 */
@@ -76,13 +91,22 @@ export interface Router {
 export function createRouter(deps: RouterDeps): Router {
   const { companion, cfg, client, canSteer } = deps
   const gates = new Map<string, GateState>()
+  /** 主人普通档的独立门控（短冷却，不被群聊 15 分钟窗口压住）。 */
+  const ownerGates = new Map<string, GateState>()
   const privateGates = new Map<string, PrivateGate>()
   const groupNames = new Map<string, string>()
   const sentIds = new Map<string, Set<number>>()
   const anchors = new Map<string, TriggerAnchor>()
-  const plainTimers = new Map<string, NodeJS.Timeout>()
-  // 普通档门控放行后尚未落定的回合（单槽近似：冷却窗口天然稀疏）
-  let awaiting: { groupId: string; spoke: boolean } | undefined
+  const opportunityTimers = new Map<string, NodeJS.Timeout>()
+  const pendingOpportunity = new Map<string, Opportunity>()
+  // 机会档门控放行后尚未落定的回合（单槽近似：冷却窗口天然稀疏）
+  let awaiting: { groupId: string; kind: Opportunity['kind']; spoke: boolean } | undefined
+  /** 最近一次实际出话时刻；触发回合结束时据此判断有没有真的回。 */
+  let lastSpokeAt = 0
+  /** 最近一次触发类唤醒（at/mention/quoted/private），供 turn/end 核对出话。 */
+  let pendingTrigger:
+    | { kind: WakeKind; target: string; tier: DeliveryTier; at: number }
+    | undefined
   let lastAnchor: TriggerAnchor | undefined
 
   const gateOf = (groupId: string): GateState => {
@@ -90,6 +114,15 @@ export function createRouter(deps: RouterDeps): Router {
     if (state === undefined) {
       state = newGateState()
       gates.set(groupId, state)
+    }
+    return state
+  }
+
+  const ownerGateOf = (groupId: string): GateState => {
+    let state = ownerGates.get(groupId)
+    if (state === undefined) {
+      state = newGateState()
+      ownerGates.set(groupId, state)
     }
     return state
   }
@@ -170,7 +203,23 @@ export function createRouter(deps: RouterDeps): Router {
       ? { kind: 'private', userId: input.senderId }
       : { kind: 'group', groupId: input.group.id, userId: input.senderId }
     const steerable = agent.status === 'running' && canSteer(source)
-    if (deliveryTier(input.kind, steerable) === 'steer') agent.steer(message)
+    const tier = deliveryTier(input.kind, steerable)
+    // 唤醒留痕（stdout 才落 app.log）：「为什么没回」先确认这一行有没有出现。
+    console.log(
+      `[onebot] 唤醒 kind=${input.kind} `
+      + `${input.group === null ? `私聊=u${input.senderId}` : `群=${input.group.id}`} `
+      + `sender=${input.senderId || '-'} → ${tier}`,
+    )
+    // 触发类唤醒应当出话；回合结束时（settleTurn）核对是否真的调用过出话工具。
+    if (input.kind !== 'plain' && input.kind !== 'owner') {
+      pendingTrigger = {
+        kind: input.kind,
+        target: input.group === null ? `u${input.senderId}` : `g${input.group.id}`,
+        tier,
+        at: Date.now(),
+      }
+    }
+    if (tier === 'steer') agent.steer(message)
     else agent.followup(message)
   }
 
@@ -183,26 +232,40 @@ export function createRouter(deps: RouterDeps): Router {
 
     const segments = toSegments(event.message)
     const text = segmentsToText(segments)
+    const senderId = String(event.user_id)
+    const name = senderName(event.sender)
     const atMe = atsUser(segments, event.self_id)
     const ourIds = sentIds.get(groupId)
     const quotedMe = ourIds !== undefined && [...ourIds].some((id) => repliesTo(segments, id))
     const alias = mentionsAlias(text, cfg.aliases)
-    const kind: WakeKind = atMe ? 'at' : quotedMe ? 'quoted' : alias !== undefined ? 'mention' : 'plain'
+    // 档位优先级：@ > 引用我方 > 别名提及 > 主人普通发言 > 普通群聊
+    let kind: WakeKind
+    if (atMe) kind = 'at'
+    else if (quotedMe) kind = 'quoted'
+    else if (alias !== undefined) kind = 'mention'
+    else if (cfg.ownerIds.includes(senderId)) kind = 'owner'
+    else kind = 'plain'
 
     appendMessage(groupBufferPath(groupId), {
       time: timeOf(event.time),
-      userId: String(event.user_id),
-      name: senderName(event.sender),
+      userId: senderId,
+      name,
       text,
       messageId: event.message_id,
       atMe,
     } satisfies BufferedMessage)
 
-    if (kind === 'plain') {
-      schedulePlain(groupId)
+    if (kind === 'plain' || kind === 'owner') {
+      scheduleOpportunity(groupId, kind === 'owner'
+        ? { kind, senderId, senderName: name, text, messageId: event.message_id, segments }
+        : { kind, senderId: '', senderName: '', text: '', messageId: 0, segments: null })
       return
     }
-    if (!evaluateTrigger({ kind, windowCount: 0 }, cfg, Math.random()).fire) return
+    if (!evaluateTrigger({ kind, windowCount: 0 }, cfg, Math.random()).fire) {
+      // @/私聊必回，抽样未中只会出现在 mention/quoted 档
+      console.log(`[onebot] 采样未中 kind=${kind} 群=${groupId}`)
+      return
+    }
 
     const anchor: TriggerAnchor = { groupId, messageId: event.message_id, at: Date.now() }
     anchors.set(groupId, anchor)
@@ -210,8 +273,8 @@ export function createRouter(deps: RouterDeps): Router {
     await wake({
       kind,
       group: { id: groupId, name: await groupNameOf(groupId) },
-      senderId: String(event.user_id),
-      senderName: senderName(event.sender),
+      senderId,
+      senderName: name,
       text,
       hasTrigger: true,
       messageId: event.message_id,
@@ -250,32 +313,47 @@ export function createRouter(deps: RouterDeps): Router {
     })
   }
 
-  /** 普通消息不即时判定：等话头停顿（debounce）再评估门控与抽样。 */
-  function schedulePlain(groupId: string): void {
-    const existing = plainTimers.get(groupId)
+  /** 普通/主人消息不即时判定：等话头停顿（debounce）再按最后一条消息的档位评估。 */
+  function scheduleOpportunity(groupId: string, candidate: Opportunity): void {
+    pendingOpportunity.set(groupId, candidate)
+    const existing = opportunityTimers.get(groupId)
     if (existing !== undefined) clearTimeout(existing)
-    plainTimers.set(groupId, setTimeout(() => {
-      plainTimers.delete(groupId)
-      void evaluatePlain(groupId)
+    opportunityTimers.set(groupId, setTimeout(() => {
+      opportunityTimers.delete(groupId)
+      void evaluateOpportunity(groupId)
     }, PLAIN_DEBOUNCE_MS))
   }
 
-  async function evaluatePlain(groupId: string): Promise<void> {
-    if (!evaluateGate(gateOf(groupId), cfg, Date.now()).open) return
-    if (Math.random() >= plainRateForHour(cfg.rate.plain, new Date())) return
-    awaiting = { groupId, spoke: false }
-    // 无触发消息的锚点：让本轮 send_qq_group 缺省落到这个群（不引用）
-    lastAnchor = { groupId, messageId: 0, at: Date.now() }
+  async function evaluateOpportunity(groupId: string): Promise<void> {
+    const candidate = pendingOpportunity.get(groupId)
+    pendingOpportunity.delete(groupId)
+    if (candidate === undefined) return
+    const owner = candidate.kind === 'owner'
+    const gate = owner ? ownerGateOf(groupId) : gateOf(groupId)
+    const cooldown = owner ? cfg.ownerCooldownMinutes : cfg.cooldownMinutes
+    const decision = evaluateGate(gate, cooldown, Date.now())
+    if (!decision.open) {
+      console.log(`[onebot] 机会档未唤醒 kind=${candidate.kind} 群=${groupId} 原因=${decision.reason ?? 'gate'}`)
+      return
+    }
+    const rate = opportunityRate(candidate.kind, cfg, new Date())
+    if (Math.random() >= rate) {
+      console.log(`[onebot] 机会档抽样未中 kind=${candidate.kind} 群=${groupId} 概率=${rate}`)
+      return
+    }
+    awaiting = { groupId, kind: candidate.kind, spoke: false }
+    // 锚点：主人档引用那条消息；普通档缺省落到本群（不引用）
+    lastAnchor = { groupId, messageId: candidate.messageId, at: Date.now() }
     await wake({
-      kind: 'plain',
+      kind: candidate.kind,
       group: { id: groupId, name: await groupNameOf(groupId) },
-      senderId: '',
-      senderName: '',
-      text: '',
-      hasTrigger: false,
-      messageId: 0,
+      senderId: candidate.senderId,
+      senderName: candidate.senderName,
+      text: candidate.text,
+      hasTrigger: owner,
+      messageId: candidate.messageId,
       bufferFile: groupBufferPath(groupId),
-      segments: null,
+      segments: candidate.segments,
     })
   }
 
@@ -283,11 +361,28 @@ export function createRouter(deps: RouterDeps): Router {
     handleGroup,
     handlePrivate,
     noteSpoke: () => {
+      lastSpokeAt = Date.now()
       if (awaiting !== undefined) awaiting.spoke = true
     },
-    settleTurn: () => {
+    settleTurn: (source) => {
+      const target = source === undefined
+        ? undefined
+        : source.kind === 'group' ? `g${source.groupId}` : `u${source.userId}`
+      if (pendingTrigger !== undefined && target !== undefined && pendingTrigger.target === target) {
+        const trigger = pendingTrigger
+        pendingTrigger = undefined
+        // 触发类回合（@/提及/引用/私聊）没调用出话工具：只在桌面端说了话，QQ 里无声
+        if (lastSpokeAt < trigger.at) {
+          console.log(
+            `[onebot] 回合结束未见出话 kind=${trigger.kind} ${trigger.target} 投递=${trigger.tier}`,
+          )
+        }
+      }
       if (awaiting === undefined) return
-      recordTurnOutcome(gateOf(awaiting.groupId), awaiting.spoke, Date.now())
+      // 机会档只属于群；来源对不上（别的群/私聊/桌面回合）不结算，避免记错账
+      if (target !== `g${awaiting.groupId}`) return
+      const gate = awaiting.kind === 'owner' ? ownerGateOf(awaiting.groupId) : gateOf(awaiting.groupId)
+      recordTurnOutcome(gate, awaiting.spoke, Date.now())
       awaiting = undefined
     },
     anchor: (groupId) => {
@@ -307,11 +402,14 @@ export function createRouter(deps: RouterDeps): Router {
       }
       ids.add(messageId)
       if (awaiting !== undefined) awaiting.spoke = true
+      // 本群刚发过言：普通档冷却从现在重计，避免紧接着又被群聊唤醒
+      gateOf(groupId).lastFireAt = Date.now()
     },
     groupName: groupNameOf,
     clearTimers: () => {
-      for (const timer of plainTimers.values()) clearTimeout(timer)
-      plainTimers.clear()
+      for (const timer of opportunityTimers.values()) clearTimeout(timer)
+      opportunityTimers.clear()
+      pendingOpportunity.clear()
     },
   }
 }

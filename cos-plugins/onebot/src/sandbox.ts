@@ -5,7 +5,8 @@
 //  1) 可见性：system-prompt/assemble 时过滤 assembly.tools（模型看不到）
 //  2) 执行：tools/pre-execute 时否决（提示注入点名调用也调不动）
 //  3) 路径：read/ls/find/grep 四个只读工具「受限可见」，目标路径必须落在
-//     fs-jail.ts 的囚笼内（基线扣会话记录与敏感落盘；主人私聊近乎全开）
+//     fs-jail.ts 的囚笼内（基线扣会话记录与敏感落盘；主人私聊近乎全开）；
+//     append_note 是唯一写入口，只能追加当前来源自己的笔记作用域（notes.ts）。
 // 混合批次保守：一批认领消息里混有 OneBot 消息 → 整回合按受限处理。
 //
 // 硬禁清单独立于 allowedTools：即使有人把 sh / write / web_read 填进配置，
@@ -78,7 +79,8 @@ export class TurnSandbox {
 export const FORBIDDEN_TOOLS: ReadonlySet<string> = new Set([
   // 任意 URL 抓取（web_search / web_explore 已覆盖联网需求）
   'web_read',
-  // 本地文件写入与 shell（只读四件套 read/ls/find/grep 走 fs-jail.ts 囚笼）
+  // 本地文件写入与 shell（只读四件套 read/ls/find/grep 走 fs-jail.ts 囚笼；
+  // 唯一的写入例外是 append_note，它只追加自己的笔记作用域）
   'write', 'edit', 'multi_edit', 'sh',
   // 屏幕
   'screenshot', 'list_displays',
@@ -168,6 +170,11 @@ export function allowedToolNamesForSource(
   return [...new Set([...base, ...OWNER_TOOLS])]
 }
 
+/** 工具条目的名字（cos/DSH 两种 schema 形状）。 */
+export function toolNameOf<T extends { name?: string; function?: { name?: string } }>(tool: T): string {
+  return tool.name ?? tool.function?.name ?? ''
+}
+
 /** 可见性过滤（保持原顺序）；非受限回合原样返回。 */
 export function filterToolsForTurn<T extends { name?: string; function?: { name?: string } }>(
   tools: readonly T[],
@@ -176,10 +183,7 @@ export function filterToolsForTurn<T extends { name?: string; function?: { name?
 ): T[] {
   if (!active) return [...tools]
   const allow = new Set(allowed)
-  return tools.filter((tool) => {
-    const name = tool.name ?? tool.function?.name ?? ''
-    return allow.has(name)
-  })
+  return tools.filter((tool) => allow.has(toolNameOf(tool)))
 }
 
 /** 执行否决：受限回合里不在名单的工具给出拒因；放行返回 undefined。 */

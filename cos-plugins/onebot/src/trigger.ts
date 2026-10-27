@@ -1,12 +1,13 @@
 // @diver/onebot — 触发策略（纯函数 + 无 IO 状态机）。
 //
-// 档位（调研拍板，见方案）：被 @ 与私聊必回；提及/引用按概率；普通群消息
-// 概率最低且过「冷却 + 沉默退避」门控。门控状态按群隔离。
+// 档位（调研拍板，见方案）：被 @ 与私聊必回；提及/引用按概率；主人普通
+// 发言按独立概率 + 独立短冷却；普通群消息概率最低且过「冷却 + 沉默退避」
+// 门控。门控状态按群隔离。
 
 import type { ResolvedConfig } from './config.ts'
 import { BACKOFF_BASE_MS, BACKOFF_BYPASS_COUNT, BACKOFF_CAP_MS, BACKOFF_START_STREAK } from './config.ts'
 
-export type TriggerKind = 'at' | 'mention' | 'quoted' | 'plain' | 'private'
+export type TriggerKind = 'at' | 'mention' | 'quoted' | 'owner' | 'plain' | 'private'
 
 /** 单条群消息的触发判据（index.ts 组装，evaluate 消费）。 */
 export interface TriggerInput {
@@ -22,13 +23,17 @@ export interface TriggerOutcome {
 }
 
 /**
- * 档位判定：at/private 必回；mention/quoted/plain 抽样。
+ * 档位判定：at/private 必回；mention/quoted/owner/plain 抽样。
  * roll 由调用方注入（可测）；返回 0~1。
  */
 export function evaluateTrigger(input: TriggerInput, cfg: ResolvedConfig, roll: number): TriggerOutcome {
   const { kind } = input
   if (kind === 'at' || kind === 'private') return { fire: true, kind }
-  const rate = kind === 'mention' ? cfg.rate.mention : kind === 'quoted' ? cfg.rate.quoted : cfg.rate.plain
+  const rate =
+    kind === 'mention' ? cfg.rate.mention
+      : kind === 'quoted' ? cfg.rate.quoted
+        : kind === 'owner' ? cfg.rate.ownerPlain
+          : cfg.rate.plain
   if (roll < rate) return { fire: true, kind }
   return { fire: false, kind }
 }
@@ -41,18 +46,19 @@ export type DeliveryTier = 'followup' | 'steer'
 /**
  * 投递档位判定：steerable（忙 + 来源域一致，见 canSteerInto）时触发类
  * （at/mention/quoted/private）插话——消息在下一个 step 边界被认领进当前
- * 回合，模型可当场以 send_qq_* 工具回复，不必等整个回合跑完。plain 档、
- * 空闲态与跨来源一律 next-turn：机会性插话不挤占忙回合，跨来源合批会
+ * 回合，模型可当场以 send_qq_* 工具回复，不必等整个回合跑完。plain/owner
+ * 档、空闲态与跨来源一律 next-turn：机会性插话不挤占忙回合，跨来源合批会
  * 破坏「一回合一个来源」的沙箱/记忆作用域前提。
  */
 export function deliveryTier(kind: TriggerKind, steerable: boolean): DeliveryTier {
-  return steerable && kind !== 'plain' ? 'steer' : 'followup'
+  if (!steerable) return 'followup'
+  return kind === 'plain' || kind === 'owner' ? 'followup' : 'steer'
 }
 
-// ---- 普通档门控状态（每群一份） ----
+// ---- 机会档门控状态（每群一份；plain 与 owner 各持一份） ----
 
 export interface GateState {
-  /** 上次主动插话（fire）时刻，毫秒；0 = 从未。 */
+  /** 上次机会消费时刻（门控放行，或本群刚发过言），毫秒；0 = 从未。 */
   lastFireAt: number
   /** 连续「门开但模型沉默」次数（turn 结束无发言）。 */
   silentStreak: number
@@ -74,12 +80,13 @@ export interface GateDecision {
 }
 
 /**
- * 冷却 + 退避门控（只约束 plain 档）。退避等待期攒够新消息可提前重估；
- * 通过门控即记 lastFireAt（抽样失败也重记：本轮机会已用掉，防连发）。
+ * 冷却 + 退避门控（约束机会档：plain 与 owner 各持一份状态，冷却时长由
+ * 调用方给）。退避等待期攒够新消息可提前重估；通过门控即记 lastFireAt
+ * （抽样失败也重记：本轮机会已用掉，防连发）。
  */
-export function evaluateGate(state: GateState, cfg: ResolvedConfig, now: number): GateDecision {
+export function evaluateGate(state: GateState, cooldownMinutes: number, now: number): GateDecision {
   if (state.lastFireAt > 0) {
-    const cooldownMs = cfg.cooldownMinutes * 60_000
+    const cooldownMs = cooldownMinutes * 60_000
     if (now - state.lastFireAt < cooldownMs) return { open: false, reason: 'cooldown' }
   }
   if (now < state.backoffUntil) {
@@ -125,6 +132,14 @@ export function recordTurnOutcome(state: GateState, spoke: boolean, now: number)
 export function plainRateForHour(rate: number, date: Date): number {
   const hour = date.getHours()
   return hour < 9 ? rate * 0.8 : rate
+}
+
+/**
+ * 机会档（plain / owner）的抽样概率。深夜降档只作用于普通档：主人凌晨
+ * 还在群里说话，多半确实是在找它，不做衰减。
+ */
+export function opportunityRate(kind: 'plain' | 'owner', cfg: ResolvedConfig, now: Date): number {
+  return kind === 'owner' ? cfg.rate.ownerPlain : plainRateForHour(cfg.rate.plain, now)
 }
 
 // ---- 私聊唤醒限频（每用户一份） ----

@@ -11,11 +11,19 @@ import {
   newGateState,
   newPrivateGate,
   nextBackoffMs,
+  opportunityRate,
   plainRateForHour,
   recordTurnOutcome,
 } from './trigger.ts'
 
-const cfg = resolveConfig({ rateMention: 0.9, rateQuoted: 0.8, ratePlain: 0.05, cooldownMinutes: 15 })
+const cfg = resolveConfig({
+  rateMention: 0.9,
+  rateQuoted: 0.8,
+  ratePlain: 0.05,
+  rateOwnerPlain: 0.3,
+  cooldownMinutes: 15,
+  ownerCooldownMinutes: 5,
+})
 
 test('被 @ 与私聊必回，不吃抽样', () => {
   assert.equal(evaluateTrigger({ kind: 'at', windowCount: 0 }, cfg, 0.999).fire, true)
@@ -30,13 +38,34 @@ test('提及/引用/普通按概率抽样', () => {
   assert.equal(evaluateTrigger({ kind: 'plain', windowCount: 0 }, cfg, 0.5).fire, false)
 })
 
+test('主人普通档按独立概率抽样，深夜不降档', () => {
+  assert.equal(evaluateTrigger({ kind: 'owner', windowCount: 0 }, cfg, 0.29).fire, true)
+  assert.equal(evaluateTrigger({ kind: 'owner', windowCount: 0 }, cfg, 0.31).fire, false)
+  const night = new Date(2026, 0, 1, 3, 0)
+  assert.equal(opportunityRate('owner', cfg, night), 0.3)
+  assert.equal(opportunityRate('plain', cfg, night), 0.05 * 0.8)
+})
+
 test('冷却：15 分钟内第二次普通档被拒', () => {
   const state = newGateState()
   const t0 = 1_000_000
-  assert.equal(evaluateGate(state, cfg, t0).open, true)
-  assert.deepEqual(evaluateGate(state, cfg, t0 + 60_000), { open: false, reason: 'cooldown' })
+  assert.equal(evaluateGate(state, cfg.cooldownMinutes, t0).open, true)
+  assert.deepEqual(evaluateGate(state, cfg.cooldownMinutes, t0 + 60_000), { open: false, reason: 'cooldown' })
   // 冷却结束放行
-  assert.equal(evaluateGate(state, cfg, t0 + 15 * 60_000).open, true)
+  assert.equal(evaluateGate(state, cfg.cooldownMinutes, t0 + 15 * 60_000).open, true)
+})
+
+test('主人档独立冷却：5 分钟窗口到期即可再评估，与普通档互不占用', () => {
+  const plain = newGateState()
+  const owner = newGateState()
+  const t0 = 5_000_000
+  assert.equal(evaluateGate(plain, cfg.cooldownMinutes, t0).open, true)
+  assert.equal(evaluateGate(owner, cfg.ownerCooldownMinutes, t0).open, true)
+  assert.deepEqual(evaluateGate(owner, cfg.ownerCooldownMinutes, t0 + 60_000), { open: false, reason: 'cooldown' })
+  assert.deepEqual(evaluateGate(plain, cfg.cooldownMinutes, t0 + 60_000), { open: false, reason: 'cooldown' })
+  // 主人档 5 分钟放行，普通档仍在 15 分钟窗内
+  assert.equal(evaluateGate(owner, cfg.ownerCooldownMinutes, t0 + 5 * 60_000).open, true)
+  assert.equal(evaluateGate(plain, cfg.cooldownMinutes, t0 + 5 * 60_000).open, false)
 })
 
 test('退避：连续沉默 2 次后 15s 起指数拉长，300s 封顶', () => {
@@ -68,9 +97,9 @@ test('退避等待期：未攒够 6 条继续拒，攒够提前重估', () => {
   state.backoffUntil = t0 + 300_000
   // 前 5 条：继续退避（第 6 条才满足提前重估门槛）
   for (let i = 0; i < 5; i += 1) {
-    assert.deepEqual(evaluateGate(state, cfg, t0), { open: false, reason: 'backoff' })
+    assert.deepEqual(evaluateGate(state, cfg.cooldownMinutes, t0), { open: false, reason: 'backoff' })
   }
-  assert.equal(evaluateGate(state, cfg, t0).open, true)
+  assert.equal(evaluateGate(state, cfg.cooldownMinutes, t0).open, true)
 })
 
 test('深夜降档：9 点前概率 ×0.8，白天原样', () => {
@@ -93,12 +122,13 @@ test('私聊限频：窗口内超额静默，窗口滚动恢复，0 不限制', 
   }
 })
 
-test('投递档位：可插话（忙且来源域一致）时触发类 steer，plain 与其余一律 followup', () => {
+test('投递档位：可插话（忙且来源域一致）时触发类 steer，plain/owner 与其余一律 followup', () => {
   for (const kind of ['at', 'mention', 'quoted', 'private'] as const) {
     assert.equal(deliveryTier(kind, true), 'steer')
   }
   assert.equal(deliveryTier('plain', true), 'followup')
-  for (const kind of ['at', 'mention', 'quoted', 'plain', 'private'] as const) {
+  assert.equal(deliveryTier('owner', true), 'followup')
+  for (const kind of ['at', 'mention', 'quoted', 'owner', 'plain', 'private'] as const) {
     assert.equal(deliveryTier(kind, false), 'followup')
   }
 })

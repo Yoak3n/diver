@@ -10,7 +10,8 @@
     "./fsio": "./src/fsio.ts"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test src/grep.test.ts src/find.test.ts"
   },
   "dependencies": {
     "@cos/plugin-api": "workspace:*",

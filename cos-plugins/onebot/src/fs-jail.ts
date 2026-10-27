@@ -3,10 +3,12 @@
 // 层级见 sandbox.ts：write/edit/sh 等仍整类硬禁；本模块只管「受限可见」的四个
 // 只读工具——QQ 回合可见，但目标路径必须落在囚笼内：
 //  - 基线（群聊 / 普通私聊）：COS_HOME 全域（含 workspace 与 profiles 插件源码），
-//    扣除会话记录目录与敏感落盘（群发言账 / 设置 / 实例绑定）；
+//    扣除会话记录、笔记根（只豁免当前来源自己的 scope）与敏感落盘；
 //  - 主人私聊：COS_HOME 全域，仅扣明文凭据（secrets.*；凭据与聊天隐私不同量级）。
 // 判定用 realpath containment：`..` 与符号链接逃逸都会被解析后再比对。
 // 路径解析复用 @diver/basic-tools 的 resolveLocalTarget，与工具本体同一语义。
+// grep/find 是递归的：起点若在受保护路径的祖先上，会把受保护内容一起扫出来，
+// 因此额外拒绝这类起点（allowedSubtrees 内的自身笔记 scope 除外）。
 
 import { basename, join, sep } from 'node:path'
 
@@ -24,6 +26,12 @@ export const FS_SCOPED_PATH_FIELDS: Readonly<Record<string, string>> = {
   grep: 'path',
 }
 
+/**
+ * 递归读取内容的工具：起点若是受保护路径的祖先，会把受保护内容一并扫出来
+ * （grep 读内容、find 列路径）。这类工具只允许从受保护路径之外的子树起步。
+ */
+export const FS_RECURSIVE_TOOLS: ReadonlySet<string> = new Set(['grep', 'find'])
+
 /** 任何层级都按文件名拒绝：明文凭据（相对 sidecar cwd 或 COS_SECRETS_FILE 落盘，位置可变，按名堵）。 */
 const DENIED_NAMES_ALWAYS: ReadonlySet<string> = new Set(['secrets.yml', 'secrets.yaml'])
 
@@ -37,13 +45,29 @@ const DENIED_NAMES_BASELINE: ReadonlySet<string> = new Set([
 /** 基线额外拒绝的 COS_HOME 子树：会话记录（跨群/跨作用域聊天历史）。 */
 const BASELINE_DENIED_SUBTREES = ['sessions'] as const
 
+/** 任意层级都拒绝的敏感落盘文件名（凭据/记录/配置）。 */
+export function isDeniedFileName(name: string): boolean {
+  return DENIED_NAMES_ALWAYS.has(name) || DENIED_NAMES_BASELINE.has(name)
+}
+
 export interface FsPolicy {
   /** 允许根（realpath；COS_HOME + 配置额外根，如 dev 期的插件源码 repo）。 */
   roots: readonly string[]
   /** 拒绝子树（绝对路径，锚定在 COS_HOME 根）。 */
   deniedSubtrees: readonly string[]
+  /** 从 deniedSubtrees 中挖出的例外（当前回合自己的笔记作用域）。 */
+  allowedSubtrees: readonly string[]
   /** 按文件名拒绝（任意层级）。 */
   deniedNames: ReadonlySet<string>
+  /** 拒绝名称的已知落盘位置：递归工具不能从它们的祖先起步。 */
+  protectedPaths: readonly string[]
+}
+
+export interface FsPolicyOptions {
+  /** 追加拒绝子树（如笔记根）。 */
+  extraDeniedSubtrees?: readonly string[]
+  /** 从拒绝子树中挖出的例外（当前回合自己的笔记作用域）。 */
+  allowedSubtrees?: readonly string[]
 }
 
 /** 构建囚笼策略；ownerPrivate = 主人私聊回合（见 sandbox.isOwnerSource + kind==='private'）。 */
@@ -51,32 +75,57 @@ export function buildFsPolicy(
   cosHome: string,
   extraRoots: readonly string[],
   ownerPrivate: boolean,
+  options: FsPolicyOptions = {},
 ): FsPolicy {
+  const deniedNames = ownerPrivate
+    ? DENIED_NAMES_ALWAYS
+    : new Set([...DENIED_NAMES_ALWAYS, ...DENIED_NAMES_BASELINE])
   return {
     roots: [cosHome, ...extraRoots],
-    deniedSubtrees: ownerPrivate
-      ? []
-      : BASELINE_DENIED_SUBTREES.map((name) => join(cosHome, name)),
-    deniedNames: ownerPrivate
-      ? DENIED_NAMES_ALWAYS
-      : new Set([...DENIED_NAMES_ALWAYS, ...DENIED_NAMES_BASELINE]),
+    deniedSubtrees: [
+      ...(ownerPrivate ? [] : BASELINE_DENIED_SUBTREES.map((name) => join(cosHome, name))),
+      ...(options.extraDeniedSubtrees ?? []),
+    ],
+    allowedSubtrees: options.allowedSubtrees ?? [],
+    deniedNames,
+    // 默认布局下 secrets / 群发言账 / 设置 / 实例绑定都在 COS_HOME 根；
+    // 递归工具从 COS_HOME 起步时会经过这些文件，起点判定据此拒绝。
+    protectedPaths: [...deniedNames].map((name) => join(cosHome, name)),
   }
 }
 
-function isWithin(path: string, root: string): boolean {
+/** 路径是 root 本身或其后代。 */
+export function isWithin(path: string, root: string): boolean {
   return path === root || path.startsWith(root + sep)
 }
 
 /** 囚笼判定：放行返回 undefined，否则返回模型可见拒因。realPath 必须是解析后的身份键。 */
-export function fsVetoReason(displayPath: string, realPath: string, policy: FsPolicy): string | undefined {
+export function fsVetoReason(
+  displayPath: string,
+  realPath: string,
+  policy: FsPolicy,
+  recursive = false,
+): string | undefined {
   if (!policy.roots.some((root) => isWithin(realPath, root))) {
     return `当前回合来自外部聊天（OneBot），文件访问仅限 ${policy.roots.join('、')} 之内："${displayPath}" 越界。`
   }
-  if (policy.deniedSubtrees.some((subtree) => isWithin(realPath, subtree))) {
-    return `会话记录目录在 OneBot 回合不可读："${displayPath}"。`
-  }
   if (policy.deniedNames.has(basename(realPath))) {
     return `"${basename(realPath)}" 是敏感落盘文件（凭据/记录/配置），OneBot 回合不可读。`
+  }
+  const allowed = policy.allowedSubtrees.some((subtree) => isWithin(realPath, subtree))
+  if (!allowed && policy.deniedSubtrees.some((subtree) => isWithin(realPath, subtree))) {
+    return `"${displayPath}" 位于 OneBot 回合不可读的目录（会话记录/其他来源的笔记）。`
+  }
+  if (recursive) {
+    // 起点是受保护路径的祖先 → 递归会把受保护内容一起读出来。例外（如当前
+    // 笔记作用域）若整体位于该受保护路径内，则不算越界。
+    const carvedOut = (target: string): boolean =>
+      policy.allowedSubtrees.some((subtree) => isWithin(subtree, target) && isWithin(realPath, subtree))
+    const blocksAncestor = [...policy.deniedSubtrees, ...policy.protectedPaths]
+      .some((target) => isWithin(target, realPath) && !carvedOut(target))
+    if (blocksAncestor) {
+      return `递归搜索不能从受保护路径的上级开始："${displayPath}" 会扫到不可读内容，请把 path 收窄到具体子目录或文件。`
+    }
   }
   return undefined
 }
@@ -109,7 +158,12 @@ export async function fsCheckCall(
   if (raw === undefined) return undefined
   try {
     const target = await resolveLocalTarget(relativeBase, raw ?? '.')
-    return fsVetoReason(target.displayPath, target.targetKey, policy)
+    return fsVetoReason(
+      target.displayPath,
+      target.targetKey,
+      policy,
+      FS_RECURSIVE_TOOLS.has(toolName),
+    )
   } catch {
     // 解析失败（空路径/父级非目录等）交给工具本体报错，囚笼不抢答。
     return undefined

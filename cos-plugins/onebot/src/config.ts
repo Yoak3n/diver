@@ -5,8 +5,9 @@
 // - 未配置 wsUrl → 插件休眠（不连接、不注册任何工具）
 // - groups 空 → 不监听任何群（私聊不受此限）
 // - OneBot 回合工具白名单基座固定（出话 + 联网检索 + 作用域记忆 + 只读文件
-//   四件套），allowedTools 只做增量；写入/shell 等本机控制类工具由 sandbox.ts
-//   硬性禁止，只读四件套的目标路径由 fs-jail.ts 囚笼约束
+//   四件套 + 自己的笔记追加），allowedTools 只做增量；写入/shell 等本机控制类
+//   工具由 sandbox.ts 硬性禁止，只读四件套的目标路径由 fs-jail.ts 囚笼约束，
+//   笔记写入由 notes.ts 的作用域/容量规则约束
 
 import type { PluginConfigDecl } from '@cos/plugin-api'
 import { isAbsolute } from 'node:path'
@@ -17,7 +18,7 @@ import type { VoiceMode } from './voice.ts'
 export interface Config {
   wsUrl?: string
   token?: string
-  /** 主人 QQ 号，逗号分隔；只用于提示词与记忆作用域，不开放本机工具。 */
+  /** 主人 QQ 号，逗号分隔；用于提示词、记忆作用域、触发档位与文件囚笼层级。 */
   ownerIds?: string
   /** 群白名单，逗号分隔群号；空 = 不监听任何群。 */
   groups?: string
@@ -32,8 +33,12 @@ export interface Config {
   rateQuoted?: number
   /** 普通群消息主动插话概率。 */
   ratePlain?: number
+  /** 主人在群里未 @/提及/引用时的回应概率（独立于普通档）。 */
+  rateOwnerPlain?: number
   /** 每群主动插话冷却（分钟；被 @ / 提及 / 引用不受限）。 */
   cooldownMinutes?: number
+  /** 主人普通档的独立冷却（分钟；与普通档互不占用）。 */
+  ownerCooldownMinutes?: number
   /** 私聊每用户每小时唤醒上限（0 = 不限制）；超额只记缓冲不回应。 */
   privateMaxPerHour?: number
   /** OneBot 回合在固定基座之上放行的工具名，逗号分隔；硬禁工具会被忽略。 */
@@ -67,8 +72,9 @@ export interface ResolvedConfig {
   groups: string[]
   aliases: string[]
   context: { maxMessages: number; maxAgeMinutes: number; maxChars: number }
-  rate: { mention: number; quoted: number; plain: number }
+  rate: { mention: number; quoted: number; plain: number; ownerPlain: number }
   cooldownMinutes: number
+  ownerCooldownMinutes: number
   privateMaxPerHour: number
   sandbox: { allowedTools: string[]; fsExtraRoots: string[] }
   privacy: { maskTerms: string[]; extraPatterns: string[] }
@@ -85,7 +91,8 @@ export interface ResolvedConfig {
 
 /**
  * OneBot 回合的固定基座（见 sandbox.ts）：
- * 出话三件套 + 受控联网 + 作用域记忆 + 只读文件四件套（路径囚笼见 fs-jail.ts）。
+ * 出话三件套 + 受控联网 + 作用域记忆 + 只读文件四件套（路径囚笼见 fs-jail.ts）
+ * + 自己的笔记追加（作用域/容量见 notes.ts）。
  */
 export const BASELINE_TOOLS = [
   'send_qq_group',
@@ -101,6 +108,8 @@ export const BASELINE_TOOLS = [
   'ls',
   'find',
   'grep',
+  // 唯一写入口：只能往当前来源自己的笔记作用域追加，不能覆盖/删除。
+  'append_note',
 ] as const
 
 /** 普通消息唤醒后的群聊静默窗（毫秒）：等话头停了再评估，不打断进行中对话。 */
@@ -156,8 +165,10 @@ export function resolveConfig(config: Config = {}): ResolvedConfig {
       mention: num(config.rateMention, 0.9, 0, 1),
       quoted: num(config.rateQuoted, 0.8, 0, 1),
       plain: num(config.ratePlain, 0.05, 0, 1),
+      ownerPlain: num(config.rateOwnerPlain, 0.3, 0, 1),
     },
     cooldownMinutes: num(config.cooldownMinutes, 15, 0, 720),
+    ownerCooldownMinutes: num(config.ownerCooldownMinutes, 5, 0, 720),
     privateMaxPerHour: Math.round(num(config.privateMaxPerHour, 30, 0, 600)),
     sandbox: {
       allowedTools: splitList(config.allowedTools, ','),
@@ -203,7 +214,7 @@ export const configDecl: PluginConfigDecl = {
       label: '主人 QQ 号',
       type: 'text',
       section: '身份与监听',
-      description: '逗号分隔；用于提示词、记忆作用域与文件囚笼层级（主人私聊近全开，群内仍走基线）',
+      description: '逗号分隔；用于提示词、记忆作用域、触发档位与文件囚笼层级（主人私聊近全开，群内仍走基线）',
     },
     { key: 'groups', label: '监听的群', type: 'text', section: '身份与监听', description: '逗号分隔群号；空 = 不监听任何群' },
     { key: 'aliases', label: '昵称/别名', type: 'text', section: '身份与监听', description: '逗号分隔；群消息提到即高概率回应' },
@@ -220,7 +231,23 @@ export const configDecl: PluginConfigDecl = {
       default: 0.05,
       description: '普通群消息经冷却/退避门控后的抽样概率',
     },
+    {
+      key: 'rateOwnerPlain',
+      label: '主人发言回应概率',
+      type: 'number',
+      section: '触发与节流',
+      default: 0.3,
+      description: '主人在群里未 @/提及/引用你时的抽样概率；独立于普通群消息，另有独立冷却',
+    },
     { key: 'cooldownMinutes', label: '插话冷却（分钟）', type: 'number', section: '触发与节流', default: 15 },
+    {
+      key: 'ownerCooldownMinutes',
+      label: '主人发言冷却（分钟）',
+      type: 'number',
+      section: '触发与节流',
+      default: 5,
+      description: '主人普通档两次评估的最小间隔；与普通档冷却分开计，不会被群聊冷却压住',
+    },
     {
       key: 'privateMaxPerHour',
       label: '私聊唤醒上限（次/小时）',
@@ -234,7 +261,7 @@ export const configDecl: PluginConfigDecl = {
       label: 'OneBot 回合额外放行工具',
       type: 'text',
       section: '工具与文件',
-      description: '逗号分隔工具名；基座（出话/联网/记忆/只读文件）之外的白名单。写入/编辑、shell、截图、委派、MCP、web_read 等硬禁名称会被忽略',
+      description: '逗号分隔工具名；基座（出话/联网/记忆/只读文件/笔记追加）之外的白名单。写入/编辑、shell、截图、委派、MCP、web_read 等硬禁名称会被忽略',
     },
     {
       key: 'fsExtraRoots',

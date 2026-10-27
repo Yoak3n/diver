@@ -56,7 +56,7 @@ export function renderWindow(messages: readonly BufferedMessage[]): string {
 }
 
 /** 唤醒档位 → 首行章的触发描述。 */
-export type WakeKind = 'at' | 'mention' | 'quoted' | 'plain' | 'private'
+export type WakeKind = 'at' | 'mention' | 'quoted' | 'owner' | 'plain' | 'private'
 
 export interface WakeInput {
   kind: WakeKind
@@ -81,6 +81,8 @@ function kindLabel(kind: WakeKind): string {
       return '引用了你的消息'
     case 'private':
       return '私聊'
+    case 'owner':
+      return '说了话'
     case 'plain':
       return '正在聊天'
   }
@@ -89,6 +91,9 @@ function kindLabel(kind: WakeKind): string {
 function closingLine(kind: WakeKind): string {
   if (kind === 'private') {
     return '请直接回应这条私聊（调用 send_qq_private）——私聊不必沉默，如实回应即可。'
+  }
+  if (kind === 'owner') {
+    return '主人在群里说话：与你有关或像是在对你说，就调用 send_qq_group 回应；否则调用 stay_silent 结束回合，不必强行接话。'
   }
   if (kind === 'plain') {
     return '群里在聊天，你可以插一句想说的（调用 send_qq_group），也可以调用 stay_silent 不发言后直接结束回合——不必每条都回。'

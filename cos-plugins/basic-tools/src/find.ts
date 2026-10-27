@@ -1,7 +1,7 @@
 // @diver/basic-tools — find 工具：按 glob 找文件（对标 pi find.ts）。
 // 纯 Node 递归遍历，不依赖 fd；忽略 node_modules/.git；相对路径 posix 输出。
 
-import { readdir, stat } from 'node:fs/promises'
+import { readdir, lstat } from 'node:fs/promises'
 import { join, relative, sep } from 'node:path'
 import type { Context } from 'cordis'
 
@@ -88,7 +88,9 @@ export async function walkGlob(
       const full = join(dir, name)
       let info
       try {
-        info = await stat(full)
+        // lstat：不跟随符号链接。否则一条指向根外的链接目录就能把遍历带出
+        // 调用方的路径边界（find 自身不做 containment 判定）。
+        info = await lstat(full)
       } catch {
         continue
       }

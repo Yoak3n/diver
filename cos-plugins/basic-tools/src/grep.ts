@@ -15,6 +15,8 @@
 import type { Context } from 'cordis'
 import { nativeRpc } from '@diver/native-bridge/rpc'
 
+import { resolveLocalTarget } from './fsio.ts'
+
 /** 默认保留在结果里的最大匹配数（与上游 GREP_MAX_MATCHES 一致）。 */
 export const GREP_MAX_MATCHES = 250
 
@@ -97,6 +99,17 @@ async function rpc<T>(
   return nativeRpc<T>(method, params, { label: `grep:${method}`, ...options })
 }
 
+/**
+ * 相对路径按 workspace 解析（与 find/ls/read 同语义）。
+ * 导出供单测：grep 曾把相对路径原样发给 Rust，实际目标按壳进程 cwd 解析。
+ */
+export async function resolveGrepTarget(
+  workspaceRoot: string,
+  rawPath: string | undefined,
+): Promise<{ displayPath: string; targetKey: string }> {
+  return resolveLocalTarget(workspaceRoot, rawPath ?? '.')
+}
+
 /** 单行预览按字节截断（UTF-8 边界安全），超长加后缀。 */
 function previewLine(line: string, maxBytes: number): string {
   const bytes = Buffer.byteLength(line, 'utf8')
@@ -139,10 +152,14 @@ export function applyGrepTool(ctx: Context, caps: GrepCaps): void {
 
   ctx.tools.register('grep', async (args, signal) => {
     const input = parseGrepArgs(args as GrepArgs)
+    // 与 find/ls/read 同语义：相对路径按 workspace 解析后再交给 Rust。
+    // 直接把相对路径发给 Rust 会让它按壳进程 cwd 解析，与调用方看到的
+    // 目标（以及文件囚笼判定用的目标）不一致。
+    const target = await resolveGrepTarget(caps.workspaceRoot, input.path)
 
     const result = await rpc<{ matches: GrepMatch[]; timedOut?: boolean }>('grep::search', {
       pattern: input.pattern,
-      path: input.path ?? caps.workspaceRoot,
+      path: target.targetKey,
       includes: input.globs,
       maxMatches: input.maxCount,
       timeoutMs: GREP_TIMEOUT_MS,

@@ -75,7 +75,7 @@ pnpm tauri dev     # 自动拉起 sidecar + Vite(1420) + 窗口
 
 ## 最近版本
 
-v0.2.4（2026-10-26）：OneBot 图片收发、自己发言记账与连接状态灯；sidecar 自动重启与统一日志路径；会话落盘消息 id 改随机 UUID，修复跨重启撞号导致的丢轮。完整变更见 [docs/plugins.md](docs/plugins.md) 与 [Releases](https://github.com/Yoak3n/diver/releases)。
+v0.2.5（2026-10-27）：修复 WebSocket 连接被拒时只触发 `error`、不触发 `close` 导致 OneBot 重连卡死（NapCat 重启后无法自动恢复）；新增重连回归单测。v0.2.4 的 OneBot 图片收发、发言记账、连接状态灯与 sidecar 自愈一并包含。完整变更见 [docs/plugins.md](docs/plugins.md) 与 [Releases](https://github.com/Yoak3n/diver/releases)。
 
 ## 后续方向
 

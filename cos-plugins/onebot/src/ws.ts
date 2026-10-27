@@ -26,6 +26,8 @@ export interface OnebotClientOptions {
   onPrivateMessage: (event: PrivateMessageEvent) => void
   /** 连接状态变化（index.ts 用 connected 拉 get_login_info，失败原因进状态灯）。 */
   onStatus?: (event: OnebotLinkEvent) => void
+  /** WebSocket 构造器（测试注入；缺省全局 WebSocket）。 */
+  createSocket?: (url: string) => WebSocket
 }
 
 interface PendingCall {
@@ -42,6 +44,15 @@ const CALL_TIMEOUT_MS = 15_000
  * 认证失败的服务端会 open 后立即 close，不能一 open 就重置退避。
  */
 const HEALTHY_AFTER_OPEN_MS = 10_000
+
+/** WebSocket error 事件 → 可读原因（Node/undici 的 Event 可能没有 message）。 */
+function linkErrorText(event: Event): string {
+  const message = (event as { message?: unknown }).message
+  if (typeof message === 'string' && message !== '') return message
+  const error = (event as { error?: unknown }).error
+  if (error instanceof Error && error.message !== '') return error.message
+  return 'WebSocket 连接失败'
+}
 
 export class OnebotClient {
   private ws: WebSocket | undefined
@@ -64,6 +75,7 @@ export class OnebotClient {
     if (this.reconnectTimer !== undefined) clearTimeout(this.reconnectTimer)
     this.reconnectTimer = undefined
     this.clearHealthyTimer()
+    this.rejectPending('OneBot 连接已断开')
     try {
       this.ws?.close()
     } catch {
@@ -82,6 +94,15 @@ export class OnebotClient {
     if (this.healthyTimer === undefined) return
     clearTimeout(this.healthyTimer)
     this.healthyTimer = undefined
+  }
+
+  /** 断连时拒绝所有待回执调用（连接被拒、没有 close 的运行时也走这里）。 */
+  private rejectPending(message: string): void {
+    for (const [echo, call] of this.pending) {
+      clearTimeout(call.timer)
+      call.reject(new Error(message))
+      this.pending.delete(echo)
+    }
   }
 
   /** OneBot API 调用：echo 匹配 JSON 响应；超时/断连拒绝。 */
@@ -119,15 +140,38 @@ export class OnebotClient {
       : `${this.options.url}${this.options.url.includes('?') ? '&' : '?'}access_token=${encodeURIComponent(this.options.token)}`
     let ws: WebSocket
     try {
-      ws = new WebSocket(url)
+      ws = (this.options.createSocket ?? ((target: string) => new WebSocket(target)))(url)
     } catch (error) {
-      const reason = String(error)
+      const reason = error instanceof Error ? error.message : String(error)
       console.warn(`[onebot] 建连失败（将重试）：${reason}`)
       this.options.onStatus?.({ status: 'disconnected', reason, retryMs: this.backoffMs })
       this.scheduleReconnect()
       return
     }
     this.ws = ws
+    // 一次连接只结算一次：error 与 close 可能先后到达，也可能只有 error。
+    let settled = false
+    const fail = (reason: string, code?: number): void => {
+      if (settled) return
+      settled = true
+      if (this.ws === ws) this.ws = undefined
+      this.clearHealthyTimer()
+      this.rejectPending('OneBot 连接已断开')
+      try {
+        ws.close()
+      } catch {
+        // 已经关闭/不可关闭：不影响重连
+      }
+      if (this.stopped) return
+      console.warn(`[onebot] ${reason}，${Math.round(this.backoffMs / 1000)}s 后重连`)
+      this.options.onStatus?.({
+        status: 'disconnected',
+        ...(code !== undefined ? { code } : {}),
+        reason,
+        retryMs: this.backoffMs,
+      })
+      this.scheduleReconnect()
+    }
 
     ws.addEventListener('open', () => {
       console.log(`[onebot] 已连接 ${this.options.url}`)
@@ -136,25 +180,17 @@ export class OnebotClient {
       this.healthyTimer = setTimeout(() => this.markHealthy(), HEALTHY_AFTER_OPEN_MS)
     })
     ws.addEventListener('message', (event: MessageEvent) => this.handleMessage(event))
-    ws.addEventListener('error', () => {
-      // close 紧随其后，重连逻辑统一在 close
+    ws.addEventListener('error', (event: Event) => {
+      // Node 22（undici）连接被拒时只发 error、不发 close（readyState 停在
+      // CONNECTING）。不能等 close 才重连，否则一次失败就永久卡死；settled
+      // 保证 close 随后到达时只结算一次。
+      fail(linkErrorText(event))
     })
     ws.addEventListener('close', (event: CloseEvent) => {
-      this.clearHealthyTimer()
-      for (const [echo, call] of this.pending) {
-        clearTimeout(call.timer)
-        call.reject(new Error('OneBot 连接已断开'))
-        this.pending.delete(echo)
-      }
-      if (this.stopped) return
-      console.warn(`[onebot] 连接断开，${Math.round(this.backoffMs / 1000)}s 后重连`)
-      this.options.onStatus?.({
-        status: 'disconnected',
-        code: event.code,
-        reason: event.reason,
-        retryMs: this.backoffMs,
-      })
-      this.scheduleReconnect()
+      fail(
+        event.reason !== '' ? event.reason : `连接已关闭（code ${event.code}）`,
+        event.code,
+      )
     })
   }
 

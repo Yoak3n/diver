@@ -10,7 +10,7 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "node --import tsx --test src/config.test.ts src/fs-jail.test.ts src/protocol.test.ts src/image.test.ts src/img-bytes.test.ts src/out-image.test.ts src/trigger.test.ts src/context.test.ts src/sandbox.test.ts src/relation-card.test.ts src/mask.test.ts src/voice.test.ts src/send-breaker.test.ts src/buffer-store.test.ts src/self-ledger.test.ts src/status.test.ts"
+    "test": "node --import tsx --test src/config.test.ts src/fs-jail.test.ts src/protocol.test.ts src/image.test.ts src/img-bytes.test.ts src/out-image.test.ts src/trigger.test.ts src/context.test.ts src/sandbox.test.ts src/relation-card.test.ts src/mask.test.ts src/voice.test.ts src/send-breaker.test.ts src/buffer-store.test.ts src/self-ledger.test.ts src/status.test.ts src/ws.test.ts"
   },
   "dependencies": {
     "@cos/plugin-api": "workspace:*",

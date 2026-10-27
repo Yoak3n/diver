@@ -182,6 +182,7 @@ export function createStreamHandler(deps: Deps) {
           name: e.name,
           status: e.status,
           time: Date.now(),
+          ...(e.args !== undefined ? { args: e.args } : {}),
           ...(e.summary !== undefined ? { summary: e.summary } : {}),
           ...(e.callId !== undefined ? { callId: e.callId } : {}),
           ...(e.isError !== undefined ? { isError: e.isError } : {}),
@@ -194,6 +195,7 @@ export function createStreamHandler(deps: Deps) {
           const last = [...tools.value].reverse().find((t) => t.name === e.name && t.status === "call");
           if (last) {
             last.status = "result";
+            if (tool.args !== undefined) last.args = tool.args;
             if (tool.summary !== undefined) last.summary = tool.summary;
             if (tool.isError !== undefined) last.isError = tool.isError;
             if (tool.callId !== undefined) last.callId = tool.callId;

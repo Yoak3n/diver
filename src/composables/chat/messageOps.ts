@@ -104,6 +104,7 @@ export function createMessageOps(
         list[hit] = {
           ...list[hit],
           status: "result",
+          ...(tool.args !== undefined ? { args: tool.args } : {}),
           ...(tool.summary !== undefined ? { summary: tool.summary } : {}),
           ...(tool.isError !== undefined ? { isError: tool.isError } : {}),
           ...(tool.callId !== undefined ? { callId: tool.callId } : {}),
@@ -113,8 +114,10 @@ export function createMessageOps(
         list.push({ ...tool });
       }
     } else {
-      // 同 callId 的 call 不重复入列（事件重放）
-      if (tool.callId !== undefined && list.some((t) => t.callId === tool.callId)) {
+      // 同 callId 的 call 不重复入列（事件重放）；重放带参数时就地补全
+      const dup = tool.callId !== undefined ? list.findIndex((t) => t.callId === tool.callId) : -1;
+      if (dup >= 0) {
+        if (tool.args !== undefined) list[dup] = { ...list[dup], args: tool.args };
         messages.value[idx] = { ...m, tools: list };
         scrollToBottom();
         return;

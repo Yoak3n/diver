@@ -4,7 +4,7 @@ import type { ServerResponse } from 'node:http'
 import type { Context } from 'cordis'
 import { nativeRpc } from '@diver/native-bridge/rpc'
 import { groupNameFromMarker, groupTag, injectOrigin, injectUiLabel, isGroupMessage, peerSource, stripEventStamp, stripGroupMarker, stripPeerMarker } from './interaction.ts'
-import { textOf, imagesOf } from './session-helpers.ts'
+import { clampToolText, textOf, imagesOf } from './session-helpers.ts'
 import { SESSION_ID } from './agent.ts'
 import type { WebState } from './state.ts'
 
@@ -32,6 +32,9 @@ export function attachEventListeners(
   state: WebState,
   broadcast: (event: unknown) => void,
 ) {
+  // 回合起点：异常结束时把耗时写进日志——几秒内死多半是重试耗尽，毫秒级
+  // 死多半是请求直接被拒（4xx/协议错），这两种在现场很难再区分。
+  let turnStartedAt = 0
   ctx.on('session/event', (session: any, ev: any) => {
     if (String(session.id) !== SESSION_ID) return
     const time = Number(ev.time) || Date.now()
@@ -138,12 +141,15 @@ export function attachEventListeners(
       }
       case 'tool/call': {
         state.toolNames.set(String(ev.data.callId), ev.data.name)
+        // 调用参数一并下发：UI 展开要能看到「到底调了什么」（模型给的 JSON 串，限幅防膨胀）
+        const args = clampToolText(String(ev.data.arguments ?? ''))
         broadcast({
           type: 'tool',
           name: ev.data.name,
           status: 'call',
           messageId: `turn-${ev.data.turn}-${ev.data.step}`,
           callId: String(ev.data.callId),
+          ...(args !== '' ? { args } : {}),
         })
         break
       }
@@ -157,7 +163,7 @@ export function attachEventListeners(
         if (callId) state.toolNames.delete(callId)
         const raw = String(ev.data.message?.content ?? '')
         // 展开详情用：放宽截断（UI 折叠预览另做 80 字）；过长工具输出仍限幅防 SSE 膨胀
-        const summary = raw.length > 4000 ? `${raw.slice(0, 4000)}…` : raw
+        const summary = clampToolText(raw)
         // 工具产出的图（screenshot / read 读图）：UI 展开可见，上限 4 张防 SSE 膨胀
         const toolImages = Array.isArray(ev.data.message?.images)
           ? ev.data.message.images.slice(0, 4)
@@ -175,12 +181,22 @@ export function attachEventListeners(
         break
       }
       case 'turn/start': {
+        turnStartedAt = Date.now()
         broadcast({ type: 'turn', state: 'start' })
         break
       }
       case 'turn/end': {
         reportPresence('presence::event', { type: 'CHAT_ACTIVITY' })
-        broadcast({ type: 'turn', state: 'end', reason: ev.data.reason?.kind })
+        const kind = ev.data.reason?.kind
+        broadcast({ type: 'turn', state: 'end', reason: kind })
+        if (kind !== undefined && kind !== 'completed') {
+          // 走 stdout：壳只把 sidecar stdout 落进 app.log（stderr 只进内存环形缓冲），
+          // 否则 abort / 模型请求失败这类回合现场事后完全不可查。
+          const ms = turnStartedAt > 0 ? Date.now() - turnStartedAt : -1
+          const detail = String(JSON.stringify(ev.data.reason ?? {})).slice(0, 600)
+          console.log(`[diver] 回合异常结束 turn=${ev.data.turn} reason=${kind} 耗时=${ms}ms ${detail}`)
+        }
+        turnStartedAt = 0
         break
       }
       default:
@@ -191,7 +207,16 @@ export function attachEventListeners(
   ctx.on('agent/error', ({ agent, turn, step, error }: any) => {
     if (!agent || String(agent.id) !== SESSION_ID) return
     const message = String((error as { message?: unknown } | null)?.message ?? error)
-    console.error(`[diver] agent 错误 (turn=${turn}, step=${step}): ${message}`)
+    const name = String((error as { name?: unknown } | null)?.name ?? '')
+    const provider = String(agent.options?.provider ?? '?')
+    const model = String(agent.options?.model ?? '?')
+    // 单行 + 限幅：stdout 按行落盘，多行错误会被拆散；网关的 HTML 错误页不该灌日志。
+    const detail = message.replace(/\s+/g, ' ').slice(0, 800)
+    // stdout 才落 app.log；stderr 会被壳丢掉（只进内存日志），失败现场必须留痕。
+    console.log(
+      `[diver] agent 错误 (turn=${turn}, step=${step}, ${provider}/${model}): `
+      + `${name !== '' ? `${name}: ` : ''}${detail}`,
+    )
     broadcast({ type: 'error', message })
   })
 

@@ -131,6 +131,14 @@ export function textOf(blocks: unknown): string {
     .join('\n')
 }
 
+/** 工具参数 / 结果透传上限：UI 折叠详情可展开，但过长输出限幅防 SSE 膨胀。 */
+export const TOOL_TEXT_LIMIT = 4000
+
+/** 工具参数 / 结果的统一限幅（超限截断并加省略号）。 */
+export function clampToolText(raw: string): string {
+  return raw.length > TOOL_TEXT_LIMIT ? `${raw.slice(0, TOOL_TEXT_LIMIT)}…` : raw
+}
+
 /** 抽出消息中的图片块（mime + base64 data + 可选文件名）。 */
 export function imagesOf(blocks: unknown): Array<{ mime: string; data: string; name?: string }> {
   if (!Array.isArray(blocks)) return []

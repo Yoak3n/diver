@@ -24,7 +24,9 @@ function toolLabel(t: ToolActivity): string {
 }
 
 function toolPreview(t: ToolActivity): string {
-  const s = (t.summary ?? "").replace(/\s+/g, " ").trim();
+  // 完成后看结果；调用中（或结果为空）看参数，至少能看出「调了什么」
+  const raw = (t.summary ?? "").trim() !== "" ? t.summary! : (t.args ?? "");
+  const s = raw.replace(/\s+/g, " ").trim();
   if (s === "") return "";
   return s.length > 80 ? `${s.slice(0, 80)}…` : s;
 }
@@ -33,9 +35,20 @@ function toolDetail(t: ToolActivity): string {
   return (t.summary ?? "").trim();
 }
 
-/** 展开区有无内容：文本详情或工具产出的图（screenshot / read 读图）。 */
+/** 展开区参数：能解析成 JSON 就缩进美化，解析不了（含被后端截断）按原样展示。 */
+function toolArgs(t: ToolActivity): string {
+  const raw = (t.args ?? "").trim();
+  if (raw === "") return "";
+  try {
+    return JSON.stringify(JSON.parse(raw), null, 2);
+  } catch {
+    return raw;
+  }
+}
+
+/** 展开区有无内容：参数、结果文本或工具产出的图（screenshot / read 读图）。 */
 function hasDetail(t: ToolActivity): boolean {
-  return toolDetail(t) !== "" || (t.images?.length ?? 0) > 0;
+  return toolArgs(t) !== "" || toolDetail(t) !== "" || (t.images?.length ?? 0) > 0;
 }
 </script>
 
@@ -50,7 +63,7 @@ function hasDetail(t: ToolActivity): boolean {
       <button
         class="tool-row"
         type="button"
-        :title="hasDetail(t) ? '点击展开/收起结果' : undefined"
+        :title="hasDetail(t) ? '点击展开/收起参数与结果' : undefined"
         @click="toggleTool(toolKey(t, i))"
       >
         <span class="tool-icon" aria-hidden="true">⚙</span>
@@ -64,16 +77,23 @@ function hasDetail(t: ToolActivity): boolean {
         <span v-if="hasDetail(t)" class="tool-chevron" :class="{ open: openTools.has(toolKey(t, i)) }">›</span>
       </button>
       <div v-if="openTools.has(toolKey(t, i)) && hasDetail(t)" class="tool-detail">
-        <div v-if="(t.images?.length ?? 0) > 0" class="tool-images">
-          <img
-            v-for="(img, j) in t.images"
-            :key="j"
-            class="tool-image"
-            :src="`data:${img.mime};base64,${img.data}`"
-            :alt="img.name || '工具图片'"
-          />
+        <div v-if="toolArgs(t)" class="tool-detail-section">
+          <span class="tool-detail-label">参数</span>
+          <pre>{{ toolArgs(t) }}</pre>
         </div>
-        <pre v-if="toolDetail(t)">{{ toolDetail(t) }}</pre>
+        <div v-if="toolDetail(t) || (t.images?.length ?? 0) > 0" class="tool-detail-section">
+          <span class="tool-detail-label">结果</span>
+          <div v-if="(t.images?.length ?? 0) > 0" class="tool-images">
+            <img
+              v-for="(img, j) in t.images"
+              :key="j"
+              class="tool-image"
+              :src="`data:${img.mime};base64,${img.data}`"
+              :alt="img.name || '工具图片'"
+            />
+          </div>
+          <pre v-if="toolDetail(t)">{{ toolDetail(t) }}</pre>
+        </div>
       </div>
     </div>
   </div>
@@ -153,6 +173,15 @@ function hasDetail(t: ToolActivity): boolean {
   background: var(--paper-sunken);
   max-height: 240px;
   overflow: auto;
+}
+.tool-detail-section + .tool-detail-section {
+  margin-top: 8px;
+}
+.tool-detail-label {
+  display: block;
+  margin-bottom: 2px;
+  font-size: 11px;
+  color: var(--ink-faint);
 }
 .tool-images {
   display: flex;

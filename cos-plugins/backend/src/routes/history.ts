@@ -8,7 +8,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import { SESSION_ID } from '../agent.ts'
 import { groupSentPath, mergeGroupSent, readGroupSent } from '../group-sent.ts'
 import { sendJson } from '../http.ts'
-import { textOf, imagesOf } from '../session-helpers.ts'
+import { clampToolText, textOf, imagesOf } from '../session-helpers.ts'
 import {
   groupNameFromMarker,
   groupTag,
@@ -89,7 +89,7 @@ export function buildHistoryMessages(
         : (msgAny?.callId !== undefined ? String(msgAny.callId) : undefined)
       const raw = String(ev.data.message?.content ?? '')
       // 与 SSE 对齐：详情可展开，过长仍限幅；工具图片同样透传（上限 4 张）
-      const summary = raw.length > 4000 ? `${raw.slice(0, 4000)}…` : raw
+      const summary = clampToolText(raw)
       const isError = ev.data.message?.isError === true
       const toolImages = Array.isArray(ev.data.message?.images)
         ? ev.data.message.images.slice(0, 4)
@@ -186,16 +186,21 @@ export function buildHistoryMessages(
       const text = textOf(ev.data.message?.content)
       const stepKey = `turn-${ev.data.turn}-${ev.data.step}`
       const thinking = thinkingByStep.get(stepKey) ?? ''
-      // assistant 消息中的 tool-call 块 → 工具记录（结果由后续 tool/result 回填）
+      // assistant 消息中的 tool-call 块 → 工具记录（含调用参数；结果由后续 tool/result 回填）
       const blocks = Array.isArray(ev.data.message?.content) ? ev.data.message?.content : []
       const tools = (blocks as any[])
         .filter((b: any) => b && (b.type === 'tool-call' || b.type === 'toolCall'))
-        .map((b: any) => ({
-          name: String(b.name ?? 'tool'),
-          status: 'call',
-          time,
-          ...(b.id !== undefined ? { callId: String(b.id) } : {}),
-        }))
+        .map((b: any) => {
+          const args = b.arguments === undefined ? ''
+            : typeof b.arguments === 'string' ? b.arguments : JSON.stringify(b.arguments)
+          return {
+            name: String(b.name ?? 'tool'),
+            status: 'call',
+            time,
+            ...(args !== '' ? { args: clampToolText(args) } : {}),
+            ...(b.id !== undefined ? { callId: String(b.id) } : {}),
+          }
+        })
       // 无文本、无思考、无工具的步骤不进历史，避免空气泡
       if (text === '' && thinking === '' && tools.length === 0) {
         presencePending = false

@@ -79,7 +79,31 @@ test('tool/result 带图：工具产出的图片透传到工具记录（上限 4
   const tools = (msgs[0] as { tools?: Array<Record<string, unknown>> }).tools
   assert.equal(tools?.length, 1)
   assert.equal(tools![0]!.status, 'result')
+  assert.equal(tools![0]!.args, '{}', '结果回填不丢调用参数')
   const images = tools![0]!.images as Array<{ mime: string; data: string }>
   assert.equal(images.length, 4, '第 5 张截断')
   assert.equal(images[0]!.data, 'aGk=')
+})
+
+test('tool-call 块参数：透传给 UI 并限幅（超 4000 字截断加省略号）', () => {
+  const long = 'x'.repeat(5000)
+  const events: ReplayEvent[] = [
+    {
+      type: 'assistant/message',
+      time: 1000,
+      data: {
+        turn: 1,
+        step: 0,
+        message: {
+          id: 'a1',
+          content: [{ type: 'tool-call', id: 'c1', name: 'revise_prompt', arguments: JSON.stringify({ content: long }) }],
+        },
+      },
+    },
+  ]
+  const tools = (buildHistoryMessages(events)[0] as { tools?: Array<Record<string, unknown>> }).tools
+  const args = String(tools![0]!.args)
+  assert.ok(args.startsWith('{"content":"xxx'), '参数透传（原始 JSON 串）')
+  assert.equal(args.length, 4001, '4000 字 + 省略号')
+  assert.ok(args.endsWith('…'))
 })

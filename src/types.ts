@@ -103,6 +103,8 @@ export interface ChatMessage {
 export interface ToolActivity {
   name: string;
   status: "call" | "result";
+  /** 模型给出的调用参数（JSON 串，后端限幅）；UI 展开可见。 */
+  args?: string;
   summary?: string;
   time: number;
   callId?: string;
@@ -154,7 +156,7 @@ export type StreamEvent =
   | { type: "message"; kind: "user" | "assistant" | "system"; sessionId: string; messageId: string; turnMessageId?: string; content: string; origin: "user" | "assistant" | "presence" | "interaction" | "proactive" | "peer"; from?: string; group?: boolean; groupId?: string; groupName?: string; time: number; images?: ChatImage[] }
   | { type: "chunk"; messageId: string; delta: string }
   | { type: "thinking"; messageId: string; delta: string }
-  | { type: "tool"; name: string; status: "call" | "result"; summary?: string; messageId?: string; callId?: string; isError?: boolean; images?: ChatImage[] }
+  | { type: "tool"; name: string; status: "call" | "result"; args?: string; summary?: string; messageId?: string; callId?: string; isError?: boolean; images?: ChatImage[] }
   | { type: "turn"; state: "start" | "end"; reason?: string }
   | { type: "busy"; value: boolean }
   | { type: "question"; requestId: string; questions: UserQuestion[] }

@@ -98,6 +98,7 @@ pub fn spawn(
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    crate::process_env::strip_appimage_libs(&mut command);
     for (key, value) in envs {
         command.env(key, value);
     }

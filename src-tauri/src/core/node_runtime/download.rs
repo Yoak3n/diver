@@ -181,7 +181,10 @@ fn file_sha256(path: &Path) -> Option<String> {
     }
     #[cfg(not(target_os = "windows"))]
     {
-        let out = hidden(&mut Command::new("sha256sum")).arg(path).output().ok()?;
+        let mut cmd = Command::new("sha256sum");
+        cmd.arg(path);
+        crate::process_env::strip_appimage_libs(&mut cmd);
+        let out = hidden(&mut cmd).output().ok()?;
         if !out.status.success() {
             return None;
         }

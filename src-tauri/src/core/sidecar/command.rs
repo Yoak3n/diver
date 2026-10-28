@@ -151,6 +151,7 @@ impl SidecarManager {
                 .stdin(Stdio::null())
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped());
+            crate::process_env::strip_appimage_libs(&mut cmd);
             return Ok(cmd);
         }
 
@@ -246,6 +247,7 @@ impl SidecarManager {
                 .stdin(Stdio::null())
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped());
+            crate::process_env::strip_appimage_libs(&mut cmd);
             return Ok(cmd);
         }
     }

@@ -9,12 +9,14 @@ pub(super) fn pnpm_bin() -> String {
 }
 
 pub(super) fn run_pnpm(profile_dir: &Path, args: &[&str]) -> Result<String, String> {
-    let out = Command::new(pnpm_bin())
-        .args(args)
+    let mut cmd = Command::new(pnpm_bin());
+    cmd.args(args)
         .current_dir(profile_dir)
         .stdin(Stdio::null())
         .env("CI", "1")
-        .env("npm_config_yes", "true")
+        .env("npm_config_yes", "true");
+    crate::process_env::strip_appimage_libs(&mut cmd);
+    let out = cmd
         .output()
         .map_err(|e| format!("无法执行 pnpm（{}）: {e}（可设置 DIVER_PNPM 指向 pnpm）", pnpm_bin()))?;
     let stdout = String::from_utf8_lossy(&out.stdout).to_string();

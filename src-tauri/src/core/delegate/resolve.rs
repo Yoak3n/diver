@@ -62,7 +62,10 @@ pub fn resolve() -> Result<Resolved, String> {
 
 fn on_path(name: &str) -> Option<PathBuf> {
     let (program, arg) = if cfg!(windows) { ("where", name) } else { ("which", name) };
-    let output = Command::new(program).arg(arg).output().ok()?;
+    let mut cmd = Command::new(program);
+    cmd.arg(arg);
+    crate::process_env::strip_appimage_libs(&mut cmd);
+    let output = cmd.output().ok()?;
     if !output.status.success() {
         return None;
     }

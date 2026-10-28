@@ -108,6 +108,7 @@ pub(super) fn node_major(node_exe: &Path) -> Option<u32> {
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null());
+    crate::process_env::strip_appimage_libs(&mut cmd);
     hidden(&mut cmd);
     let out = cmd.output().ok()?;
     if !out.status.success() {

@@ -3,6 +3,7 @@ pub mod commands;
 pub mod config;
 pub mod core;
 pub mod plugins;
+pub mod process_env;
 pub mod services;
 pub mod shell;
 

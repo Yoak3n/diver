@@ -21,20 +21,33 @@ if (HOME === '' || process.platform !== 'linux') {
 
 const bundleDir = join(ROOT, 'target', 'release', 'bundle', 'appimage')
 
-// 1. 启动器：始终运行产物目录里最新的 AppImage
+// 1. 启动器：优先稳定副本 ~/Applications/diver.AppImage，其次产物目录最新
+//    AppImage，最后本地 release 二进制（target/release/diver）。
 const appsDir = join(HOME, 'Applications')
 mkdirSync(appsDir, { recursive: true })
+const stableApp = join(appsDir, 'diver.AppImage')
 const launcher = join(appsDir, 'diver-launch')
 writeFileSync(launcher, `#!/bin/sh
-# 由 scripts/install-local-launcher.mjs 生成：运行最新的 Diver AppImage
-img=$(ls -t ${bundleDir}/Diver_*_amd64.AppImage 2>/dev/null | head -n1)
-if [ -z "$img" ]; then
-  echo "未找到已构建的 Diver AppImage（先在仓库跑 pnpm tauri build）" >&2
-  exit 1
+# 由 scripts/install-local-launcher.mjs 生成：优先稳定副本，其次最新构建，最后本地 release 二进制
+stable="$HOME/Applications/diver.AppImage"
+if [ -x "$stable" ]; then
+  exec "$stable" "$@"
 fi
-exec "$img" "$@"
+img=$(ls -t ${bundleDir}/Diver_*_amd64.AppImage 2>/dev/null | head -n1)
+if [ -n "$img" ]; then
+  exec "$img" "$@"
+fi
+local_bin=${join(ROOT, 'target', 'release', 'diver')}
+if [ -x "$local_bin" ]; then
+  exec "$local_bin" "$@"
+fi
+echo "未找到 Diver AppImage：把官方 AppImage 放到 ~/Applications/diver.AppImage，或先在仓库跑 pnpm tauri build" >&2
+exit 1
 `, { mode: 0o755 })
-console.log(`[setup:local] 启动器 → ${launcher}`)
+console.log(`[setup:local] 启动器 → ${launcher}（优先 ${stableApp}）`)
+if (!existsSync(stableApp)) {
+  console.log(`[setup:local] 提示：${stableApp} 不存在，启动器将回退到最新构建产物`)
+}
 
 // 2. desktop 入口（Exec 指向启动器，构建后无需再动）
 const desktopDir = join(HOME, '.local', 'share', 'applications')
@@ -74,4 +87,4 @@ for (const cmd of [
     execFileSync(cmd, { stdio: 'ignore', shell: true })
   } catch { /* 缓存刷新失败不影响使用 */ }
 }
-console.log('[setup:local] 完成：应用菜单搜索 Diver 即可启动（总是最新构建）')
+console.log('[setup:local] 完成：应用菜单搜索 Diver 即可启动（优先 ~/Applications/diver.AppImage）')

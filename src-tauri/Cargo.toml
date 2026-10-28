@@ -1,6 +1,6 @@
 [package]
 name = "diver"
-version = "0.2.6"
+version = "0.2.7"
 description = "Diver 桌面陪伴 Agent"
 authors = ["Diver"]
 edition = "2021"

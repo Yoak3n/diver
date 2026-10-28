@@ -75,7 +75,7 @@ pnpm tauri dev     # 自动拉起 sidecar + Vite(1420) + 窗口
 
 ## 最近版本
 
-v0.2.6（2026-10-27）：OneBot 新增 `append_note` 笔记（按群/私聊隔离、只追加、容量硬闸），并修补读侧囚笼（grep 相对路径、递归祖先起点、find 符号链接）；主人在群里的普通发言独立为一档；工具调用参数可在聊天详情展开，异常回合与 agent 错误写入 app.log。完整变更见 [docs/plugins.md](docs/plugins.md) 与 [Releases](https://github.com/Yoak3n/diver/releases)。
+v0.2.7（2026-10-28）：修复 AppImage 启动失败。壳给外部工具子进程剥离 AppImage 注入的 `LD_LIBRARY_PATH` / `LD_PRELOAD`，避免系统 `tar`/`xz`/`node` 误加载随包旧库（`XZ_5.6.0`、`LIBFFI_CALL_PLAN_8.4` 符号缺失）导致「未检测到 Node → 下载 → 解压失败 → sidecar 起不来」；解压报错同时保留压缩器 stderr，便于定位。完整变更见 [Releases](https://github.com/Yoak3n/diver/releases)。
 
 ## 后续方向
 

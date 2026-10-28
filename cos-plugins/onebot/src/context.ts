@@ -102,13 +102,25 @@ function closingLine(kind: WakeKind): string {
 }
 
 /**
+ * 来源章里的发送者标注：`名字(号码)`；名字缺失或就是号码时只写一次，
+ * 避免私聊事件缺 nickname 时出现「3354590676(3354590676)」。
+ */
+function senderTag(name: string, id: string): string {
+  if (id === '') return name
+  if (name === '' || name === id) return id
+  return `${name}(${id})`
+}
+
+/**
  * 唤醒消息文本（进陪伴会话的 user/message；detail 由调用方盖 onebot: 前缀）。
  */
 export function formatWake(input: WakeInput): string {
+  const who = senderTag(input.senderName, input.senderId)
+  const suffix = who === '' ? '' : ` | ${who}`
   const head =
     input.group === null
-      ? `[QQ私聊 | ${input.senderName}(${input.senderId}) ${kindLabel(input.kind)}]`
-      : `[QQ群 ${input.group.name}(${input.group.id}) | ${input.senderName}(${input.senderId}) ${kindLabel(input.kind)}]`
+      ? `[QQ私聊${suffix} ${kindLabel(input.kind)}]`
+      : `[QQ群 ${input.group.name}(${input.group.id})${suffix} ${kindLabel(input.kind)}]`
   const lines = [head]
   if (input.text !== '') lines.push(input.text)
   const rendered = renderWindow(input.snapshot)

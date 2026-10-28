@@ -72,7 +72,7 @@ export function applyTools(ctx: Context, deps: SendDeps): void {
     const quoteId =
       anchor !== undefined
       && anchor.groupId === groupId
-      && anchor.messageId > 0
+      && anchor.messageId !== 0
       && Date.now() - anchor.at <= QUOTE_MAX_AGE_MS
         ? anchor.messageId
         : undefined
@@ -95,7 +95,7 @@ export function applyTools(ctx: Context, deps: SendDeps): void {
       )
       const messageId = Number(data?.message_id ?? 0)
       queue.recordOk()
-      if (messageId > 0) deps.rememberSent(groupId, messageId)
+      if (messageId !== 0) deps.rememberSent(groupId, messageId)
       deps.onSpoke()
       await deps.recordSend({
         kind: 'group',
@@ -109,7 +109,7 @@ export function applyTools(ctx: Context, deps: SendDeps): void {
         content: JSON.stringify({
           sent: true,
           group: groupId,
-          ...(messageId > 0 ? { messageId } : {}),
+          ...(messageId !== 0 ? { messageId } : {}),
           ...(masked.masked.length > 0 ? { masked: masked.masked } : {}),
           ...(image.kind === 'segment' ? { image: image.info } : {}),
           ...(voiceInfo ?? {}),
@@ -181,7 +181,7 @@ export function applyTools(ctx: Context, deps: SendDeps): void {
         content: JSON.stringify({
           sent: true,
           user,
-          ...(messageId > 0 ? { messageId } : {}),
+          ...(messageId !== 0 ? { messageId } : {}),
           ...(masked.masked.length > 0 ? { masked: masked.masked } : {}),
           ...(image.kind === 'segment' ? { image: image.info } : {}),
           ...(voiceInfo ?? {}),

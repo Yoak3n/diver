@@ -114,3 +114,30 @@ test('唤醒消息：私聊给私聊章与 send_qq_private 指令', () => {
   assert.match(text, /send_qq_private/)
   assert.doesNotMatch(text, /近期群聊/)
 })
+
+test('来源章去重：名字缺失/等于号码时只写号码，不出现「号码(号码)」', () => {
+  const text = formatWake({
+    kind: 'private',
+    group: null,
+    senderId: '3354590676',
+    senderName: '3354590676',
+    text: '已经加好了',
+    isTrigger: true,
+    snapshot: [],
+  })
+  assert.match(text, /^\[QQ私聊 \| 3354590676 私聊\]/)
+  assert.doesNotMatch(text, /\(3354590676\)/)
+})
+
+test('来源章去重：无发送者的群背景唤醒不再留空括号', () => {
+  const text = formatWake({
+    kind: 'plain',
+    group: { id: '123456', name: '摸鱼群' },
+    senderId: '',
+    senderName: '',
+    text: '',
+    isTrigger: false,
+    snapshot: [],
+  })
+  assert.match(text, /^\[QQ群 摸鱼群\(123456\) 正在聊天\]/)
+})

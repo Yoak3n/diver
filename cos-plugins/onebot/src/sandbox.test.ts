@@ -13,6 +13,7 @@ import {
   isOwnerPrivateSource,
   isOwnerTool,
   parseOnebotSource,
+  turnToolPolicy,
   vetoIfActive,
 } from './sandbox.ts'
 
@@ -115,6 +116,33 @@ test('主人私聊判定：私聊且在 ownerIds 才算；群内主人走基线'
   assert.equal(isOwnerPrivateSource({ kind: 'private', userId: '10000' }, owners), false)
   assert.equal(isOwnerPrivateSource({ kind: 'group', groupId: '1', userId: '10086' }, owners), false)
   assert.equal(isOwnerPrivateSource(undefined, owners), false)
+})
+
+test('回合工具面：主人私聊不受限，其余来源仍走基座 + 主人专属工具', () => {
+  const owners = ['10001']
+  const base = allowedToolNames([])
+  const ownerPrivate = turnToolPolicy(base, { kind: 'private', userId: '10001' }, owners)
+  assert.deepEqual(ownerPrivate, { restricted: false, allowed: [] })
+
+  for (const source of [
+    { kind: 'private' as const, userId: '20002' },
+    { kind: 'group' as const, groupId: '1', userId: '10001' },
+    { kind: 'group' as const, groupId: '1', userId: '20002' },
+  ]) {
+    const policy = turnToolPolicy(base, source, owners)
+    assert.equal(policy.restricted, true)
+    assert.ok(policy.allowed.includes('send_qq_group'))
+  }
+  // 主人群回合仍拿提示词工具（受限但额外放行）；陌生私聊没有。
+  assert.ok(
+    turnToolPolicy(base, { kind: 'group', groupId: '1', userId: '10001' }, owners)
+      .allowed.includes('revise_prompt'),
+  )
+  assert.equal(
+    turnToolPolicy(base, { kind: 'private', userId: '20002' }, owners)
+      .allowed.includes('revise_prompt'),
+    false,
+  )
 })
 
 test('主人发起的回合专属工具：普通群友/陌生私聊不可通过配置放行', () => {

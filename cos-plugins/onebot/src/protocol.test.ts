@@ -116,3 +116,9 @@ test('quotedMessageId：第一处有效 reply 段的 id', () => {
   assert.equal(quotedMessageId([{ type: 'reply', data: {} }, { type: 'reply', data: { id: '9' } }]), 9)
   assert.equal(quotedMessageId([{ type: 'text', data: { text: '无引用' } }]), undefined)
 })
+
+test('quotedMessageId：负数 id 有效（NapCat 原样下发有符号 32 位 message_id）', () => {
+  assert.equal(quotedMessageId([{ type: 'reply', data: { id: '-531603186' } }]), -531603186)
+  assert.equal(quotedMessageId([{ type: 'reply', data: { id: '0' } }]), undefined)
+  assert.equal(quotedMessageId([{ type: 'reply', data: { id: 'abc' } }]), undefined)
+})

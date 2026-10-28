@@ -45,7 +45,7 @@ export function sentDisplayText(text: string, voice: boolean, hasImage: boolean)
  * （backend mergeGroupSent 按 id 对账去重，撞名会误吞）。
  */
 export function sentClientMsgId(groupId: string, messageId: number, time: number): string {
-  return `ob-s-g${groupId}-${messageId > 0 ? messageId : `t${time}`}`
+  return `ob-s-g${groupId}-${messageId !== 0 ? messageId : `t${time}`}`
 }
 
 /** 记账 → 缓冲行（名字固定「我」；atMe 恒 false——自己不会 @ 自己）。 */

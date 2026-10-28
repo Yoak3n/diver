@@ -66,8 +66,10 @@ export async function collectWakeImages(
       if (msg?.message !== undefined) {
         refs.push(...imageRefsOf(toSegments(msg.message as Segment[] | string)))
       }
-    } catch {
-      // 引用消息取不到：触发消息自身的图仍照常附，不因引用失败整体放弃
+    } catch (error) {
+      // 引用消息取不到：触发消息自身的图仍照常附，不因引用失败整体放弃。
+      // 走 stdout 才落 app.log；这里是「图为什么没进来」最容易静默的一点。
+      console.log(`[onebot] 引用消息取图失败 id=${quoted}：${error instanceof Error ? error.message : String(error)}`)
     }
   }
   const images: WakeImage[] = []

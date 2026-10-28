@@ -41,6 +41,8 @@ test('selfBufferMessage：名字固定「我」、atMe 恒 false、纯图兜底�
 test('sentClientMsgId：有 id 用 id，无 id 用落账时刻兜底', () => {
   assert.equal(sentClientMsgId('123', 456, 789), 'ob-s-g123-456')
   assert.equal(sentClientMsgId('123', 0, 789), 'ob-s-g123-t789')
+  // message_id 有符号，负数同样是有效 id，不能退回时间兜底
+  assert.equal(sentClientMsgId('123', -456, 789), 'ob-s-g123--456')
 })
 
 test('appendGroupLedger：记录与 backend GroupSentRecord 同形 + channel 标记', () => {

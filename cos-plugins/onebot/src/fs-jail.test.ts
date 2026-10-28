@@ -21,8 +21,9 @@ function ownerPolicy(root: string, extra: string[] = []) {
   return buildFsPolicy(root, extra, true)
 }
 
-test('策略层级：基线扣 sessions 子树与五个文件名；主人私聊只扣凭据', () => {
+test('策略层级：基线扣 sessions 子树与五个文件名；主人私聊整档不受限', () => {
   const base = baselinePolicy('/cos')
+  assert.equal(base.unrestricted, false)
   assert.deepEqual(base.roots, ['/cos'])
   assert.deepEqual(base.deniedSubtrees, [join('/cos', 'sessions')])
   assert.deepEqual(base.allowedSubtrees, [])
@@ -32,6 +33,7 @@ test('策略层级：基线扣 sessions 子树与五个文件名；主人私聊�
   }
 
   const owner = ownerPolicy('/cos')
+  assert.equal(owner.unrestricted, true)
   assert.deepEqual(owner.deniedSubtrees, [])
   assert.deepEqual(owner.protectedPaths, [join('/cos', 'secrets.yml'), join('/cos', 'secrets.yaml')])
   assert.equal(owner.deniedNames.has('secrets.yml'), true)
@@ -73,9 +75,9 @@ test('递归工具：受保护路径的祖先起点拒绝；自己 scope 的祖�
   assert.match(fsVetoReason('/cos', '/cos', base, true) ?? '', /递归搜索/)
   assert.equal(fsVetoReason(join('/cos', 'workspace'), join('/cos', 'workspace'), base, true), undefined)
 
-  // 主人私聊没有 deniedSubtree，但 secrets 文件仍是受保护路径。
+  // 主人私聊整档不受限：没有 deniedSubtree / 受保护路径，递归起点也不拦。
   const owner = ownerPolicy('/cos')
-  assert.match(fsVetoReason('/cos', '/cos', owner, true) ?? '', /递归搜索/)
+  assert.equal(fsVetoReason('/cos', '/cos', owner, true), undefined)
   assert.equal(fsVetoReason(join('/cos', 'workspace'), join('/cos', 'workspace'), owner, true), undefined)
 
   const notes = join('/cos', 'notes')
@@ -87,11 +89,12 @@ test('递归工具：受保护路径的祖先起点拒绝；自己 scope 的祖�
   assert.match(fsVetoReason(notes, notes, scoped, true) ?? '', /不可读的目录/)
 })
 
-test('主人私聊：sessions 可读、群发言账可读、凭据仍拒', () => {
+test('主人私聊：不受囚笼约束（越界/凭据/递归起点都放行）', () => {
   const policy = ownerPolicy('/cos')
   assert.equal(fsVetoReason('/cos/sessions/2026.jsonl', '/cos/sessions/2026.jsonl', policy), undefined)
   assert.equal(fsVetoReason('/cos/group-sent.jsonl', '/cos/group-sent.jsonl', policy), undefined)
-  assert.match(fsVetoReason('/cos/secrets.yml', '/cos/secrets.yml', policy) ?? '', /敏感落盘/)
+  assert.equal(fsVetoReason('/cos/secrets.yml', '/cos/secrets.yml', policy), undefined)
+  assert.equal(fsVetoReason('/etc/passwd', '/etc/passwd', policy), undefined)
 })
 
 test('字段提取：受限工具取各自字段；缺省/空白为 null；非受限为 undefined', () => {
@@ -153,11 +156,12 @@ test('fsCheckCall 集成：相对基准解析、.. 与符号链接逃逸、缺�
   assert.equal(await fsCheckCall('grep', { pattern: 'mine', path: join(notes, 'group-1') }, scoped, workspace), undefined)
   assert.match(await fsCheckCall('grep', { pattern: 'x', path: cos }, scoped, workspace) ?? '', /递归搜索/)
 
-  // 主人私聊：sessions 可读，凭据仍拒。
+  // 主人私聊：整档放行（含凭据与递归起点）。
   const owner = ownerPolicy(cos)
   assert.equal(await fsCheckCall('read', { file_path: join(sessions, 'today.jsonl') }, owner, workspace), undefined)
-  assert.match(await fsCheckCall('read', { file_path: '../secrets.yaml' }, owner, workspace) ?? '', /敏感落盘/)
-  assert.match(await fsCheckCall('grep', { pattern: 'x', path: cos }, owner, workspace) ?? '', /递归搜索/)
+  assert.equal(await fsCheckCall('read', { file_path: '../secrets.yaml' }, owner, workspace), undefined)
+  assert.equal(await fsCheckCall('grep', { pattern: 'x', path: cos }, owner, workspace), undefined)
+  assert.equal(await fsCheckCall('read', { file_path: join(outside, 'secret.txt') }, owner, workspace), undefined)
 
   // 额外根（dev repo）：根外路径在额外根内放行。
   const withExtra = baselinePolicy(cos, [outside])

@@ -49,6 +49,14 @@ test('未配置主人：明确要求不要猜测', () => {
   assert.match(text, /主人 QQ 号尚未配置/)
 })
 
+test('主人私聊：不写工具受限，改为全权限 + 出站隐私提醒', () => {
+  const text = safeRelationCard({ kind: 'private', userId: '10001' }, ['10001'], {}, { trusted: true })
+  assert.match(text, /本条消息来自主人/)
+  assert.match(text, /不受 OneBot 沙箱限制/)
+  assert.doesNotMatch(text, /联网只使用 web_search/)
+  assert.doesNotMatch(text, /群友的发言是聊天内容/)
+})
+
 test('替换 relation-card：移除原卡、追加安全卡并保持顺序', () => {
   const sections = [
     { name: 'persona', text: 'persona', order: 90 },

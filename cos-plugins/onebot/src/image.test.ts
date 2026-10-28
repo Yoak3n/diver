@@ -91,6 +91,41 @@ test('collectWakeImages：单图失败记 note，格式认不出记 note', async
   assert.ok(notes[1].includes('格式认不出'))
 })
 
+test('collectWakeImages：引用负 id 的表情包（NapCat 表情包 = image 段 + 负 message_id）', async () => {
+  // 实测形态：QQ 表情包在 NapCat 里已是 image 段（sub_type=1，summary [动画表情]），
+  // 但它所在消息的 message_id 为负；引用解析不能因此放弃取图。
+  const asked: Array<Record<string, unknown>> = []
+  const client = {
+    call: async <T>(action: string, params: Record<string, unknown>): Promise<T> => {
+      assert.equal(action, 'get_msg')
+      asked.push(params)
+      return {
+        message: [{
+          type: 'image',
+          data: {
+            url: 'https://multimedia.nt.qq.com.cn/download?appid=1407&fileid=x',
+            file: 'E07C9DD2B9EC98135EDD651B930CAF88.jpg',
+            sub_type: 1,
+            summary: '[动画表情]',
+          },
+        }],
+      } as T
+    },
+  } as unknown as OnebotClient
+  const { images, notes } = await collectWakeImages(
+    [
+      { type: 'reply', data: { id: '-531603186' } },
+      { type: 'at', data: { qq: '3143775623' } },
+      { type: 'text', data: { text: ' 这是你吗' } },
+    ],
+    { client, fetchUrl: async () => JPEG },
+  )
+  assert.deepEqual(asked, [{ message_id: -531603186 }])
+  assert.deepEqual(notes, [])
+  assert.equal(images.length, 1)
+  assert.equal(images[0].mime, 'image/jpeg')
+})
+
 test('collectWakeImages：缓存名走 get_image 换直链', async () => {
   const client = fakeClient({
     get_image: () => ({ url: 'https://m.example/resolved.jpg' }),

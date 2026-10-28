@@ -1,10 +1,11 @@
 // @diver/onebot — OneBot 回合文件囚笼：只读工具（read/ls/find/grep）的路径边界。
 //
-// 层级见 sandbox.ts：write/edit/sh 等仍整类硬禁；本模块只管「受限可见」的四个
-// 只读工具——QQ 回合可见，但目标路径必须落在囚笼内：
-//  - 基线（群聊 / 普通私聊）：COS_HOME 全域（含 workspace 与 profiles 插件源码），
+// 层级见 sandbox.ts：受限回合里 write/edit/sh 等仍整类硬禁；本模块只管
+// 「受限可见」的四个只读工具——QQ 回合可见，但目标路径必须落在囚笼内：
+//  - 基线（群聊 / 陌生私聊）：COS_HOME 全域（含 workspace 与 profiles 插件源码），
 //    扣除会话记录、笔记根（只豁免当前来源自己的 scope）与敏感落盘；
-//  - 主人私聊：COS_HOME 全域，仅扣明文凭据（secrets.*；凭据与聊天隐私不同量级）。
+//  - 主人私聊：不受囚笼约束（unrestricted）——该回合工具面与本地桌面一致，
+//    write/sh 本就能触及任意路径，再套只读囚笼只会造成语义分裂。
 // 判定用 realpath containment：`..` 与符号链接逃逸都会被解析后再比对。
 // 路径解析复用 @diver/basic-tools 的 resolveLocalTarget，与工具本体同一语义。
 // grep/find 是递归的：起点若在受保护路径的祖先上，会把受保护内容一起扫出来，
@@ -61,6 +62,8 @@ export interface FsPolicy {
   deniedNames: ReadonlySet<string>
   /** 拒绝名称的已知落盘位置：递归工具不能从它们的祖先起步。 */
   protectedPaths: readonly string[]
+  /** 主人私聊：不做任何囚笼判定（判定直接放行）。 */
+  unrestricted: boolean
 }
 
 export interface FsPolicyOptions {
@@ -91,6 +94,7 @@ export function buildFsPolicy(
     // 默认布局下 secrets / 群发言账 / 设置 / 实例绑定都在 COS_HOME 根；
     // 递归工具从 COS_HOME 起步时会经过这些文件，起点判定据此拒绝。
     protectedPaths: [...deniedNames].map((name) => join(cosHome, name)),
+    unrestricted: ownerPrivate,
   }
 }
 
@@ -106,6 +110,8 @@ export function fsVetoReason(
   policy: FsPolicy,
   recursive = false,
 ): string | undefined {
+  // 主人私聊：完整工具面，囚笼不参与判定。
+  if (policy.unrestricted) return undefined
   if (!policy.roots.some((root) => isWithin(realPath, root))) {
     return `当前回合来自外部聊天（OneBot），文件访问仅限 ${policy.roots.join('、')} 之内："${displayPath}" 越界。`
   }

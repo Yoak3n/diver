@@ -1,16 +1,19 @@
 // @diver/onebot — OneBot 回合沙箱（纯逻辑）。
 //
 // 判定粒度是「回合」而非「消息」：同一陪伴会话既服务本地桌面又服务 QQ，
-// 工具可见性与执行许可按回合动态切换。三条防线：
+// 工具可见性与执行许可按回合动态切换。三条防线只约束**不可信来源**：
+// 群聊（含主人在群里）与陌生私聊。
 //  1) 可见性：system-prompt/assemble 时过滤 assembly.tools（模型看不到）
 //  2) 执行：tools/pre-execute 时否决（提示注入点名调用也调不动）
 //  3) 路径：read/ls/find/grep 四个只读工具「受限可见」，目标路径必须落在
-//     fs-jail.ts 的囚笼内（基线扣会话记录与敏感落盘；主人私聊近乎全开）；
+//     fs-jail.ts 的囚笼内（基线扣会话记录与敏感落盘）；
 //     append_note 是唯一写入口，只能追加当前来源自己的笔记作用域（notes.ts）。
+// **主人私聊是唯一例外**：整回合跳过三条防线，工具面与文件权限和本地桌面一致
+// （所有者明确要求主人私聊全权限，不再防主人号被盗）。
 // 混合批次保守：一批认领消息里混有 OneBot 消息 → 整回合按受限处理。
 //
 // 硬禁清单独立于 allowedTools：即使有人把 sh / write / web_read 填进配置，
-// 也不会对 QQ 回合开放。
+// 也不会对**受限** QQ 回合开放。
 
 import { BASELINE_TOOLS } from './config.ts'
 
@@ -75,7 +78,7 @@ export class TurnSandbox {
   }
 }
 
-/** 本机控制 / 高风险 / 任意 URL 类工具：OneBot 回合永久禁止。 */
+/** 本机控制 / 高风险 / 任意 URL 类工具：受限 OneBot 回合永久禁止。 */
 export const FORBIDDEN_TOOLS: ReadonlySet<string> = new Set([
   // 任意 URL 抓取（web_search / web_explore 已覆盖联网需求）
   'web_read',
@@ -120,8 +123,8 @@ export function isOwnerSource(
 }
 
 /**
- * 本回合是否为主人私聊：文件囚笼的近全开层级（仅扣明文凭据）。
- * 主人在**群里**的发言仍走基线囚笼——群内有其他听众。
+ * 本回合是否为主人私聊：OneBot 沙箱的唯一豁免层——工具面与文件权限和本地
+ * 桌面一致。主人在**群里**的发言仍走基线——群内有其他听众。
  */
 export function isOwnerPrivateSource(
   source: OnebotSource | undefined,
@@ -168,6 +171,25 @@ export function allowedToolNamesForSource(
 ): string[] {
   if (!isOwnerSource(source, ownerIds)) return [...base]
   return [...new Set([...base, ...OWNER_TOOLS])]
+}
+
+/** 本回合的工具面：restricted=false 表示不裁剪、不否决（主人私聊）。 */
+export interface TurnToolPolicy {
+  restricted: boolean
+  allowed: string[]
+}
+
+/**
+ * 回合工具面策略：主人私聊整回合不受限（allowed 为空且不参与判定），
+ * 其余 OneBot 回合按基座 + 配置增量 + 主人专属工具放行。
+ */
+export function turnToolPolicy(
+  base: readonly string[],
+  source: OnebotSource | undefined,
+  ownerIds: readonly string[],
+): TurnToolPolicy {
+  if (isOwnerPrivateSource(source, ownerIds)) return { restricted: false, allowed: [] }
+  return { restricted: true, allowed: allowedToolNamesForSource(base, source, ownerIds) }
 }
 
 /** 工具条目的名字（cos/DSH 两种 schema 形状）。 */

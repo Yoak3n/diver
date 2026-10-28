@@ -9,7 +9,7 @@ import { fsVetoReason } from './fs-jail.ts'
 import { createFsScope } from './fs-scope.ts'
 import { noteScopeDir } from './notes.ts'
 
-test('按来源分策略：群 scope 各自豁免，主人私聊不额外 deny', async () => {
+test('按来源分策略：群 scope 各自豁免，主人私聊整档不受限', async () => {
   const cos = await realpath(await mkdtemp(join(tmpdir(), 'diver-fs-scope-')))
   try {
     const scope = createFsScope({ cosHome: cos, extraRoots: [] })
@@ -27,6 +27,7 @@ test('按来源分策略：群 scope 各自豁免，主人私聊不额外 deny',
     assert.equal(await scope.policyFor(groupA, []), a) // 同一 scope 复用对象
 
     const owner = await scope.policyFor({ kind: 'private', userId: '456' }, ['456'])
+    assert.equal(owner.unrestricted, true)
     assert.deepEqual(owner.deniedSubtrees, [])
     assert.deepEqual(owner.allowedSubtrees, [])
 

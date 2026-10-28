@@ -227,7 +227,9 @@ export function quotedMessageId(segments: readonly Segment[]): number | undefine
   for (const seg of segments) {
     if (seg.type !== 'reply') continue
     const id = Number(seg.data.id ?? NaN)
-    if (Number.isFinite(id) && id > 0) return id
+    // NapCat 原样下发 QQ NT 的有符号 32 位 message_id，群消息一半是负数；
+    // 只有 0/非数字无效，不能拿正负号判断。
+    if (Number.isFinite(id) && id !== 0) return id
   }
   return undefined
 }

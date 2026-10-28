@@ -205,7 +205,7 @@ export function apply(ctx: Context, config: Config = {}): void {
     cfg,
     images: recentImages,
     // image 参数本地路径的囚笼：与 read/ls/find/grep 同一策略——按当前回合来源
-    // 现算（主人私聊近全开；群/私聊只开自己的笔记 scope；桌面回合走基线档）。
+    // 现算（主人私聊不受限；群/私聊只开自己的笔记 scope；桌面回合走基线档）。
     imageFs: async () => ({
       policy: await fsScope.policyFor(sandbox.currentSource(), cfg.ownerIds),
       workspaceBase: await fsScope.workspaceBase(),

@@ -1,7 +1,8 @@
 // @diver/onebot — 回合文件作用域：囚笼策略 + 笔记根（IO 只做一次，按 scope 缓存）。
 //
 // 基线把整个笔记根设为 denied，只对当前来源自己的 scope 开 allowedSubtrees
-// 例外；主人私聊不额外 deny。策略对象按 scope 缓存，避免每回合重建。
+// 例外；主人私聊整档 unrestricted（不参与囚笼判定）。策略对象按 scope 缓存，
+// 避免每回合重建。
 
 import { realpath } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
@@ -12,7 +13,7 @@ import { prepareNotesRoot } from './notes-store.ts'
 import { isOwnerPrivateSource, type OnebotSource } from './sandbox.ts'
 
 export interface FsScope {
-  /** 按回合来源取囚笼策略（主人私聊近全开；基线 + 自己的笔记 scope）。 */
+  /** 按回合来源取囚笼策略（主人私聊不受限；受限回合 = 基线 + 自己的笔记 scope）。 */
   policyFor(source: OnebotSource | undefined, ownerIds: readonly string[]): Promise<FsPolicy>
   /** 相对路径解析基准（basic-tools 未覆写 workspaceRoot 时的默认）。 */
   workspaceBase(): Promise<string>

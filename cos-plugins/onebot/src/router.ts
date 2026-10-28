@@ -21,6 +21,7 @@ import {
   type Segment,
 } from './protocol.ts'
 import { collectWakeImages, type WakeImages } from './image.ts'
+import { createPrivateNameResolver } from './peer-name.ts'
 import {
   deliveryTier,
   evaluateGate,
@@ -90,6 +91,8 @@ export interface Router {
 
 export function createRouter(deps: RouterDeps): Router {
   const { companion, cfg, client, canSteer } = deps
+  // 私聊 sender 常缺 nickname（NapCat）：事件名 → API → 号码，缓存复用。
+  const privateNameOf = createPrivateNameResolver(client)
   const gates = new Map<string, GateState>()
   /** 主人普通档的独立门控（短冷却，不被群聊 15 分钟窗口压住）。 */
   const ownerGates = new Map<string, GateState>()
@@ -192,7 +195,7 @@ export function createRouter(deps: RouterDeps): Router {
     const detail = input.group === null
       ? `onebot:u${input.senderId}`
       : `onebot:g${input.group.id}:${input.senderId || '-'}`
-    const messageId = input.messageId > 0
+    const messageId = input.messageId !== 0
       ? `ob-${input.group === null ? `u${input.senderId}` : `g${input.group.id}`}-${input.messageId}`
       : undefined
     const agent = await companion.agent()
@@ -290,10 +293,12 @@ export function createRouter(deps: RouterDeps): Router {
     const text = segmentsToText(segments)
     // 私聊回合不继承群锚点（避免把该发私聊的话误发到旧群）
     lastAnchor = undefined
+    // 先解析显示名再落缓冲：来源章与背景窗都不要出现「号码(号码)」。
+    const name = await privateNameOf(userId, event.sender)
     appendMessage(privateBufferPath(userId), {
       time: timeOf(event.time),
       userId,
-      name: senderName(event.sender),
+      name,
       text,
       messageId: event.message_id,
       atMe: false,
@@ -304,7 +309,7 @@ export function createRouter(deps: RouterDeps): Router {
       kind: 'private',
       group: null,
       senderId: userId,
-      senderName: senderName(event.sender),
+      senderName: name,
       text,
       hasTrigger: true,
       messageId: event.message_id,

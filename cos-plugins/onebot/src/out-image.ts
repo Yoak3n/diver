@@ -3,7 +3,7 @@
 // 三种来源，最终都归一成 base64:// 段（不依赖 OneBot 实现端的下载能力）：
 //  1. 会话里近期收到过的图（句柄引用，桌面端收的图也能转发到 QQ）；
 //  2. http(s) 直链：本机取回后转发——URL 本身不离开本机，比把直链交给实现端更严；
-//  3. 本地图片路径：与 read/ls/find/grep 同一文件囚笼（fs-jail，主人私聊近全开），
+//  3. 本地图片路径：与 read/ls/find/grep 同一文件囚笼（fs-jail；主人私聊不受限），
 //     magic bytes 嗅探保证只有真图片格式能发出（挡掉把任意二进制伪装成图外带）。
 // 句柄由 session 事件统一喂入缓存（index.ts 接线）；`image="list"` 或解析失败会
 // 返回可用清单与写法说明——模型自描述自纠，不占提示词。
@@ -95,7 +95,7 @@ export type ImageOutcome =
 /** image 参数解析依赖：句柄缓存 + 按当前回合现算的文件囚笼（可注入直链取回器）。 */
 export interface ImageResolveDeps {
   images: RecentImages
-  /** 本地路径的囚笼策略与相对路径基准（QQ 回合按来源两档；桌面回合同一基线档）。 */
+  /** 本地路径的囚笼策略与相对路径基准（受限 QQ 回合按来源分档；主人私聊不受限）。 */
   imageFs: () => Promise<{ policy: FsPolicy; workspaceBase: string }>
   /** 直链取回器；缺省真实 fetch（超时 + 大小守卫在 img-bytes）。 */
   fetchUrl?: UrlFetcher

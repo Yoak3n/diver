@@ -7,7 +7,7 @@
 // - OneBot 回合工具白名单基座固定（出话 + 联网检索 + 作用域记忆 + 只读文件
 //   四件套 + 自己的笔记追加），allowedTools 只做增量；写入/shell 等本机控制类
 //   工具由 sandbox.ts 硬性禁止，只读四件套的目标路径由 fs-jail.ts 囚笼约束，
-//   笔记写入由 notes.ts 的作用域/容量规则约束
+//   笔记写入由 notes.ts 的作用域/容量规则约束；主人私聊整回合不受这些约束
 
 import type { PluginConfigDecl } from '@cos/plugin-api'
 import { isAbsolute } from 'node:path'
@@ -103,7 +103,7 @@ export const BASELINE_TOOLS = [
   'recall',
   'remember',
   // 只读环境感知：COS_HOME 囚笼内可读（含 workspace 与 profiles 插件源码），
-  // 基线扣会话记录/敏感落盘，主人私聊近全开。
+  // 受限回合扣会话记录/敏感落盘；主人私聊不受限。
   'read',
   'ls',
   'find',
@@ -214,7 +214,7 @@ export const configDecl: PluginConfigDecl = {
       label: '主人 QQ 号',
       type: 'text',
       section: '身份与监听',
-      description: '逗号分隔；用于提示词、记忆作用域、触发档位与文件囚笼层级（主人私聊近全开，群内仍走基线）',
+      description: '逗号分隔；用于提示词、记忆作用域、触发档位与文件权限层级（主人私聊全权限，群内仍走基线）',
     },
     { key: 'groups', label: '监听的群', type: 'text', section: '身份与监听', description: '逗号分隔群号；空 = 不监听任何群' },
     { key: 'aliases', label: '昵称/别名', type: 'text', section: '身份与监听', description: '逗号分隔；群消息提到即高概率回应' },

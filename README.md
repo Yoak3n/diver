@@ -75,7 +75,7 @@ pnpm tauri dev     # 自动拉起 sidecar + Vite(1420) + 窗口
 
 ## 最近版本
 
-v0.2.7（2026-10-28）：修复 AppImage 启动失败。壳给外部工具子进程剥离 AppImage 注入的 `LD_LIBRARY_PATH` / `LD_PRELOAD`，避免系统 `tar`/`xz`/`node` 误加载随包旧库（`XZ_5.6.0`、`LIBFFI_CALL_PLAN_8.4` 符号缺失）导致「未检测到 Node → 下载 → 解压失败 → sidecar 起不来」；解压报错同时保留压缩器 stderr，便于定位。完整变更见 [Releases](https://github.com/Yoak3n/diver/releases)。
+v0.2.8（2026-10-28）：OneBot 主人私聊开放全权限——工具面与文件访问和本地桌面一致（群聊与陌生私聊边界不变）；私聊来源昵称改由事件名 + `get_stranger_info` / 好友列表解析并缓存，修复「号码(号码)」重复；同时修正 NapCat 有符号 `message_id` 在引用/取图/落账链路上的判定。完整变更见 [Releases](https://github.com/Yoak3n/diver/releases)。
 
 ## 后续方向
 

@@ -43,8 +43,10 @@ export async function ensureCompanionAgent(ctx: Context, model?: string, provide
   const handle = await ctx.agentLoop.createAgent({
     sessionId: id,
     meta: { cwd: WORKSPACE_DIR() },
-    // maxTokens 显式下传：推理模型 completion 含 CoT，缺省会被网关砍半截正文。
-    agentOptions: { provider: resolvedProvider, model: resolvedModel, maxTokens: 384000 },
+    // 不下发 maxTokens：deepseek/commandcode/volcark 适配器自身缺省 384000（覆盖
+    // 推理模型 CoT 的 completion 预算）；opencode-go 网关会拒绝过大的 max_tokens
+    // （mimo 上游直接 400），由适配器按自身协议决定是否携带。
+    agentOptions: { provider: resolvedProvider, model: resolvedModel },
     resume: true,
   })
   console.log(`[diver] 陪伴会话就绪 ${SESSION_ID}（${resolvedProvider}/${resolvedModel}）`)

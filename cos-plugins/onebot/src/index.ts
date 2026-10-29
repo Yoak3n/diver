@@ -237,7 +237,7 @@ export function apply(ctx: Context, config: Config = {}): void {
     fs: fsScope,
     loadCardFacts,
     resetNoteBudget,
-    onMainTurnEnd: (source) => router.settleTurn(source),
+    onMainTurnEnd: router.settleTurn,
   })
 
   applyPrompt(ctx)

@@ -26,17 +26,18 @@ const hasContent = computed(() => (props.msg.content ?? "").trim() !== "");
 const hideBody = computed(() => isImagePlaceholder(props.msg));
 const contentHtml = computed(() => renderMarkdownHtml(props.msg.content ?? ""));
 const hasThinking = computed(() => (props.msg.thinking ?? "") !== "");
-// 静默痕迹在气泡层隐藏（拍板：UI 隐 + 可追溯）——完整记录仍在活动面板与会话日志。
+// 静默痕迹在「有正文的气泡」里隐藏（拍板：UI 隐 + 可追溯）；纯工具步骤没有
+// 正文，活动分组里仍要能看到这次 stay_silent，否则只剩一个空白头像。
 const HIDDEN_TOOLS = new Set(["stay_silent"]);
 const toolList = computed(() =>
-  (props.msg.tools ?? []).filter((t) => !HIDDEN_TOOLS.has(t.name)),
+  (props.msg.tools ?? []).filter((t) => !hasContent.value || !HIDDEN_TOOLS.has(t.name)),
 );
 const hasTools = computed(() => toolList.value.length > 0);
 const metaOnly = computed(
   () =>
     !hasContent.value &&
     (props.msg.images?.length ?? 0) === 0 &&
-    (hasThinking.value || hasTools.value),
+    (hasThinking.value || hasTools.value || (props.msg.tools?.length ?? 0) > 0),
 );
 const showBubble = computed(() => hasContent.value);
 /** 他方实例的发言。展示按视图语境：群聊视图靠左、名字在气泡上方；私聊视图与用户消息同侧靠右。 */

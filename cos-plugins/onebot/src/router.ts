@@ -65,6 +65,9 @@ const TURN_RETRY_HINT =
   '[OneBot 重试] 上一回合在请求模型时失败中断。请直接回应最近一条来自本会话的消息；'
   + '已经发出过的内容不要重复。'
 
+/** 重排也用尽后的兜底提示：触发类回合异常结束时，聊天里至少有一句可见反馈。 */
+const TURN_FAIL_NOTICE = '（刚才请求模型失败了，这条消息没处理成功，稍后再发一次试试）'
+
 /**
  * 机会档待评估候选：debounce 结束后按「最后一条消息」决定档位。
  * plain 无触发正文（空 sender/text/segments）；owner 带主人那条消息，
@@ -395,6 +398,24 @@ export function createRouter(deps: RouterDeps): Router {
   }
 
   /**
+   * 失败兜底提示：绕过 agent 直接走 OneBot，保证触发类回合异常结束时
+   * 聊天里至少有一句可见反馈（重排也用尽、或重排唤醒本身就失败时）。
+   */
+  async function noticeTurnFailure(target: string): Promise<void> {
+    const message = [{ type: 'text', data: { text: TURN_FAIL_NOTICE } }]
+    try {
+      if (target.startsWith('u')) {
+        await client.call('send_private_msg', { user_id: Number(target.slice(1)), message })
+      } else {
+        await client.call('send_group_msg', { group_id: Number(target.slice(1)), message })
+      }
+      console.log(`[onebot] 已发送失败提示 ${target}`)
+    } catch (error) {
+      console.log(`[onebot] 失败提示发送失败 ${target}: ${String(error)}`)
+    }
+  }
+
+  /**
    * 模型请求失败、触发回合又没出话：给上游一点恢复时间后整回合重排一次。
    * 原始消息仍在会话里，这里只补一条「继续回应」的提示，不重复入站内容。
    */
@@ -413,6 +434,7 @@ export function createRouter(deps: RouterDeps): Router {
           agent.followup(companion.message(TURN_RETRY_HINT, trigger.detail))
         } catch (error) {
           console.log(`[onebot] 重排唤醒失败 ${trigger.target}: ${String(error)}`)
+          await noticeTurnFailure(trigger.target)
         }
       })()
     }, TURN_RETRY_DELAY_MS)
@@ -442,6 +464,10 @@ export function createRouter(deps: RouterDeps): Router {
               `[onebot] 回合结束未见出话 kind=${trigger.kind} ${trigger.target} 投递=${trigger.tier}`
               + `${trigger.retried ? '（重排后仍未出话）' : `（结束原因=${reason?.kind ?? '未知'}）`}`,
             )
+            // 重排也用尽（或没有重排机会）且仍是模型请求失败：给用户一句可见反馈。
+            if (trigger.retried && reason?.kind === 'error') {
+              void noticeTurnFailure(trigger.target)
+            }
           }
         }
       }

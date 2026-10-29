@@ -14,10 +14,11 @@ import { resolveConfig } from './config.ts'
 import type { PrivateMessageEvent } from './protocol.ts'
 import { createRouter } from './router.ts'
 
-/** 最小假 client：私聊昵称走事件自带字段，不触发 API 查询。 */
-const client = {
-  call: async () => ({}),
-} as unknown as Parameters<typeof createRouter>[0]['client']
+/** 最小假 client：私聊昵称走事件自带字段，不触发 API 查询；记录出站调用。 */
+interface ClientCall {
+  action: string
+  params?: Record<string, unknown>
+}
 
 function privateEvent(text: string): PrivateMessageEvent {
   return {
@@ -35,6 +36,13 @@ function privateEvent(text: string): PrivateMessageEvent {
 function harness(home: string) {
   process.env.COS_HOME = home
   const followups: UserMessage[] = []
+  const calls: ClientCall[] = []
+  const client = {
+    call: async (action: string, params?: Record<string, unknown>) => {
+      calls.push({ action, params })
+      return {}
+    },
+  } as unknown as Parameters<typeof createRouter>[0]['client']
   const agent = {
     status: 'idle',
     followup: (message: UserMessage) => { followups.push(message) },
@@ -51,7 +59,7 @@ function harness(home: string) {
     client,
     canSteer: () => false,
   })
-  return { router, followups }
+  return { router, followups, calls }
 }
 
 test('触发回合 error 且未出话：延迟后整回合重排一次，沿用原来源', async (t) => {
@@ -110,4 +118,25 @@ test('正常结束、已出话与取消/释放不重排', async (t) => {
   t.mock.timers.tick(1500)
   await new Promise((resolve) => setImmediate(resolve))
   assert.equal(followups.length, 3)
+})
+
+test('重排后仍失败：直接发一条兜底提示，绝不静默', async (t) => {
+  const home = mkdtempSync(join(tmpdir(), 'onebot-router-'))
+  t.after(() => rmSync(home, { recursive: true, force: true }))
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+  const { router, followups, calls } = harness(home)
+
+  await router.handlePrivate(privateEvent('在吗'))
+  router.settleTurn({ kind: 'private', userId: '42' }, { kind: 'error' })
+  t.mock.timers.tick(1500)
+  await new Promise((resolve) => setImmediate(resolve))
+  assert.equal(followups.length, 2, '先重排一次')
+  assert.equal(calls.filter((c) => c.action === 'send_private_msg').length, 0, '重排前不提示')
+
+  // 重排后的回合再次以 error 结束：此时必须给用户一句可见反馈
+  router.settleTurn({ kind: 'private', userId: '42' }, { kind: 'error' })
+  await new Promise((resolve) => setImmediate(resolve))
+  const notices = calls.filter((c) => c.action === 'send_private_msg')
+  assert.equal(notices.length, 1, '重排失败后发提示')
+  assert.equal(notices[0]!.params?.user_id, 42)
 })

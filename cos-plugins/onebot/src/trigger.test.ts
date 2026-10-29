@@ -14,6 +14,7 @@ import {
   opportunityRate,
   plainRateForHour,
   recordTurnOutcome,
+  shouldRetryTurn,
 } from './trigger.ts'
 
 const cfg = resolveConfig({
@@ -131,4 +132,13 @@ test('投递档位：可插话（忙且来源域一致）时触发类 steer，pl
   for (const kind of ['at', 'mention', 'quoted', 'owner', 'plain', 'private'] as const) {
     assert.equal(deliveryTier(kind, false), 'followup')
   }
+})
+
+test('回合重排：仅 error + 未出话 + 未重排过时重跑一次', () => {
+  assert.equal(shouldRetryTurn({ kind: 'error' }, false, false), true)
+  assert.equal(shouldRetryTurn({ kind: 'error' }, true, false), false, '每轮唤醒只重排一次')
+  assert.equal(shouldRetryTurn({ kind: 'error' }, false, true), false, '已经出话不重复')
+  assert.equal(shouldRetryTurn({ kind: 'aborted' }, false, false), false, '取消/释放不重跑')
+  assert.equal(shouldRetryTurn({ kind: 'completed' }, false, false), false, '正常沉默不重跑')
+  assert.equal(shouldRetryTurn(undefined, false, false), false)
 })

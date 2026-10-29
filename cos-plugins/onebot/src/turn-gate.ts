@@ -34,8 +34,8 @@ export interface TurnGateDeps {
   /** 读身份卡片的原始 IO；本模块按回合缓存。 */
   loadCardFacts: () => Promise<ShallowCardFacts>
   resetNoteBudget: () => void
-  /** 主会话回合结束（router.settleTurn）。 */
-  onMainTurnEnd: (source: OnebotSource | undefined) => void
+  /** 主会话回合结束（router.settleTurn）；reason 供异常结束后的整回合重排判定。 */
+  onMainTurnEnd: (source: OnebotSource | undefined, reason?: { kind: string }) => void
 }
 
 export function applyTurnGate(ctx: Context, deps: TurnGateDeps): void {
@@ -163,6 +163,6 @@ export function applyTurnGate(ctx: Context, deps: TurnGateDeps): void {
     turnCardFacts = undefined
     deps.resetNoteBudget()
     ctx.emit('onebot/turn-scope', scopeEvent(undefined))
-    deps.onMainTurnEnd(source)
+    deps.onMainTurnEnd(source, event.data.reason)
   })
 }

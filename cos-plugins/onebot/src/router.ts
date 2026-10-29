@@ -31,6 +31,7 @@ import {
   newPrivateGate,
   opportunityRate,
   recordTurnOutcome,
+  shouldRetryTurn,
   type DeliveryTier,
   type GateState,
   type PrivateGate,
@@ -54,6 +55,17 @@ export interface CompanionLike {
 const ANCHOR_MAX_AGE_MS = 10 * 60_000
 
 /**
+ * 触发回合异常结束后的整回合重排延迟。模型请求自身已有退避重试
+ * （llm-retry），这里是它用尽后的最后一搏；给上游一点恢复时间。
+ */
+const TURN_RETRY_DELAY_MS = 1500
+
+/** 重排时注入的提示：原始消息仍在会话里，只要指明回应对象，避免重复已发内容。 */
+const TURN_RETRY_HINT =
+  '[OneBot 重试] 上一回合在请求模型时失败中断。请直接回应最近一条来自本会话的消息；'
+  + '已经发出过的内容不要重复。'
+
+/**
  * 机会档待评估候选：debounce 结束后按「最后一条消息」决定档位。
  * plain 无触发正文（空 sender/text/segments）；owner 带主人那条消息，
  * 让模型知道是谁在说话。
@@ -65,6 +77,18 @@ interface Opportunity {
   text: string
   messageId: number
   segments: readonly Segment[] | null
+}
+
+/** 触发类唤醒的在途回合：turn/end 时核对是否真的出话、异常时整回合重排一次。 */
+interface PendingTrigger {
+  kind: WakeKind
+  target: string
+  tier: DeliveryTier
+  at: number
+  /** 原消息来源 detail：重排消息沿用，沙箱/记忆作用域保持一致。 */
+  detail: string
+  /** 已经整回合重排过一次。 */
+  retried: boolean
 }
 
 export interface RouterDeps {
@@ -81,7 +105,7 @@ export interface Router {
   /** 工具侧记账：本回合实际发言（沉默退避结算用）。 */
   noteSpoke(): void
   /** turn/end：结算机会档（plain/owner）唤醒的回合结局；source = 刚结束回合的来源。 */
-  settleTurn(source: OnebotSource | undefined): void
+  settleTurn(source: OnebotSource | undefined, reason?: { kind: string }): void
   anchor(groupId?: string): TriggerAnchor | undefined
   rememberSent(groupId: string, messageId: number): void
   /** 群号 → 群名（RPC + 缓存，兜底 `群<id>`；自己发言落账署名用）。 */
@@ -107,9 +131,9 @@ export function createRouter(deps: RouterDeps): Router {
   /** 最近一次实际出话时刻；触发回合结束时据此判断有没有真的回。 */
   let lastSpokeAt = 0
   /** 最近一次触发类唤醒（at/mention/quoted/private），供 turn/end 核对出话。 */
-  let pendingTrigger:
-    | { kind: WakeKind; target: string; tier: DeliveryTier; at: number }
-    | undefined
+  let pendingTrigger: PendingTrigger | undefined
+  /** 在途的整回合重排（异常结束后的最后一搏）；新唤醒会取消它。 */
+  let retryTimer: NodeJS.Timeout | undefined
   let lastAnchor: TriggerAnchor | undefined
 
   const gateOf = (groupId: string): GateState => {
@@ -172,6 +196,12 @@ export function createRouter(deps: RouterDeps): Router {
     /** 触发消息段（普通档无触发消息给 null，不取图）。 */
     segments: readonly Segment[] | null
   }): Promise<void> {
+    // 新消息到了：让新回合/新触发接管，放弃上一回合的整回合重排。
+    if (retryTimer !== undefined) {
+      clearTimeout(retryTimer)
+      retryTimer = undefined
+      if (pendingTrigger?.retried === true) pendingTrigger = undefined
+    }
     const snapshot = selectWindow(readMessages(input.bufferFile), cfg.context)
     const collected: WakeImages = input.segments === null
       ? { images: [], notes: [] }
@@ -220,6 +250,8 @@ export function createRouter(deps: RouterDeps): Router {
         target: input.group === null ? `u${input.senderId}` : `g${input.group.id}`,
         tier,
         at: Date.now(),
+        detail,
+        retried: false,
       }
     }
     if (tier === 'steer') agent.steer(message)
@@ -362,6 +394,30 @@ export function createRouter(deps: RouterDeps): Router {
     })
   }
 
+  /**
+   * 模型请求失败、触发回合又没出话：给上游一点恢复时间后整回合重排一次。
+   * 原始消息仍在会话里，这里只补一条「继续回应」的提示，不重复入站内容。
+   */
+  function scheduleTurnRetry(trigger: PendingTrigger): void {
+    pendingTrigger = { ...trigger, at: Date.now(), retried: true }
+    console.log(
+      `[onebot] 回合异常结束，${TURN_RETRY_DELAY_MS}ms 后重排一次 `
+      + `kind=${trigger.kind} ${trigger.target}`,
+    )
+    retryTimer = setTimeout(() => {
+      retryTimer = undefined
+      void (async () => {
+        try {
+          const agent = await companion.agent()
+          // 沿用原 detail：沙箱/记忆作用域仍是同一来源，出话工具照常可用。
+          agent.followup(companion.message(TURN_RETRY_HINT, trigger.detail))
+        } catch (error) {
+          console.log(`[onebot] 重排唤醒失败 ${trigger.target}: ${String(error)}`)
+        }
+      })()
+    }, TURN_RETRY_DELAY_MS)
+  }
+
   return {
     handleGroup,
     handlePrivate,
@@ -369,7 +425,7 @@ export function createRouter(deps: RouterDeps): Router {
       lastSpokeAt = Date.now()
       if (awaiting !== undefined) awaiting.spoke = true
     },
-    settleTurn: (source) => {
+    settleTurn: (source, reason) => {
       const target = source === undefined
         ? undefined
         : source.kind === 'group' ? `g${source.groupId}` : `u${source.userId}`
@@ -377,10 +433,16 @@ export function createRouter(deps: RouterDeps): Router {
         const trigger = pendingTrigger
         pendingTrigger = undefined
         // 触发类回合（@/提及/引用/私聊）没调用出话工具：只在桌面端说了话，QQ 里无声
-        if (lastSpokeAt < trigger.at) {
-          console.log(
-            `[onebot] 回合结束未见出话 kind=${trigger.kind} ${trigger.target} 投递=${trigger.tier}`,
-          )
+        const spoke = lastSpokeAt >= trigger.at
+        if (!spoke) {
+          if (shouldRetryTurn(reason, trigger.retried, spoke)) {
+            scheduleTurnRetry(trigger)
+          } else {
+            console.log(
+              `[onebot] 回合结束未见出话 kind=${trigger.kind} ${trigger.target} 投递=${trigger.tier}`
+              + `${trigger.retried ? '（重排后仍未出话）' : `（结束原因=${reason?.kind ?? '未知'}）`}`,
+            )
+          }
         }
       }
       if (awaiting === undefined) return
@@ -415,6 +477,10 @@ export function createRouter(deps: RouterDeps): Router {
       for (const timer of opportunityTimers.values()) clearTimeout(timer)
       opportunityTimers.clear()
       pendingOpportunity.clear()
+      if (retryTimer !== undefined) {
+        clearTimeout(retryTimer)
+        retryTimer = undefined
+      }
     },
   }
 }

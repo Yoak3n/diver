@@ -55,6 +55,19 @@ export function deliveryTier(kind: TriggerKind, steerable: boolean): DeliveryTie
   return kind === 'plain' || kind === 'owner' ? 'followup' : 'steer'
 }
 
+/**
+ * 触发类回合（@/提及/引用/私聊）异常结束且没出话时，是否整回合重排一次。
+ * 只认模型请求失败（kind=error）：取消/会话释放/正常沉默重跑不会更好。
+ * 每轮唤醒最多重排一次，重排后仍失败就落日志、不再循环。
+ */
+export function shouldRetryTurn(
+  reason: { kind: string } | undefined,
+  retried: boolean,
+  spoke: boolean,
+): boolean {
+  return !spoke && !retried && reason?.kind === 'error'
+}
+
 // ---- 机会档门控状态（每群一份；plain 与 owner 各持一份） ----
 
 export interface GateState {

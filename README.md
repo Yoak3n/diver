@@ -75,6 +75,8 @@ pnpm tauri dev     # 自动拉起 sidecar + Vite(1420) + 窗口
 
 ## 最近版本
 
+v0.2.12（2026-10-29）：聊天界面修复——只有 stay_silent 的纯工具步骤不再渲染成空白头像气泡，活动分组里可以直接看到这次静默调用。完整变更见 [Releases](https://github.com/Yoak3n/diver/releases)。
+
 v0.2.11（2026-10-29）：触发类回合异常结束时除重排一次外，重排用尽仍失败会直接发一句可见提示（私聊/群聊按来源），不再静默。完整变更见 [Releases](https://github.com/Yoak3n/diver/releases)。
 
 v0.2.10（2026-10-29）：模型请求修复——陪伴 agent 不再对所有 provider 硬编码 `maxTokens=384000`（opencode-go 上游会拒绝，导致 mimo-v2.6-pro / flash 全部 400）；OneBot 回合结束回调透传 `reason`，异常回合的整回合重排真正生效。完整变更见 [Releases](https://github.com/Yoak3n/diver/releases)。

@@ -75,6 +75,8 @@ pnpm tauri dev     # 自动拉起 sidecar + Vite(1420) + 窗口
 
 ## 最近版本
 
+v0.2.10（2026-10-29）：模型请求修复——陪伴 agent 不再对所有 provider 硬编码 `maxTokens=384000`（opencode-go 上游会拒绝，导致 mimo-v2.6-pro / flash 全部 400）；OneBot 回合结束回调透传 `reason`，异常回合的整回合重排真正生效。完整变更见 [Releases](https://github.com/Yoak3n/diver/releases)。
+
 v0.2.9（2026-10-29）：模型请求失败可恢复性——网关把上游故障包成 4xx + `server_error` 时仍走退避重试，重试判定不再依赖同进程类身份（修复多份引擎副本导致的 429/5xx 不重试）；修正 dev 构建切换到打包运行时后工作区继续加载旧引擎副本的问题；OneBot 触发回合（@/提及/引用/私聊）异常结束且未出话时自动整回合重排一次。完整变更见 [Releases](https://github.com/Yoak3n/diver/releases)。
 
 v0.2.8（2026-10-28）：OneBot 主人私聊开放全权限——工具面与文件访问和本地桌面一致（群聊与陌生私聊边界不变）；私聊来源昵称改由事件名 + `get_stranger_info` / 好友列表解析并缓存，修复「号码(号码)」重复；同时修正 NapCat 有符号 `message_id` 在引用/取图/落账链路上的判定。完整变更见 [Releases](https://github.com/Yoak3n/diver/releases)。

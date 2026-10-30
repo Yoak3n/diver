@@ -75,6 +75,8 @@ pnpm tauri dev     # 自动拉起 sidecar + Vite(1420) + 窗口
 
 ## 最近版本
 
+v0.2.13（2026-10-30）：新增小米 MiMo 原生模型提供商 `mimo`——OpenAI 兼容端点，缺省 `mimo-v2.6-pro`（可选 `mimo-v2.6-flash`）；模型目录实时拉取并过滤同命名空间的 TTS/ASR 型号；输出预算走 `max_completion_tokens` 并钳到 128K，不再受经 opencode-go 转发时的 400 影响。完整变更见 [Releases](https://github.com/Yoak3n/diver/releases)。
+
 v0.2.12（2026-10-29）：聊天界面修复——只有 stay_silent 的纯工具步骤不再渲染成空白头像气泡，活动分组里可以直接看到这次静默调用。完整变更见 [Releases](https://github.com/Yoak3n/diver/releases)。
 
 v0.2.11（2026-10-29）：触发类回合异常结束时除重排一次外，重排用尽仍失败会直接发一句可见提示（私聊/群聊按来源），不再静默。完整变更见 [Releases](https://github.com/Yoak3n/diver/releases)。

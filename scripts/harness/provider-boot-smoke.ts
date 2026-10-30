@@ -43,8 +43,12 @@ for (const p of providers) {
 }
 
 const ids = providers.map((p) => p.id)
-const ok = ids.includes('volcark') && ids.includes('commandcode') && ids.includes('deepseek-official')
-console.log(ok ? '[smoke] OK — volcark registered' : '[smoke] FAIL — volcark missing')
+const ok =
+  ids.includes('mimo') &&
+  ids.includes('volcark') &&
+  ids.includes('commandcode') &&
+  ids.includes('deepseek-official')
+console.log(ok ? '[smoke] OK — mimo/volcark registered' : '[smoke] FAIL — provider missing')
 
 try {
   await ctx.fiber.dispose()

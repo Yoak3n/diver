@@ -23,7 +23,7 @@
 - **多实例**：每实例独立记忆 / 会话 / 人格 / 插件配置与桌宠；互实例消息（send_to_peer）；设置「实例」页管理，QQ 归属在实例间单选
 - **Live2D 桌宠**：点按随机动作、情绪驱动动作、TTS 口型同步（按真实音频时长驱动）、模型切换（官方 Hiyori / N.E.K.O YUI）、气泡轻聊
 - **关系层记忆**：`remember` / `entity` / `identity` 工具 + 会话末 digest + 实体图谱，Rust SQLite 后端做衰减/激活/遗忘（不做逐轮提取）
-- **模型提供商（一切皆插件）**：`deepseek-official` / `commandcode` / `volcark` / `opencode-go` / `mock`，自定义 baseUrl 保存即生效；设置面板配置区由插件声明驱动
+- **模型提供商（一切皆插件）**：`deepseek-official` / `commandcode` / `volcark` / `opencode-go` / `mimo` / `mock`，自定义 baseUrl 保存即生效；设置面板配置区由插件声明驱动
 - **在线 TTS**：MiMo / MiniMax / 火山，朗读队列 + 口型同步
 - **主动陪伴**：presence 存在感状态机（HSM）、日程提醒（设置页配置、30s tick 热生效，到点主动问候 + 原生通知）
 - **桌面集成**：全局快捷键唤起、托盘、轻量模式、开机自启、单实例、图片附件、助手头像；sidecar 崩溃落态与 backend 重启请求自动拉起，断线页可一键重启，启动失败直接给出日志路径

@@ -91,6 +91,14 @@
       "defaultEnabled": true
     },
     {
+      "id": "llm-mimo",
+      "packageName": "@diver/llm-mimo",
+      "displayName": "小米 MiMo 模型",
+      "description": "小米 MiMo 开放平台 OpenAI 兼容适配器（目录滤 TTS/ASR，max_completion_tokens 钳到 128K）",
+      "toggleable": true,
+      "defaultEnabled": true
+    },
+    {
       "id": "llm-custom",
       "packageName": "@diver/llm-custom",
       "displayName": "自定义模型提供商",

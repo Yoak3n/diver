@@ -35,6 +35,7 @@ const files = [
   ...walk(join(PLUGINS, 'memory')),
   ...walk(join(PLUGINS, 'self-prompt')),
   ...walk(join(PLUGINS, 'llm-commandcode')),
+  ...walk(join(PLUGINS, 'llm-mimo')),
   ...walk(join(PLUGINS, 'llm-volcark')),
   ...walk(join(PLUGINS, 'native-bridge')),
   ...walk(join(PLUGINS, 'web-tools')),

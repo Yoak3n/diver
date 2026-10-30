@@ -38,7 +38,13 @@ export function createChatState() {
   const personaName = computed(() => healthInfo.value?.persona || "");
   const modelConfigured = computed(() => !!healthInfo.value?.modelConfigured);
   const providerNameOf = (p: string): string =>
-    p === "opencode-go" ? "opencode-go" : p === "deepseek-official" ? "DeepSeek" : p;
+    p === "opencode-go"
+      ? "opencode-go"
+      : p === "deepseek-official"
+        ? "DeepSeek"
+        : p === "mimo"
+          ? "MiMo"
+          : p;
   const currentModelLabel = computed(() => {
     const h = healthInfo.value;
     if (!h) return "";

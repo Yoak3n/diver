@@ -25,7 +25,7 @@ Diver 是基于 **Tauri 2 + Vue 3 + DeepSeek Harness** 的桌面陪伴 agent。
 - [Live2D 桌宠](live2d-pet.md) - 桌宠渲染、交互、口型同步、窗口技术
 - [TTS 语音合成](tts.md) - 配置真源、三家服务商协议、流式合成（MiMo）、双窗播报队列
 - [联网探索插件](web-tools.md) - web_search / web_read / web_explore、预算与安全边界
-- [模型提供商](providers.md) - 插件声明驱动的配置体系、deepseek-official / commandcode / volcark / mock + 自定义、端点路由
+- [模型提供商](providers.md) - 插件声明驱动的配置体系、deepseek-official / commandcode / volcark / opencode-go / mimo / mock + 自定义、端点路由
 - [关系层记忆](memory.md) - Node 提取插件 + Rust SQLite 后端、JSON-RPC 协议、衰减/激活/遗忘机制
 
 ## 规划

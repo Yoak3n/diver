@@ -9,6 +9,7 @@
     "@diver/basic-tools": "file:../basic-tools",
     "@diver/delegate": "file:../delegate",
     "@diver/llm-commandcode": "file:../llm-commandcode",
+    "@diver/llm-mimo": "file:../llm-mimo",
     "@diver/llm-opencode": "file:../llm-opencode",
     "@diver/llm-volcark": "file:../llm-volcark",
     "@diver/mcp": "file:../mcp",

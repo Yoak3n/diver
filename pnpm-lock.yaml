@@ -125,6 +125,9 @@ importers:
       '@diver/llm-commandcode':
         specifier: file:../llm-commandcode
         version: link:../llm-commandcode
+      '@diver/llm-mimo':
+        specifier: file:../llm-mimo
+        version: file:cos-plugins/llm-mimo(@cordisjs/plugin-include@1.2.0)(@cordisjs/plugin-loader@1.0.0-rc.9)
       '@diver/llm-opencode':
         specifier: file:../llm-opencode
         version: file:cos-plugins/llm-opencode(@cordisjs/plugin-include@1.2.0)(@cordisjs/plugin-loader@1.0.0-rc.9)
@@ -201,6 +204,25 @@ importers:
         version: 5.6.3
 
   cos-plugins/llm-custom:
+    dependencies:
+      '@cos/plugin-api':
+        specifier: workspace:*
+        version: link:../../harness/packages/plugin-api
+      '@diver/llm-openai-wire':
+        specifier: file:../llm-openai-wire
+        version: file:cos-plugins/llm-openai-wire
+      cordis:
+        specifier: 4.0.0-rc.12
+        version: 4.0.0-rc.12(@cordisjs/plugin-include@1.2.0)(@cordisjs/plugin-loader@1.0.0-rc.9)
+    devDependencies:
+      '@types/node':
+        specifier: ^26.2.0
+        version: 26.2.0
+      typescript:
+        specifier: ~5.6.2
+        version: 5.6.3
+
+  cos-plugins/llm-mimo:
     dependencies:
       '@cos/plugin-api':
         specifier: workspace:*
@@ -946,6 +968,9 @@ packages:
 
   '@diver/llm-commandcode@file:cos-plugins/llm-commandcode':
     resolution: {directory: cos-plugins/llm-commandcode, type: directory}
+
+  '@diver/llm-mimo@file:cos-plugins/llm-mimo':
+    resolution: {directory: cos-plugins/llm-mimo, type: directory}
 
   '@diver/llm-openai-wire@file:cos-plugins/llm-openai-wire':
     resolution: {directory: cos-plugins/llm-openai-wire, type: directory}
@@ -3173,6 +3198,15 @@ snapshots:
       - '@cordisjs/plugin-loader'
 
   '@diver/llm-commandcode@file:cos-plugins/llm-commandcode(@cordisjs/plugin-include@1.2.0)(@cordisjs/plugin-loader@1.0.0-rc.9)':
+    dependencies:
+      '@cos/plugin-api': link:harness/packages/plugin-api
+      '@diver/llm-openai-wire': file:cos-plugins/llm-openai-wire
+      cordis: 4.0.0-rc.12(@cordisjs/plugin-include@1.2.0)(@cordisjs/plugin-loader@1.0.0-rc.9)
+    transitivePeerDependencies:
+      - '@cordisjs/plugin-include'
+      - '@cordisjs/plugin-loader'
+
+  '@diver/llm-mimo@file:cos-plugins/llm-mimo(@cordisjs/plugin-include@1.2.0)(@cordisjs/plugin-loader@1.0.0-rc.9)':
     dependencies:
       '@cos/plugin-api': link:harness/packages/plugin-api
       '@diver/llm-openai-wire': file:cos-plugins/llm-openai-wire

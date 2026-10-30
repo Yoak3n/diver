@@ -46,6 +46,7 @@ const OPEN_PLUGINS = [
   'basic-tools',
   'mcp',
   'llm-commandcode',
+  'llm-mimo',
   'llm-opencode',
   'llm-volcark',
   'llm-custom',

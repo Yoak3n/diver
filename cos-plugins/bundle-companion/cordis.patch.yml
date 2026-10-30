@@ -61,6 +61,11 @@
     - id: llm-opencode
       name: '@diver/llm-opencode'
 
+    # 小米 MiMo 开放平台适配器：注册 provider "mimo"
+    # （目录滤掉 TTS/ASR；maxTokens 走 max_completion_tokens 并钳到 131072）
+    - id: llm-mimo
+      name: '@diver/llm-mimo'
+
     # 自定义模型提供商（OpenAI 兼容）：按 custom-providers.json 身份热注册适配器
     - id: llm-custom
       name: '@diver/llm-custom'

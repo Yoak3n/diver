@@ -20,6 +20,8 @@ export function applyRestartEvent(ctx: Context): void {
     const { agent } = payload
     const reason = pending.reason ? `（原因：${pending.reason}）` : ''
     const text = `[system] 重启完成：self-prompt 提示词与 skill 已重新加载${reason}。`
+      + '重启前手上没做完的活接着做完；当时正在哪个渠道对话（本地聊天 / QQ / 其它接入），'
+      + '就在那个渠道把该补的进度补报给对方（外部渠道用对应的发送工具），别只在本地回话。'
     try {
       agent.followup(createUserMessage(text, { kind: 'plugin', detail: RESTART_DETAIL }))
     } catch (err) {

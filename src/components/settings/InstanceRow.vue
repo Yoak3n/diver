@@ -1,13 +1,14 @@
 <script setup lang="ts">
 // 设置页「实例」页 · 单实例卡片行（头像 / 改名编辑态 / 桌宠模型槽 / 启用 / 自动朗读 / 动作）。
 // 纯展示 + 事件上抛：改名态由父级持有（保存失败保留编辑），管理动作的确认与 IPC 在父级。
-import { ref } from "vue";
+import { computed, ref } from "vue";
 import { tauriAvailable, type InstanceMeta, type InstanceTtsProfile } from "../../tauri";
 import type { PetModelProfile } from "../../pet/models";
+import { Badge, Button, Input, Select } from "../../plugin-ui";
 import InstanceAvatar from "./children/InstanceAvatar.vue";
 import InstanceTtsPanel from "./children/InstanceTtsPanel.vue";
 
-defineProps<{
+const props = defineProps<{
   inst: InstanceMeta;
   /** 本行处于改名编辑态。 */
   editing: boolean;
@@ -48,6 +49,14 @@ function displayName(inst: InstanceMeta): string {
 function formatDate(unix: number): string {
   return unix ? new Date(unix * 1000).toLocaleDateString() : "—";
 }
+
+const modelOptions = computed(() => [
+  { value: "", label: "跟随全局模型" },
+  ...props.modelProfiles.map((model) => ({
+    value: model.id,
+    label: model.label,
+  })),
+]);
 </script>
 
 <template>
@@ -55,9 +64,10 @@ function formatDate(unix: number): string {
     <InstanceAvatar :instance-id="inst.id" :name="inst.name" />
     <div class="meta">
       <template v-if="editing">
-        <input
+        <Input
           v-model="editingName"
           class="name-input"
+          size="sm"
           maxlength="32"
           @keyup.enter="emit('confirmRename', inst)"
           @keyup.escape="emit('cancelRename')"
@@ -66,21 +76,20 @@ function formatDate(unix: number): string {
       <template v-else>
         <div class="name-row">
           <span class="name" :class="{ unnamed: !inst.name }">{{ displayName(inst) }}</span>
-          <span v-if="inst.id === 'default'" class="badge">默认</span>
+          <Badge v-if="inst.id === 'default'">默认</Badge>
         </div>
         <div class="id-row">id：{{ inst.id }} · 登记于 {{ formatDate(inst.createdAt) }}</div>
       </template>
     </div>
-    <select
+    <Select
       class="model-select"
-      :value="inst.petModel ?? ''"
+      size="sm"
+      :model-value="inst.petModel ?? ''"
+      :options="modelOptions"
       :disabled="!tauriAvailable()"
       title="桌宠模型：跟随全局或为该实例固定"
-      @change="emit('modelChange', inst, ($event.target as HTMLSelectElement).value)"
-    >
-      <option value="">跟随全局模型</option>
-      <option v-for="m in modelProfiles" :key="m.id" :value="m.id">{{ m.label }}</option>
-    </select>
+      @update:model-value="emit('modelChange', inst, $event)"
+    />
     <label class="toggle">
       <input
         type="checkbox"
@@ -111,36 +120,39 @@ function formatDate(unix: number): string {
       接 QQ
     </label>
     <template v-if="editing">
-      <button class="btn small" @click="emit('confirmRename', inst)">保存</button>
-      <button class="btn small" @click="emit('cancelRename')">取消</button>
+      <Button size="sm" @click="emit('confirmRename', inst)">保存</Button>
+      <Button size="sm" @click="emit('cancelRename')">取消</Button>
     </template>
     <template v-else>
-      <button
-        class="btn small"
+      <Button
+        size="sm"
         :disabled="!tauriAvailable() || petBusy"
         @click="emit('togglePet', inst)"
       >
         {{ petActive ? "收起桌宠" : "召唤桌宠" }}
-      </button>
-      <button class="btn small" :disabled="!tauriAvailable()" @click="emit('startRename', inst)">改名</button>
-      <button class="btn small" :disabled="!tauriAvailable()" @click="ttsOpen = !ttsOpen">
+      </Button>
+      <Button size="sm" :disabled="!tauriAvailable()" @click="emit('startRename', inst)">
+        改名
+      </Button>
+      <Button size="sm" :disabled="!tauriAvailable()" @click="ttsOpen = !ttsOpen">
         {{ ttsOpen ? "收起音色" : "音色" }}
-      </button>
-      <button
+      </Button>
+      <Button
         v-if="inst.name"
-        class="btn small"
+        size="sm"
         :disabled="!tauriAvailable()"
         @click="emit('clearName', inst)"
       >
         清空名字
-      </button>
-      <button
-        class="btn small danger"
+      </Button>
+      <Button
+        variant="danger"
+        size="sm"
         :disabled="!tauriAvailable() || inst.id === 'default'"
         @click="emit('delete', inst)"
       >
         删除
-      </button>
+      </Button>
     </template>
     <InstanceTtsPanel
       v-if="ttsOpen"
@@ -168,14 +180,6 @@ function formatDate(unix: number): string {
 .name-input {
   flex: 1;
   min-width: 0;
-  background: var(--paper-sunken);
-  border: 1px solid var(--rule-strong);
-  border-radius: var(--radius);
-  color: var(--ink);
-  font-size: 12px;
-  padding: 8px 10px;
-  box-sizing: border-box;
-  font-family: inherit;
 }
 .name-row {
   display: flex;
@@ -193,13 +197,6 @@ function formatDate(unix: number): string {
   color: var(--ink-dim);
   font-style: italic;
 }
-.badge {
-  font-size: 10px;
-  color: var(--ink-dim);
-  border: 1px solid var(--rule-strong);
-  border-radius: 999px;
-  padding: 1px 6px;
-}
 .id-row {
   font-size: 11px;
   color: var(--ink-dim);
@@ -216,15 +213,5 @@ function formatDate(unix: number): string {
 .model-select {
   flex-shrink: 0;
   max-width: 128px;
-  background: var(--paper-sunken);
-  border: 1px solid var(--rule-strong);
-  border-radius: var(--radius);
-  color: var(--ink);
-  font-size: 11px;
-  padding: 4px 6px;
-  font-family: inherit;
-}
-.btn.danger {
-  color: var(--ink-muted);
 }
 </style>

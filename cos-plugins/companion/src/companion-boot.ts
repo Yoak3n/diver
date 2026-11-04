@@ -18,6 +18,7 @@
 import { copyFileSync, existsSync, mkdirSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
+import type { Context } from 'cordis'
 import type { BootOptions, CliOptions } from '../../../harness/packages/boot/src/index.ts'
 import { profilePluginInserts } from './profile-plugins.ts'
 
@@ -188,10 +189,33 @@ export function resolveCompanionPaths(cli: CliOptions, base: {
 }
 
 /**
- * Build BootOptions for the companion composition.
- * @param cli - parsed argv (profile/bundles/pluginRoot/harness overrides win)
- * @param paths - resolved layout paths
+ * Settle 后主动 resume 单例陪伴 agent（等价 backend 的 ensureAgent 路径）。
+ *
+ * 陪伴 agent 若走惰性创建（首个 HTTP 聊天请求才 ensure），agent 主动申请
+ * 重启后的续聊注入（@diver/self-prompt 挂在 agent/session-start 上）就无从
+ * 触发——重启完成事件只会静静躺着，等用户下次手动发消息才被一并带出来。
+ * boot 返回即全部插件已 apply，此处 resume 会话便触发注入，agent 自己把
+ * 重启前的活接着干完。入口在 `boot()` 成功后立刻调用本函数。
+ *
+ * - backend 未挂载（safe profile / 被禁用）→ 返回 false，无事发生；
+ *   此时 self-prompt 的待注入事件留待 backend 恢复后的下一次 session-start。
+ * - resume 失败只记日志不抛出：会话起不来不应拖垮整个 sidecar boot。
+ * @returns 是否实际执行了 resume
  */
+export async function warmCompanionAgent(ctx: Context): Promise<boolean> {
+  // ctx.companion 由 @diver/backend 挂载（module augmentation）；组合根不 import
+  // backend，按结构类型取用，safe profile 等无 backend 组合天然跳过。
+  const companion = (ctx as Context & { companion?: { agent(): Promise<unknown> } }).companion
+  if (companion === undefined) return false
+  try {
+    await companion.agent()
+    console.error('[cos] 陪伴 agent 已就绪（boot 预热，重启续聊事件可注入）')
+    return true
+  } catch (error) {
+    console.error(`[cos] 陪伴 agent 预热失败（首次聊天时会重试）: ${error}`)
+    return false
+  }
+}
 export function companionBootOptions(cli: CliOptions, paths: CompanionPaths): Partial<BootOptions> {
   const profile = cli.profile ?? COMPANION_PROFILE
   const safe = profile === SAFE_PROFILE

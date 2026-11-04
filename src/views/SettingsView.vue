@@ -1,17 +1,16 @@
 <script setup lang="ts">
 // 设置页：全屏标签布局（左导航 + 右内容），路由 /settings/:tab。
 // 窗口标题栏由 App 壳提供；本页只负责导航与内容。
-import { computed, onMounted, watch } from "vue";
+import { computed, onMounted, onUnmounted, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import {
   useSettings,
   SETTINGS_TABS,
-  isSettingsTab,
-  type SettingsTab,
+  isBaseSettingsTab,
 } from "../composables/useSettings";
+import { SlotOutlet, useSlotEntries, useSlotRegistry } from "../plugin-ui";
 import ModelsTab from "../components/settings/ModelsTab.vue";
 import InstancesTab from "../components/settings/InstancesTab.vue";
-import OnebotTab from "../components/settings/OnebotTab.vue";
 import VoiceTab from "../components/settings/VoiceTab.vue";
 import SystemTab from "../components/settings/SystemTab.vue";
 import McpTab from "../components/settings/McpTab.vue";
@@ -36,10 +35,21 @@ const {
   changePetSize,
 } = useSettings();
 
-const tabFromRoute = computed<SettingsTab>(() => {
+const registry = useSlotRegistry();
+const pluginTabs = useSlotEntries("settings.tab");
+// owner 声明：插件在启动时已 inject 排队，这里声明后条目自动出现。
+const slotDeclaration = registry.declare("settings.tab");
+onUnmounted(() => slotDeclaration.dispose());
+
+const tabFromRoute = computed<string>(() => {
   const raw = route.params.tab;
   const id = Array.isArray(raw) ? raw[0] : raw;
-  return id && isSettingsTab(id) ? id : "models";
+  if (!id) return "models";
+  // 依赖 pluginTabs：插件 tab 晚于首次路由解析注册时，这里会重新校验。
+  const known =
+    isBaseSettingsTab(id) ||
+    pluginTabs.value.some((entry) => entry.id === id);
+  return known ? id : "models";
 });
 
 watch(
@@ -50,7 +60,7 @@ watch(
   { immediate: true },
 );
 
-function selectTab(tab: SettingsTab) {
+function selectTab(tab: string) {
   if (state.activeTab === tab) return;
   state.activeTab = tab;
   void router.replace({ name: "settings", params: { tab } });
@@ -60,7 +70,20 @@ onMounted(() => {
   void openSettings();
 });
 
-const tabs = SETTINGS_TABS;
+const tabs = computed(() => [
+  ...SETTINGS_TABS,
+  ...pluginTabs.value.map((entry) => ({
+    id: entry.id ?? String(entry.uid),
+    label:
+      typeof entry.label === "function"
+        ? entry.label()
+        : (entry.label ?? entry.id ?? "插件"),
+  })),
+]);
+const isBase = computed(() => isBaseSettingsTab(state.activeTab));
+const isKnown = computed(() =>
+  tabs.value.some((tab) => tab.id === state.activeTab),
+);
 </script>
 
 <template>
@@ -80,7 +103,6 @@ const tabs = SETTINGS_TABS;
 
       <main class="content">
         <InstancesTab v-if="state.activeTab === 'instances'" />
-        <OnebotTab v-else-if="state.activeTab === 'onebot'" />
         <ModelsTab
           v-else-if="state.activeTab === 'models'"
           :state="state"
@@ -103,6 +125,15 @@ const tabs = SETTINGS_TABS;
           @toggle-window-startup="toggleWindowStartup"
           @change-pet-size="changePetSize"
         />
+        <SlotOutlet
+          v-else-if="!isBase && isKnown"
+          name="settings.tab"
+          :owner="{}"
+          :only="state.activeTab"
+        />
+        <p v-else-if="!isBase && !isKnown" class="hint">
+          该设置页由插件提供，但插件当前未启用。
+        </p>
 
         <footer
           v-if="state.activeTab === 'models' || state.activeTab === 'voice'"
@@ -172,10 +203,18 @@ const tabs = SETTINGS_TABS;
   color: var(--ink);
   background: var(--paper-active);
   font-weight: 500;
+  box-shadow: inset 2px 0 0 var(--ink);
+}
+.nav-item:focus-visible {
+  outline: 2px solid var(--accent-border);
+  outline-offset: 2px;
 }
 .content {
   flex: 1;
   min-width: 0;
+  width: 100%;
+  max-width: 1040px;
+  margin: 0 auto;
   overflow-y: auto;
   padding: 24px 32px 28px;
   display: flex;

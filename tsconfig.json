@@ -18,8 +18,20 @@
     "strict": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
-    "noFallthroughCasesInSwitch": true
+    "noFallthroughCasesInSwitch": true,
+
+    "paths": {
+      "@diver/plugin-ui": ["./src/plugin-ui/index.ts"],
+      "@diver/plugin-ui/*": ["./src/plugin-ui/*"]
+    }
   },
-  "include": ["src/**/*.ts", "src/**/*.d.ts", "src/**/*.tsx", "src/**/*.vue"],
+  "include": [
+    "src/**/*.ts",
+    "src/**/*.d.ts",
+    "src/**/*.tsx",
+    "src/**/*.vue",
+    "cos-plugins/*/ui/**/*.ts",
+    "cos-plugins/*/ui/**/*.vue"
+  ],
   "references": [{ "path": "./tsconfig.node.json" }]
 }

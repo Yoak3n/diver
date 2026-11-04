@@ -1,7 +1,16 @@
 <script setup lang="ts">
-import { toRef } from "vue";
+import { computed, toRef } from "vue";
 import type { SettingsState } from "../../composables/useSettings";
 import { tauriAvailable } from "../../tauri";
+import {
+  Button,
+  Field,
+  InlineNotice,
+  Input,
+  PageHeader,
+  Select,
+  Switch,
+} from "../../plugin-ui";
 import { useTtsSettings } from "./composables/useTtsSettings";
 
 const props = defineProps<{
@@ -41,35 +50,59 @@ const {
   removeCustomVoice,
   stopSpeaking,
 } = useTtsSettings(stateRef);
+
+const providerOptions = computed(() =>
+  PROVIDERS.map((item) => ({ value: item.id, label: item.label })),
+);
+const voiceOptions = computed(() =>
+  voices.value.map((item) => ({
+    value: item.id,
+    label: `${item.name}（${item.id}）`,
+  })),
+);
+const modelOptions = computed(() =>
+  models.value.map((item) => ({ value: item, label: item })),
+);
+const formatOptions = [
+  { value: "mp3", label: "mp3" },
+  { value: "wav", label: "wav" },
+];
+const minimaxHostOptions = [
+  { value: "https://api.minimax.io", label: "Official (api.minimax.io)" },
+  { value: "https://api.minimaxi.chat", label: "Global (api.minimaxi.chat)" },
+  { value: "https://api.minimax.chat", label: "Mainland China (api.minimax.chat)" },
+];
 </script>
 
 <template>
+  <PageHeader
+    title="语音"
+    description="在线 TTS：回复生成后由应用壳合成并播放；桌宠口型由播放窗的音频分析驱动。"
+  />
   <p v-if="!tauriAvailable()" class="hint">在线 TTS 需要在 Diver 桌面应用中使用。</p>
   <template v-else>
-    <label class="switch-row">
-      <input v-model="enabled" type="checkbox" />
-      <span>语音朗读回复（在线 TTS）</span>
-    </label>
+    <Switch v-model="enabled" label="语音朗读回复（在线 TTS）" />
 
     <template v-if="enabled || ready">
-      <label class="group-title">服务商</label>
-      <select v-model="provider" class="model-select" @change="onProviderChange">
-        <option v-for="p in PROVIDERS" :key="p.id" :value="p.id">{{ p.label }}</option>
-      </select>
+      <Field label="服务商">
+        <Select
+          v-model="provider"
+          :options="providerOptions"
+          @update:model-value="onProviderChange"
+        />
+      </Field>
 
-      <label class="group-title">声线</label>
-      <select v-model="voice" class="model-select">
-        <option v-for="v in voices" :key="v.id" :value="v.id">{{ v.name }}（{{ v.id }}）</option>
-      </select>
+      <Field label="声线">
+        <Select v-model="voice" :options="voiceOptions" />
+      </Field>
       <div class="row">
-        <input
+        <Input
           v-model="newCustomVoice"
-          class="text-input"
-          type="text"
+          size="sm"
           placeholder="自定义声线 ID"
           @keydown.enter.prevent="addCustomVoice"
         />
-        <button class="btn" type="button" @click="addCustomVoice">添加</button>
+        <Button size="sm" @click="addCustomVoice">添加</Button>
       </div>
       <div v-if="customVoices.length" class="chips">
         <span v-for="id in customVoices" :key="id" class="chip">
@@ -78,105 +111,96 @@ const {
         </span>
       </div>
 
-      <template v-if="models.length">
-        <label class="group-title">模型</label>
-        <select v-model="model" class="model-select">
-          <option v-for="m in models" :key="m" :value="m">{{ m }}</option>
-        </select>
-      </template>
+      <Field v-if="models.length" label="模型">
+        <Select v-model="model" :options="modelOptions" />
+      </Field>
 
-      <label class="group-title">语速 {{ speed.toFixed(2) }}x</label>
-      <input v-model.number="speed" type="range" min="0.5" max="2" step="0.05" class="range" />
+      <Field :label="`语速 ${speed.toFixed(2)}x`">
+        <input
+          v-model.number="speed"
+          type="range"
+          min="0.5"
+          max="2"
+          step="0.05"
+          class="range"
+        />
+      </Field>
 
-      <label class="group-title">音频格式</label>
-      <select v-model="format" class="model-select">
-        <option value="mp3">mp3</option>
-        <option value="wav">wav</option>
-      </select>
+      <Field label="音频格式">
+        <Select v-model="format" :options="formatOptions" />
+      </Field>
 
       <template v-if="isMimo">
-        <label class="group-title">风格指令（可选）</label>
-        <input
-          v-model="styleInstruction"
-          class="text-input"
-          type="text"
-          placeholder="例如：用轻快上扬的语调，语速稍快"
-        />
-        <label class="group-title">API 地址</label>
-        <input v-model="apiHost" class="text-input" type="text" placeholder="https://api.xiaomimimo.com/v1" />
-        <label class="group-title">API Key {{ hasApiKey ? "（已配置）" : "" }}</label>
-        <input v-model="apiKey" class="text-input" type="password" placeholder="留空则不修改" />
+        <Field label="风格指令（可选）">
+          <Input
+            v-model="styleInstruction"
+            placeholder="例如：用轻快上扬的语调，语速稍快"
+          />
+        </Field>
+        <Field label="API 地址">
+          <Input v-model="apiHost" placeholder="https://api.xiaomimimo.com/v1" />
+        </Field>
+        <Field :label="`API Key ${hasApiKey ? '（已配置）' : ''}`">
+          <Input
+            v-model="apiKey"
+            type="password"
+            placeholder="留空则不修改"
+            autocomplete="off"
+          />
+        </Field>
       </template>
 
       <template v-else-if="isMinimax">
-        <label class="group-title">API Host</label>
-        <select v-model="apiHost" class="model-select">
-          <option value="https://api.minimax.io">Official (api.minimax.io)</option>
-          <option value="https://api.minimaxi.chat">Global (api.minimaxi.chat)</option>
-          <option value="https://api.minimax.chat">Mainland China (api.minimax.chat)</option>
-        </select>
-        <label class="group-title">API Key {{ hasApiKey ? "（已配置）" : "" }}</label>
-        <input v-model="apiKey" class="text-input" type="password" placeholder="留空则不修改" />
+        <Field label="API Host">
+          <Select v-model="apiHost" :options="minimaxHostOptions" />
+        </Field>
+        <Field :label="`API Key ${hasApiKey ? '（已配置）' : ''}`">
+          <Input
+            v-model="apiKey"
+            type="password"
+            placeholder="留空则不修改"
+            autocomplete="off"
+          />
+        </Field>
       </template>
 
       <template v-else-if="isVolc">
-        <label class="group-title">API 端点</label>
-        <input
-          v-model="apiHost"
-          class="text-input"
-          type="text"
-          placeholder="https://openspeech.bytedance.com/api/v3/tts/unidirectional"
-        />
-        <label class="group-title">Resource ID（可选）</label>
-        <input v-model="resourceId" class="text-input" type="text" placeholder="如 volc.service_type.10029" />
-        <label class="group-title">API Key {{ hasApiKey ? "（已配置）" : "" }}</label>
-        <input v-model="apiKey" class="text-input" type="password" placeholder="留空则不修改" />
+        <Field label="API 端点">
+          <Input
+            v-model="apiHost"
+            placeholder="https://openspeech.bytedance.com/api/v3/tts/unidirectional"
+          />
+        </Field>
+        <Field label="Resource ID（可选）">
+          <Input v-model="resourceId" placeholder="如 volc.service_type.10029" />
+        </Field>
+        <Field :label="`API Key ${hasApiKey ? '（已配置）' : ''}`">
+          <Input
+            v-model="apiKey"
+            type="password"
+            placeholder="留空则不修改"
+            autocomplete="off"
+          />
+        </Field>
       </template>
 
       <div class="row actions">
-        <button class="btn" type="button" :disabled="saving" @click="persist">
+        <Button variant="primary" :disabled="saving" @click="persist">
           {{ saving ? "保存中…" : "保存" }}
-        </button>
-        <button class="btn" type="button" :disabled="saving" @click="preview">试听</button>
-        <button class="btn" type="button" @click="() => stopSpeaking()">停止</button>
+        </Button>
+        <Button :disabled="saving" @click="preview">试听</Button>
+        <Button @click="stopSpeaking()">停止</Button>
       </div>
-      <p v-if="msg" class="hint ok">{{ msg }}</p>
-      <p v-if="err" class="hint bad">{{ err }}</p>
-      <p class="hint">当前：{{ currentProviderLabel }} · 请求由应用壳发起，不再使用本地 SAPI。</p>
+      <InlineNotice v-if="msg" tone="ok">{{ msg }}</InlineNotice>
+      <InlineNotice v-if="err" tone="err">{{ err }}</InlineNotice>
+      <p class="hint">
+        当前：{{ currentProviderLabel }} · 请求由应用壳发起，不再使用本地 SAPI。
+      </p>
     </template>
   </template>
 </template>
 
 <style scoped>
-.switch-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  cursor: pointer;
-  font-size: 13px;
-  color: var(--ink);
-}
-.group-title {
-  display: block;
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--ink-dim);
-  letter-spacing: 0.06em;
-  margin-top: 10px;
-}
-.model-select,
-.text-input {
-  background: var(--paper-raised);
-  border: 1px solid var(--rule-strong);
-  border-radius: var(--radius);
-  color: var(--ink);
-  padding: 8px 11px;
-  font-size: 13px;
-  outline: none;
-  font-family: inherit;
-  width: 100%;
-  box-sizing: border-box;
-}
 .range {
   width: 100%;
   accent-color: var(--ink);
@@ -184,24 +208,10 @@ const {
 .row {
   display: flex;
   gap: 8px;
-  margin-top: 8px;
+  margin-top: 4px;
 }
 .actions {
   margin-top: 14px;
-}
-.btn {
-  background: var(--paper-raised);
-  border: 1px solid var(--rule-strong);
-  border-radius: var(--radius);
-  color: var(--ink);
-  padding: 8px 14px;
-  font-size: 13px;
-  cursor: pointer;
-  font-family: inherit;
-}
-.btn:disabled {
-  opacity: 0.5;
-  cursor: default;
 }
 .chips {
   display: flex;
@@ -223,16 +233,5 @@ const {
   color: var(--ink-dim);
   cursor: pointer;
   margin-left: 4px;
-}
-.hint {
-  font-size: 11px;
-  color: var(--ink-dim);
-  margin: 8px 0 0;
-}
-.hint.ok {
-  color: var(--ok);
-}
-.hint.bad {
-  color: var(--err);
 }
 </style>

@@ -201,6 +201,44 @@ export async function save() {
   }
 }
 
+/**
+ * 卡片增删：只发增量（加/减一张），服务端读改写后回传完整列表校正本地状态。
+ *
+ * 为什么不用「本地算好整表再提交」：设置页会被多处刷新（进入页面、保存、
+ * sidecar 状态事件），本地快照可能是陈旧的——整表提交会把别的卡片永久抹掉。
+ * 增量提交最坏只是这一次点击落空。
+ */
+async function patchProviderCard(
+  body: { addProvider: string } | { removeProvider: string },
+  optimistic: string[],
+): Promise<void> {
+  const prev = state.providerCards;
+  state.providerCards = [...optimistic];
+  try {
+    const res = await saveSettings(body);
+    if (Array.isArray(res.providerCards)) state.providerCards = [...res.providerCards];
+  } catch (err) {
+    state.providerCards = prev;
+    state.saveError = err instanceof Error ? err.message : String(err);
+  }
+}
+
+/** 往卡片区加一张 provider（幂等）。 */
+export function addProviderCard(provider: string): Promise<void> {
+  return patchProviderCard(
+    { addProvider: provider },
+    [...new Set([...state.providerCards, provider])],
+  );
+}
+
+/** 从卡片区移除一张 provider（只隐藏卡片，不动已保存的配置与凭据）。 */
+export function removeProviderCard(provider: string): Promise<void> {
+  return patchProviderCard(
+    { removeProvider: provider },
+    state.providerCards.filter((id) => id !== provider),
+  );
+}
+
 // ---------- Sidecar 重启 ----------
 export async function doRestartSidecar() {
   if (!tauriAvailable()) return;

@@ -4,15 +4,17 @@ import { computed, reactive, ref } from "vue";
 import { getSettings, health } from "../api";
 import type { WindowStartupConfig } from "../tauri";
 import { getChat } from "./chat";
-import type { SettingsTab } from "./settings-tabs";
 
 export interface SettingsState {
-  activeTab: SettingsTab;
+  /** 基础 tab 或插件注册的动态 tab id。 */
+  activeTab: string;
   saving: boolean;
   /** provider 配置输入（插件声明驱动）：{ [provider]: { [fieldKey]: value } } */
   configInputs: Record<string, Record<string, string>>;
   provider: string;
   model: string;
+  /** 卡片区的提供商 id（默认只常驻 deepseek-official；服务端持久化）。 */
+  providerCards: string[];
   ttsEnabled: boolean;
   ttsVoice: string;
   sidecarLogs: string[];
@@ -30,6 +32,7 @@ export const state = reactive<SettingsState>({
   configInputs: {},
   provider: "deepseek-official",
   model: "",
+  providerCards: [],
   ttsEnabled: false,
   ttsVoice: "",
   sidecarLogs: [],
@@ -59,6 +62,7 @@ export function applySettings(s: NonNullable<typeof settingsInfo.value>) {
   if (chat) chat.settingsInfo.value = s;
   state.provider = s.provider;
   state.model = s.model;
+  state.providerCards = [...(s.providerCards ?? [])];
   for (const p of s.providers ?? []) {
     state.configInputs[p.provider] ??= {};
     for (const f of p.fields) {

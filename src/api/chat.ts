@@ -16,11 +16,17 @@ export function saveSettings(body: {
   providerConfigs?: Record<string, Record<string, string>>;
   provider?: string;
   model?: string;
+  /** 加/减一张提供商卡片（增量写，服务端读改写）。 */
+  addProvider?: string;
+  removeProvider?: string;
+  /** 整表写入（迁移/调试用）；日常增删走上面两个增量字段。 */
+  providerCards?: string[];
   petInteraction?: import("../types").PetInteractionSettings;
 }): Promise<{
   modelConfigured: boolean;
   provider: string;
   model: string;
+  providerCards?: string[];
   petInteraction?: import("../types").PetInteractionSettings;
 }> {
   return json("/settings", { method: "POST", body: JSON.stringify(body) });

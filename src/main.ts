@@ -4,6 +4,13 @@ import "./style.css";
 import { router } from "./router";
 import { onTauriEvent } from "./tauri";
 import { ensureLive2dCore } from "./pet/live2d/core";
+import {
+  SLOT_REGISTRY_KEY,
+  SlotRegistry,
+  createClientContext,
+  mountPlugins,
+} from "./plugin-ui";
+import { builtinPlugins } from "./plugin-ui/builtin";
 
 // 进入 /pet 前预加载 Cubism Core，避免 PetApp 模型创建竞态。
 // 实现见 pet/live2d/core.ts（与 createPetModel 共用同一幂等入口）。
@@ -17,7 +24,13 @@ router.beforeEach(async (to) => {
   }
 });
 
+// 插件 UI 先于应用挂载：插件的 slot 贡献在 owner 声明前排队，
+// 设置页挂载时自动生效。
+const slotRegistry = new SlotRegistry();
+mountPlugins(builtinPlugins, createClientContext(slotRegistry), slotRegistry);
+
 const app = createApp(App);
+app.provide(SLOT_REGISTRY_KEY, slotRegistry);
 app.use(router);
 app.mount("#app");
 

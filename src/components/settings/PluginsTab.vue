@@ -10,7 +10,8 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { usePluginsTab } from "./composables/usePluginsTab";
 import { usePluginConfigs } from "./composables/usePluginConfigs";
 import { usePluginScope } from "./composables/usePluginScope";
-import { isSettingsTab, type SettingsTab } from "../../composables/settings-tabs";
+import { isBaseSettingsTab, type SettingsTab } from "../../composables/settings-tabs";
+import { Button, InlineNotice, SectionTitle, useSlotRegistry } from "../../plugin-ui";
 import PluginNav from "./children/PluginNav.vue";
 import PluginDetail from "./children/PluginDetail.vue";
 import PluginInstancePicker from "./children/PluginInstancePicker.vue";
@@ -82,12 +83,19 @@ const selectedPlugin = computed(
   () => plugins.value.find((p) => p.id === selectedPluginId.value) ?? null,
 );
 
-/** 独立设置页由后端（产品层）随配置视图下发，前端只做 tab 合法性校验。 */
+const registry = useSlotRegistry();
+
+/** 独立设置页由后端（产品层）随配置视图下发；tab 必须已由产品或插件注册。 */
 const selectedConfigTab = computed(() => {
   const page = selectedPlugin.value
     ? configMap.value[selectedPlugin.value.id]?.page
     : undefined;
-  if (!page || !isSettingsTab(page.tab)) return null;
+  if (
+    !page ||
+    !(isBaseSettingsTab(page.tab) || registry.has("settings.tab", page.tab))
+  ) {
+    return null;
+  }
   return { tab: page.tab, label: page.label };
 });
 
@@ -134,7 +142,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <label class="group-title">实例</label>
+  <SectionTitle title="实例" />
   <p v-if="isTauri" class="hint">
     每个实例拥有独立的插件启停、运行档案与配置。先选实例；下面所有操作只作用于它，
     不会影响其它实例。
@@ -147,7 +155,7 @@ onBeforeUnmount(() => {
     :running-ids="runningIds"
     @select="selectedId = $event"
   />
-  <div v-if="instancesError" class="error-msg">{{ instancesError }}</div>
+  <InlineNotice v-if="instancesError" tone="err">{{ instancesError }}</InlineNotice>
   <div v-if="isTauri && scopeLoading" class="hint">加载实例清单…</div>
   <p v-else-if="isTauri && !instancesError && instances.length === 0" class="hint">
     暂无实例登记，请先在「实例」页新建。
@@ -157,7 +165,7 @@ onBeforeUnmount(() => {
     插件状态与配置保存在它自己的 COS_HOME，启动该实例后即可在此管理。
   </p>
   <div v-if="isTauri && !scopeLoading && !canManage" class="scope-actions">
-    <button class="btn small" @click="emit('openTab', 'instances')">打开「实例」页</button>
+    <Button size="sm" @click="emit('openTab', 'instances')">打开「实例」页</Button>
   </div>
 
   <template v-if="canManage">
@@ -169,7 +177,7 @@ onBeforeUnmount(() => {
       @switch="onSwitchProfile"
     />
 
-    <label class="group-title">插件</label>
+    <SectionTitle title="插件" />
     <p class="hint">
       左侧选插件，右侧看说明、启停与配置。开关与配置写入
       <code>$COS_HOME/profiles/&lt;active&gt;/cordis.patch.yml</code>，重启该实例的
@@ -177,12 +185,14 @@ onBeforeUnmount(() => {
     </p>
 
     <div v-if="loading" class="hint">加载插件列表…</div>
-    <div v-else-if="error" class="error-msg">{{ error }}</div>
+    <InlineNotice v-else-if="error" tone="err">{{ error }}</InlineNotice>
     <div v-else-if="!plugins.length" class="hint">
       未发现 companion 插件（检查 cos-plugins / plugins 目录）。
     </div>
     <template v-else>
-      <div v-if="configError" class="error-msg">插件配置读取失败：{{ configError }}</div>
+      <InlineNotice v-if="configError" tone="err">
+        插件配置读取失败：{{ configError }}
+      </InlineNotice>
       <div class="plugins-layout">
         <PluginNav
           :plugins="plugins"
@@ -215,11 +225,11 @@ onBeforeUnmount(() => {
   </template>
 
   <div class="toolbar">
-    <button class="btn small" :disabled="loading || scopeLoading" @click="reloadAll">
+    <Button size="sm" :disabled="loading || scopeLoading" @click="reloadAll">
       刷新
-    </button>
+    </Button>
   </div>
-  <div v-if="hint" class="ok-msg">{{ hint }}</div>
+  <InlineNotice v-if="hint" tone="ok">{{ hint }}</InlineNotice>
 </template>
 
 <style scoped>
@@ -243,28 +253,5 @@ onBeforeUnmount(() => {
   display: flex;
   gap: 8px;
   margin: 4px 0 8px;
-}
-.group-title {
-  display: block;
-  margin: 14px 0 8px;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--ink);
-}
-.hint {
-  font-size: 12px;
-  color: var(--ink-muted);
-  line-height: 1.5;
-  margin: 0 0 8px;
-}
-.error-msg {
-  color: var(--err);
-  font-size: 12px;
-  margin-bottom: 8px;
-}
-.ok-msg {
-  color: var(--ok);
-  font-size: 12px;
-  margin-top: 8px;
 }
 </style>

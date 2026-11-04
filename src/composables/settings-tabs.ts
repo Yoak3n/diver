@@ -1,8 +1,8 @@
 // 设置页 tab 定义（类型 / 清单 / 守卫）。
+// 基础 tab 由产品固定；插件 tab 经 settings.tab slot 动态注册。
 
-export type SettingsTab =
+export type BaseSettingsTab =
   | "instances"
-  | "onebot"
   | "models"
   | "voice"
   | "mcp"
@@ -12,9 +12,11 @@ export type SettingsTab =
   | "presence"
   | "system";
 
-export const SETTINGS_TABS: Array<{ id: SettingsTab; label: string }> = [
+/** 动态 tab id 来自插件注册，运行时才知道。 */
+export type SettingsTab = BaseSettingsTab | (string & {});
+
+export const SETTINGS_TABS: Array<{ id: BaseSettingsTab; label: string }> = [
   { id: "instances", label: "实例" },
-  { id: "onebot", label: "QQ 接入" },
   { id: "models", label: "模型与提供商" },
   { id: "voice", label: "语音" },
   { id: "mcp", label: "MCP 服务" },
@@ -25,6 +27,6 @@ export const SETTINGS_TABS: Array<{ id: SettingsTab; label: string }> = [
   { id: "system", label: "系统" },
 ];
 
-export function isSettingsTab(v: string): v is SettingsTab {
+export function isBaseSettingsTab(v: string): v is BaseSettingsTab {
   return SETTINGS_TABS.some((t) => t.id === v);
 }

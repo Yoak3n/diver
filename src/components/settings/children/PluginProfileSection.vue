@@ -1,6 +1,7 @@
 <script setup lang="ts">
 // 设置「插件」页 · 运行档案：当前实例的 companion / safe 切换与 native 探测摘要。
 import type { NativeStatus } from "../../../api";
+import { Badge, Button, SectionTitle } from "../../../plugin-ui";
 
 defineProps<{
   activeProfile: string;
@@ -16,28 +17,28 @@ const emit = defineEmits<{
 </script>
 
 <template>
-  <label class="group-title">运行档案（Profile）</label>
+  <SectionTitle title="运行档案（Profile）" />
   <div class="profile-row">
     <span class="profile-name">
       当前：<strong>{{ activeProfile }}</strong>
       <span v-if="instanceName" class="instance-note">· {{ instanceName }}</span>
-      <span v-if="activeProfile === 'safe'" class="badge warn">安全模式</span>
+      <Badge v-if="activeProfile === 'safe'" tone="warn">安全模式</Badge>
     </span>
     <span class="profile-actions">
-      <button
-        class="btn small"
+      <Button
+        size="sm"
         :disabled="profileBusy || activeProfile === 'safe'"
         @click="emit('switch', 'safe')"
       >
         进入安全模式
-      </button>
-      <button
-        class="btn small"
+      </Button>
+      <Button
+        size="sm"
         :disabled="profileBusy || activeProfile === 'companion'"
         @click="emit('switch', 'companion')"
       >
         回到 companion
-      </button>
+      </Button>
     </span>
   </div>
   <p class="hint">
@@ -51,19 +52,6 @@ const emit = defineEmits<{
 </template>
 
 <style scoped>
-.group-title {
-  display: block;
-  margin: 14px 0 8px;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--ink);
-}
-.hint {
-  font-size: 12px;
-  color: var(--ink-muted);
-  line-height: 1.5;
-  margin: 0 0 8px;
-}
 .profile-row {
   display: flex;
   align-items: center;
@@ -84,16 +72,5 @@ const emit = defineEmits<{
 .profile-actions {
   display: flex;
   gap: 6px;
-}
-.badge {
-  font-size: 11px;
-  padding: 1px 6px;
-  border-radius: var(--radius-pill);
-  border: 1px solid var(--rule-strong);
-  color: var(--ink-muted);
-}
-.badge.warn {
-  color: var(--warn);
-  border-color: var(--warn);
 }
 </style>

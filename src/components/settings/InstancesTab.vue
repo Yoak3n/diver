@@ -6,6 +6,7 @@ import { onBeforeUnmount, onMounted, ref } from "vue";
 import { tauriAvailable, type InstanceMeta } from "../../tauri";
 import { useInstances } from "../../composables/useInstances";
 import { useInstancePet } from "../../composables/useInstancePet";
+import { Button, InlineNotice, Input, PageHeader } from "../../plugin-ui";
 import InstanceRow from "./InstanceRow.vue";
 
 const { instances, loading, error, notice, onebotOwner, refresh, create, rename, clearName, toggle, setAutoRead, setTtsProfile, setQqOwner, remove } =
@@ -86,31 +87,32 @@ function onDelete(inst: InstanceMeta): void {
 </script>
 
 <template>
-  <label class="group-title">实例清单</label>
-  <p class="hint">
-    每个实例拥有独立的记忆 / 会话 / 人格 / 插件配置。命名可选：名字通常由你与它聊天后经人格卡片回填，
-    创建时也可直接命名；人格在各自的实例设置里配置，插件启停 / 配置在「插件」页先选实例。
-    此处可为每个实例指定桌宠模型
-    （默认跟随全局，选定后该实例的桌宠钉定用它）；点击实例头像可单独更换，
-    悬停角标 × 恢复默认（群聊按发送实例显示）。
-  </p>
+  <PageHeader
+    title="实例"
+    description="每个实例拥有独立的记忆 / 会话 / 人格 / 插件配置。命名可选：名字通常由你与它聊天后经人格卡片回填，创建时也可直接命名；人格在各自的实例设置里配置，插件启停 / 配置在「插件」页先选实例。此处可为每个实例指定桌宠模型（默认跟随全局，选定后该实例的桌宠钉定用它）；点击实例头像可单独更换，悬停角标 × 恢复默认（群聊按发送实例显示）。"
+  />
 
   <div class="create-row">
-    <input
+    <Input
       v-model="newName"
       class="name-input"
+      size="sm"
       placeholder="实例名称（可选，可留空稍后由人格卡片回填）"
       maxlength="32"
       :disabled="!tauriAvailable() || creating"
       @keyup.enter="onCreate"
     />
-    <button class="btn small" :disabled="!tauriAvailable() || creating" @click="onCreate">
+    <Button
+      size="sm"
+      :disabled="!tauriAvailable() || creating"
+      @click="onCreate"
+    >
       {{ creating ? "登记中…" : "新建实例" }}
-    </button>
+    </Button>
   </div>
 
-  <div v-if="notice" class="ok-msg">{{ notice }}</div>
-  <div v-if="error" class="error-msg">{{ error }}</div>
+  <InlineNotice v-if="notice" tone="ok">{{ notice }}</InlineNotice>
+  <InlineNotice v-if="error" tone="err">{{ error }}</InlineNotice>
 
   <div class="instance-list">
     <InstanceRow
@@ -151,20 +153,6 @@ function onDelete(inst: InstanceMeta): void {
 </template>
 
 <style scoped>
-.group-title {
-  display: block;
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--ink-dim);
-  letter-spacing: 0.06em;
-  margin-top: 4px;
-}
-.hint {
-  font-size: 11px;
-  color: var(--ink-dim);
-  margin: 0;
-  line-height: 1.7;
-}
 .create-row {
   display: flex;
   gap: 8px;
@@ -173,14 +161,6 @@ function onDelete(inst: InstanceMeta): void {
 .name-input {
   flex: 1;
   min-width: 0;
-  background: var(--paper-sunken);
-  border: 1px solid var(--rule-strong);
-  border-radius: var(--radius);
-  color: var(--ink);
-  font-size: 12px;
-  padding: 8px 10px;
-  box-sizing: border-box;
-  font-family: inherit;
 }
 .instance-list {
   display: flex;

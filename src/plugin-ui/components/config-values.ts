@@ -1,7 +1,7 @@
 // 插件配置表单 → patch 写入值的唯一转换点。
 // secret 字段后端不回显：留空 = 保持已保存值，draft 显式为 null = 用户点了「清除」。
 
-import type { PluginConfigFieldView } from "../../../api";
+import type { PluginConfigFieldView, PluginConfigView } from "../../api";
 
 /** 表单草稿：null 表示该键被显式标记清除。 */
 export type PluginConfigDraft = Record<string, string | boolean | null>;
@@ -28,6 +28,20 @@ export function buildPluginConfigValues(
       continue;
     }
     values[field.key] = field.type === "number" ? Number(text) : text;
+  }
+  return values;
+}
+
+/** configDecl 视图 → 初始草稿（boolean 取布尔，其余取字符串）。 */
+export function draftFromView(view: PluginConfigView): PluginConfigDraft {
+  const values: PluginConfigDraft = {};
+  for (const field of view.fields) {
+    if (field.type === "boolean") {
+      values[field.key] = field.value === "true" || field.default === true;
+    } else {
+      values[field.key] =
+        field.value ?? (field.default != null ? String(field.default) : "");
+    }
   }
   return values;
 }

@@ -1,9 +1,10 @@
 // @diver/backend — 陪伴 agent 生命周期（单例会话，跨重启 resume）。
 //
-// 会话 id 固定为 'diver-companion'；首次聊天时创建，之后每次启动 resume，
-// 历史由 @cos/persistence 的 JSONL 持久化保存。provider/model 不再由本插件
-// 硬编码兜底：激活 provider 取自 harness 适配器注册表（ctx.llm.listProviders），
-// 模型取自该 provider 适配器自己声明的目录（ctx.llm.listModels）——见 ./providers.ts。
+// 会话 id 固定为 'diver-companion'；组合根（companion-boot）在 boot settle 后
+// 预热 resume，HTTP 聊天等入口惰性调用 ensure 兜底，历史由 @cos/persistence
+// 的 JSONL 持久化保存。provider/model 不再由本插件硬编码兜底：激活 provider
+// 取自 harness 适配器注册表（ctx.llm.listProviders），模型取自该 provider
+// 适配器自己声明的目录（ctx.llm.listModels）——见 ./providers.ts。
 
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
@@ -18,6 +19,10 @@ import type { WebState } from './state.ts'
 export const SESSION_ID = 'diver-companion'
 const WORKSPACE_DIR = () => join(cosHome(), 'workspace')
 
+/** 并发创建守卫：boot 预热与首个聊天请求同时到达时只建一次。finally 即清，
+ * dispose 重建（applyModelChange）后不会拿到已释放的旧 promise。 */
+let creating: Promise<{ agent: Agent; handle: AgentHandle | null }> | undefined
+
 /**
  * 确保单例陪伴 agent 存在（不存在则创建；已持久化则 resume）。
  * provider 显式给出（设置持久化或调用方指定）时**原样采用**——即使它已不在
@@ -26,11 +31,25 @@ const WORKSPACE_DIR = () => join(cosHome(), 'workspace')
  * model 缺省时用该 provider 适配器目录的第一个模型（advisory）。
  * @returns {Promise<{agent: Agent, handle: AgentHandle | null}>}
  */
-export async function ensureCompanionAgent(ctx: Context, model?: string, provider?: string): Promise<{ agent: Agent; handle: AgentHandle | null }> {
-  const id = SessionId(SESSION_ID)
-  const live = ctx.agents.get(id)
-  if (live) return { agent: live, handle: null }
+export function ensureCompanionAgent(
+  ctx: Context,
+  model?: string,
+  provider?: string,
+): Promise<{ agent: Agent; handle: AgentHandle | null }> {
+  const live = ctx.agents.get(SessionId(SESSION_ID))
+  if (live) return Promise.resolve({ agent: live, handle: null })
+  creating ??= createCompanionAgent(ctx, model, provider).finally(() => {
+    creating = undefined
+  })
+  return creating
+}
 
+async function createCompanionAgent(
+  ctx: Context,
+  model?: string,
+  provider?: string,
+): Promise<{ agent: Agent; handle: AgentHandle | null }> {
+  const id = SessionId(SESSION_ID)
   const requested = provider ?? (typeof readDiverSettings().provider === 'string' ? readDiverSettings().provider : undefined)
   const resolvedProvider = requested ?? ctx.llm.listProviders()[0]?.id ?? ''
   const resolvedModel = model ?? (await firstModelOf(ctx, resolvedProvider)) ?? ''

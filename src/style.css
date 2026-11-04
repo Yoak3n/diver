@@ -54,6 +54,22 @@
   --titlebar-h: 40px;
   /* 会话列宽：小窗维持可读上限，大窗随视口放宽（55vw，封顶 1280） */
   --chat-max: clamp(760px, 55vw, 1280px);
+
+  /* 间距 / 字号 / 控件尺寸：新基础组件使用，旧样式逐步迁移 */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --text-xs: 11px;
+  --text-sm: 12px;
+  --text-base: 13px;
+  --text-md: 14px;
+  --control-h: 34px;
+  --control-h-sm: 28px;
+  --control-px: 11px;
+  --focus-ring: 0 0 0 3px var(--accent-soft);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -200,6 +216,16 @@ input,
     color: var(--ink);
   }
 }
+.btn.danger {
+  background: transparent;
+  border-color: var(--err-border);
+  color: var(--err);
+}
+@media (hover: hover) and (pointer: fine) {
+  .btn.danger:hover:not(:disabled) {
+    background: var(--err-soft);
+  }
+}
 
 .icon-btn {
   background: transparent;
@@ -228,6 +254,20 @@ input,
   transform: scale(0.97);
 }
 
+/* 键盘焦点：统一细描边，不改变布局 */
+.btn:focus-visible,
+.icon-btn:focus-visible,
+button:focus-visible,
+[role="button"]:focus-visible {
+  outline: 2px solid var(--accent-border);
+  outline-offset: 2px;
+}
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: none;
+}
+
 input[type="text"],
 input[type="password"],
 input[type="number"],
@@ -247,7 +287,8 @@ textarea {
 input:focus,
 select:focus,
 textarea:focus {
-  border-color: var(--ink-muted);
+  border-color: var(--accent-border);
+  box-shadow: var(--focus-ring);
 }
 input:disabled,
 select:disabled,
@@ -272,10 +313,10 @@ textarea:disabled {
 }
 
 .hint {
-  font-size: 11px;
+  font-size: var(--text-sm);
   color: var(--ink-dim);
   margin: 0;
-  line-height: 1.5;
+  line-height: 1.6;
 }
 
 .ok-msg {

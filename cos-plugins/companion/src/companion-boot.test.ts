@@ -11,8 +11,9 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
+import type { Context } from 'cordis'
 
-import { companionBootOptions, type CompanionPaths } from './companion-boot.ts'
+import { companionBootOptions, warmCompanionAgent, type CompanionPaths } from './companion-boot.ts'
 import type { CliOptions } from '../../../harness/packages/boot/src/index.ts'
 
 /** 最小 CliOptions（companionBootOptions 只读 profile 字段）。 */
@@ -74,4 +75,19 @@ test('旧 harness/secrets.yml 目标缺失时迁移；目标已存在则不覆�
     companionBootOptions(cli, paths)
     assert.match(readFileSync(join(cosHome, 'secrets.yml'), 'utf8'), /legacy/)
   })
+})
+
+test('warmCompanionAgent：无 backend 组合（safe profile）跳过；有则 resume 恰一次', async () => {
+  // ctx.companion 未挂载 → false 且不抛
+  assert.equal(await warmCompanionAgent({} as unknown as Context), false)
+
+  let calls = 0
+  const ctx = { companion: { agent: () => { calls += 1; return Promise.resolve({}) } } }
+  assert.equal(await warmCompanionAgent(ctx as unknown as Context), true)
+  assert.equal(calls, 1)
+})
+
+test('warmCompanionAgent：resume 抛错只记日志不炸 boot', async () => {
+  const ctx = { companion: { agent: () => Promise.reject(new Error('resume boom')) } }
+  assert.equal(await warmCompanionAgent(ctx as unknown as Context), false)
 })

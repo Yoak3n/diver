@@ -40,6 +40,27 @@ cwd=安装目录只读，companion-boot 因此以绝对路径覆盖为 `$COS_HOM
 `LlmAdapter.settingsValue(provider, key)`（`@cos/llm`）动态读取——保存即生效，
 无需重启 sidecar。
 
+## 面板卡片可见性
+
+设置面板不再常驻列出全部适配器：初始只显示 `deepseek-official` 一张卡片，其余
+提供商经「＋ 添加模型提供商」下拉选择（已注册适配器 + 自定义）后进入卡片区。
+
+- 卡片列表落 `diver-settings.json` 的 `providerCards`，经 `/api/settings` 读写；
+  后端只做去重/去空/限长规整，**不认识任何具体 provider**。
+- **首次初始化会播种**：文件里还没有 `providerCards` 时，后端按「默认项 +
+  已配齐必填凭据的适配器 + 自定义身份」写一份初始列表。老用户升级后已经在用的
+  provider 不会因为列表为空而被藏起来。
+- 增删走**增量**：客户端只发 `addProvider` / `removeProvider` 一个 id，后端读改写
+  并回传完整列表。设置页会被多处刷新（进入页面、保存、sidecar 状态事件），
+  整表提交会把陈旧快照里的其它卡片永久抹掉——这也是曾出现「加了 opencode-go，
+  已配好的 mimo 消失」的原因。
+- 当前激活的 provider 始终显示——否则它的模型选择与配置入口会消失。
+- 自定义身份（`llm-custom`）天然显示；删除走卡片内的「删除提供商」。
+- 非默认、非激活的卡片可 × 移除（只隐藏卡片，端点配置与凭据保留）。
+- 默认名单在 UI 侧（`src/components/settings/provider-cards.ts`），新增适配器
+  仍然零改动接入，只是默认折叠在「添加」下拉里。旧字段名 `addedProviders`
+  在首次写入时自动清除。
+
 ## 当前已注册的 provider 声明
 
 | 提供商 | 声明来源 | 声明字段 | 说明 |

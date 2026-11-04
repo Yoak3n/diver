@@ -4,8 +4,8 @@
 import { computed } from "vue";
 import type { PluginConfigView, PluginInfo } from "../../../api";
 import type { SettingsTab } from "../../../composables/settings-tabs";
-import PluginConfigForm from "./PluginConfigForm.vue";
-import type { PluginConfigDraft } from "./pluginConfigValues";
+import { Badge, Button, ConfigForm, Switch } from "../../../plugin-ui";
+import type { PluginConfigDraft } from "../../../plugin-ui";
 
 const props = defineProps<{
   plugin: PluginInfo;
@@ -46,32 +46,31 @@ const showConfigForm = computed(
           <span class="pkg">{{ plugin.packageName }}</span>
         </div>
         <div class="badges">
-          <span class="badge" :class="plugin.enabled ? 'on' : 'off'">
+          <Badge :tone="plugin.enabled ? 'ok' : 'neutral'">
             {{ plugin.enabled ? "已启用" : "已禁用" }}
-          </span>
-          <span v-if="!plugin.present" class="badge warn">缺失</span>
-          <span v-if="safeUnloaded" class="badge">safe 未加载</span>
-          <span v-if="plugin.kind === 'profile'" class="badge">profile 安装 · 可卸载</span>
+          </Badge>
+          <Badge v-if="!plugin.present" tone="warn">缺失</Badge>
+          <Badge v-if="safeUnloaded" tone="neutral">safe 未加载</Badge>
+          <Badge v-if="plugin.kind === 'profile'" tone="neutral">
+            profile 安装 · 可卸载
+          </Badge>
         </div>
       </div>
       <div class="actions">
-        <button
+        <Button
           v-if="plugin.kind === 'profile'"
-          class="btn small danger"
+          variant="danger"
+          size="sm"
           :disabled="busy || activeProfile !== 'companion'"
           @click="emit('uninstall', plugin)"
         >
           卸载
-        </button>
-        <label class="switch">
-          <input
-            type="checkbox"
-            :checked="plugin.enabled"
-            :disabled="toggleDisabled"
-            @change="emit('toggle', plugin, ($event.target as HTMLInputElement).checked)"
-          />
-          <span class="slider"></span>
-        </label>
+        </Button>
+        <Switch
+          :model-value="plugin.enabled"
+          :disabled="toggleDisabled"
+          @update:model-value="emit('toggle', plugin, $event)"
+        />
       </div>
     </header>
 
@@ -91,13 +90,12 @@ const showConfigForm = computed(
         </button>
       </template>
       <p v-else-if="configError" class="hint">配置读取失败：{{ configError }}</p>
-      <PluginConfigForm
+      <ConfigForm
         v-else-if="showConfigForm && config && draft"
-        :plugin-id="plugin.id"
         :config="config"
         :draft="draft"
         :busy="busy"
-        @save="emit('save', $event)"
+        @save="emit('save', plugin.id)"
       />
       <p v-else class="hint">该插件没有可配置项。</p>
     </div>
@@ -143,33 +141,11 @@ const showConfigForm = computed(
   gap: 6px;
   margin-top: 6px;
 }
-.badge {
-  font-size: 11px;
-  padding: 1px 6px;
-  border-radius: var(--radius-pill);
-  border: 1px solid var(--rule-strong);
-  color: var(--ink-muted);
-}
-.badge.on {
-  color: var(--ok);
-  border-color: var(--ok);
-}
-.badge.off {
-  color: var(--ink-dim);
-}
-.badge.warn {
-  color: var(--warn);
-  border-color: var(--warn);
-}
 .actions {
   display: flex;
   align-items: center;
   gap: 8px;
   flex-shrink: 0;
-}
-.btn.small.danger {
-  color: var(--err);
-  border-color: var(--err-border);
 }
 .desc {
   margin: 10px 0 0;

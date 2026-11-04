@@ -27,7 +27,7 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { boot, bootOptionsFromCli, parseCliArgs } from '../../../harness/packages/boot/src/index.ts'
 import type { Context } from 'cordis'
-import { companionBootOptions, resolveCompanionPaths } from './companion-boot.ts'
+import { companionBootOptions, resolveCompanionPaths, warmCompanionAgent } from './companion-boot.ts'
 
 export async function main(overrides: { watchRoots?: string[] } = {}): Promise<void> {
   const cli = parseCliArgs(process.argv.slice(2))
@@ -60,6 +60,9 @@ export async function main(overrides: { watchRoots?: string[] } = {}): Promise<v
     console.error(`[cos] boot failed: ${error}`)
     process.exit(1)
   }
+
+  // 主动 resume 陪伴会话：重启续聊（agent/session-start 注入）不再等首聊。
+  await warmCompanionAgent(ctx)
 
   let settling = false
   async function settle(signal: string): Promise<void> {

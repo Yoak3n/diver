@@ -9,8 +9,9 @@ import {
 } from "../../../api";
 import {
   buildPluginConfigValues,
+  draftFromView,
   type PluginConfigDraft,
-} from "../children/pluginConfigValues";
+} from "../../../plugin-ui";
 
 /** 当前作用域实例；undefined = 非 Tauri / 单实例，走 active 实例。 */
 type InstanceTarget = () => string | undefined;
@@ -34,12 +35,7 @@ export function usePluginConfigs(hint: { value: string }, instanceId?: InstanceT
       const drafts: Record<string, PluginConfigDraft> = {};
       for (const item of res.plugins) {
         map[item.id] = item;
-        const values: PluginConfigDraft = {};
-        for (const f of item.fields) {
-          if (f.type === "boolean") values[f.key] = f.value === "true" || f.default === true;
-          else values[f.key] = f.value ?? (f.default != null ? String(f.default) : "");
-        }
-        drafts[item.id] = values;
+        drafts[item.id] = draftFromView(item);
       }
       configMap.value = map;
       draft.value = drafts;

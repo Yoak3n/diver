@@ -4,8 +4,27 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 
 import { readBody, sendJson } from '../http.ts'
 import { readPetInteractionSettings } from '../interaction.ts'
+import {
+  DEFAULT_PROVIDER_CARDS,
+  appendProviderCard,
+  dropProviderCard,
+  normalizeProviderCards,
+  readProviderCards,
+  seedProviderCards,
+  writeProviderCards,
+} from '../provider-cards.ts'
 import { readDiverSettings, writeDiverSettings } from '../session-helpers.ts'
 import type { WebHandlerDeps } from '../types.ts'
+
+/**
+ * 卡片列表：未初始化时按当前状态播种（默认项 + 已配置/自定义 provider），
+ * 老用户升级不会把已经在用的 provider 藏起来。
+ */
+async function ensureProviderCards(deps: WebHandlerDeps): Promise<string[]> {
+  const stored = readProviderCards()
+  if (stored !== undefined) return stored
+  return writeProviderCards(seedProviderCards(await deps.providerDecls()))
+}
 
 /** 命中并处理返回 true；未命中返回 false 交回分发器。 */
 export async function handleSettings(
@@ -25,6 +44,8 @@ export async function handleSettings(
       model: h.model,
       models: await deps.catalogModels(),
       providers: await deps.providerDecls(),
+      // 设置面板的提供商卡片（UI 可见性状态；默认名单由 UI 决定）
+      providerCards: await ensureProviderCards(deps),
       petInteraction: readPetInteractionSettings(),
       sidecar: { state: 'running', port: deps.port },
     })
@@ -38,6 +59,19 @@ export async function handleSettings(
     const patch: Record<string, unknown> = {}
     if (typeof body.provider === 'string' && body.provider) patch.provider = body.provider
     if (typeof body.model === 'string' && body.model) patch.model = body.model
+    // 卡片增删走增量：客户端只发「加/减一张」，后端读改写，陈旧快照不会抹掉别的卡片。
+    const add = typeof body.addProvider === 'string' ? body.addProvider.trim() : ''
+    const remove = typeof body.removeProvider === 'string' ? body.removeProvider.trim() : ''
+    const cards = add !== ''
+      ? appendProviderCard(readProviderCards() ?? [...DEFAULT_PROVIDER_CARDS], add)
+      : remove !== ''
+        ? dropProviderCard(readProviderCards() ?? [...DEFAULT_PROVIDER_CARDS], remove)
+        : normalizeProviderCards(body.providerCards)
+    if (cards !== undefined) {
+      patch.providerCards = cards
+      // 旧字段名一次性清掉（JSON.stringify 省略 undefined 键）
+      patch.addedProviders = undefined
+    }
     if (body.petInteraction && typeof body.petInteraction === 'object') {
       const cur = readPetInteractionSettings()
       const src = body.petInteraction as Record<string, unknown>
@@ -72,6 +106,7 @@ export async function handleSettings(
       modelConfigured: h.modelConfigured,
       provider: h.provider,
       model: h.model,
+      providerCards: readProviderCards() ?? [],
       petInteraction: readPetInteractionSettings(),
     })
     return true

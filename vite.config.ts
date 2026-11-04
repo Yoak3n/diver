@@ -11,6 +11,8 @@ import { monitorEventLoopDelay } from "node:perf_hooks";
 // @ts-expect-error process is a nodejs global
 const host = process.env.TAURI_DEV_HOST;
 const sidecarPort = Number(process.env.DIVER_PORT ?? 53620);
+/** 插件 UI 平台源码根（插件 ui 目录通过 @diver/plugin-ui 引用）。 */
+const pluginUiRoot = join(process.cwd(), "src", "plugin-ui");
 
 /** P2-1 / BUG-002：debug 形态壳端落盘的鉴权令牌（<app_data>/service-token）。 */
 function serviceTokenPath(): string {
@@ -74,6 +76,19 @@ function requestLog(): Plugin {
 export default defineConfig(async () => ({
   plugins: [vue(), requestLog()],
 
+  resolve: {
+    alias: [
+      {
+        find: /^@diver\/plugin-ui$/,
+        replacement: join(pluginUiRoot, "index.ts"),
+      },
+      {
+        find: /^@diver\/plugin-ui\//,
+        replacement: `${pluginUiRoot}/`,
+      },
+    ],
+  },
+
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   //
   // 1. prevent Vite from obscuring rust errors
@@ -132,7 +147,8 @@ export default defineConfig(async () => ({
       ignored: [
         "**/src-tauri/**",
         "**/harness/**",
-        "**/cos-plugins/**",
+        "**/cos-plugins/*/src/**",
+        "**/cos-plugins/*/node_modules/**",
         "**/public/**",
         "**/crates/**",
         "**/dist/**",

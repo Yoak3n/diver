@@ -49,6 +49,8 @@ export interface SettingsInfo {
   model: string;
   models: ModelEntry[];
   providers: ProviderConfigDecl[];
+  /** 设置面板的提供商卡片（默认只常驻 deepseek-official）。 */
+  providerCards?: string[];
   /** 桌宠互动感知（事件上行 / 闲时门控）。 */
   petInteraction?: PetInteractionSettings;
   sidecar: {

@@ -2,6 +2,7 @@
 // 设置「插件」页的二级菜单：按内置 / 已安装分组，选中项交给父级渲染详情。
 import { computed } from "vue";
 import type { PluginInfo } from "../../../api";
+import { StatusDot } from "../../../plugin-ui";
 
 const props = defineProps<{
   plugins: PluginInfo[];
@@ -46,7 +47,15 @@ function stateOf(p: PluginInfo): "on" | "off" | "missing" {
         type="button"
         @click="emit('select', p.id)"
       >
-        <span class="dot" :class="stateOf(p)"></span>
+        <StatusDot
+          :tone="
+            stateOf(p) === 'on'
+              ? 'ok'
+              : stateOf(p) === 'missing'
+                ? 'err'
+                : 'idle'
+          "
+        />
         <span class="nav-label">{{ p.displayName }}</span>
         <span v-if="!p.present" class="nav-flag">缺失</span>
       </button>
@@ -98,19 +107,7 @@ function stateOf(p: PluginInfo): "on" | "off" | "missing" {
   color: var(--ink);
   background: var(--paper-active);
   font-weight: 500;
-}
-.dot {
-  width: 6px;
-  height: 6px;
-  flex-shrink: 0;
-  border-radius: 50%;
-  background: var(--ink-dim);
-}
-.dot.on {
-  background: var(--ok);
-}
-.dot.missing {
-  background: var(--err);
+  box-shadow: inset 2px 0 0 var(--ink);
 }
 .nav-item.off .nav-label {
   opacity: 0.62;

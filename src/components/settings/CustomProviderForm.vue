@@ -8,6 +8,7 @@ import {
   saveCustomProvider,
   type CustomProviderIdentity,
 } from "../../api";
+import { Button, Card, Field, InlineNotice, Input } from "../../plugin-ui";
 
 const props = defineProps<{
   /** 编辑模式初始值；缺省 = 新增。 */
@@ -88,112 +89,69 @@ async function save() {
 </script>
 
 <template>
-  <div class="custom-form">
-    <label class="field-label">{{ initial === undefined ? "添加模型提供商" : "编辑模型提供商" }}</label>
+  <Card :title="initial === undefined ? '添加模型提供商' : '编辑模型提供商'">
+    <div class="custom-form">
+      <Field label="名称">
+        <Input v-model="form.name" placeholder="我的中转 / 自建网关…" />
+      </Field>
+      <Field label="API Base URL">
+        <Input v-model="form.baseUrl" placeholder="https://api.openai.com/v1" />
+      </Field>
+      <Field label="API Key">
+        <Input
+          v-model="form.apiKey"
+          type="password"
+          autocomplete="off"
+          :placeholder="initial?.apiKeyConfigured ? '已配置，留空不修改' : 'sk-…'"
+        />
+      </Field>
+      <Field label="模型 ID 列表">
+        <div class="models-row">
+          <Input
+            v-model="form.models"
+            class="models-input"
+            size="sm"
+            placeholder="gpt-4o-mini, gpt-4o"
+          />
+          <Button size="sm" :disabled="fetching" @click="fetchModels">
+            {{ fetching ? "拉取中…" : "拉取模型" }}
+          </Button>
+        </div>
+      </Field>
+      <p class="hint">
+        逗号分隔；OpenAI 兼容协议（chat/completions）。保存后热生效（≤2s）。
+        <template v-if="fetchedNote !== ''">· {{ fetchedNote }}</template>
+      </p>
 
-    <label class="field-label">名称</label>
-    <input v-model="form.name" type="text" placeholder="我的中转 / 自建网关…" />
+      <InlineNotice v-if="error !== ''" tone="err">{{ error }}</InlineNotice>
 
-    <label class="field-label">API Base URL</label>
-    <input v-model="form.baseUrl" type="text" placeholder="https://api.openai.com/v1" />
-
-    <label class="field-label">API Key</label>
-    <input
-      v-model="form.apiKey"
-      type="password"
-      autocomplete="off"
-      :placeholder="initial?.apiKeyConfigured ? '已配置，留空不修改' : 'sk-…'"
-    />
-
-    <label class="field-label">模型 ID 列表</label>
-    <div class="models-row">
-      <input v-model="form.models" type="text" placeholder="gpt-4o-mini, gpt-4o" />
-      <button class="form-btn" type="button" :disabled="fetching" @click="fetchModels">
-        {{ fetching ? "拉取中…" : "拉取模型" }}
-      </button>
+      <div class="form-actions">
+        <Button variant="primary" size="sm" :disabled="busy" @click="save">
+          {{ busy ? "保存中…" : "保存" }}
+        </Button>
+        <Button size="sm" :disabled="busy" @click="emit('cancel')">取消</Button>
+      </div>
     </div>
-    <p class="hint">
-      逗号分隔；OpenAI 兼容协议（chat/completions）。保存后热生效（≤2s）。
-      <template v-if="fetchedNote !== ''">· {{ fetchedNote }}</template>
-    </p>
-
-    <p v-if="error !== ''" class="form-error">{{ error }}</p>
-
-    <div class="form-actions">
-      <button class="form-btn primary" type="button" :disabled="busy" @click="save">
-        {{ busy ? "保存中…" : "保存" }}
-      </button>
-      <button class="form-btn" type="button" :disabled="busy" @click="emit('cancel')">取消</button>
-    </div>
-  </div>
+  </Card>
 </template>
 
 <style scoped>
 .custom-form {
-  border: 1px solid var(--rule-strong);
-  border-radius: var(--radius);
-  padding: 14px 16px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  background: var(--paper-raised);
-}
-.custom-form input {
-  background: var(--paper-raised);
-  border: 1px solid var(--rule-strong);
-  border-radius: var(--radius);
-  color: var(--ink);
-  padding: 8px 11px;
-  font-size: 13px;
-  outline: none;
-  font-family: inherit;
-}
-.field-label {
-  margin-top: 4px;
-  font-size: 13px;
-  color: var(--ink-soft);
+  gap: 10px;
 }
 .models-row {
   display: flex;
   gap: 8px;
+  align-items: center;
 }
-.models-row input {
+.models-input {
   flex: 1;
-}
-.form-btn {
-  background: var(--paper-raised);
-  border: 1px solid var(--rule-strong);
-  border-radius: var(--radius);
-  color: var(--ink);
-  padding: 8px 14px;
-  font-size: 13px;
-  font-family: inherit;
-  cursor: pointer;
-  white-space: nowrap;
-}
-.form-btn.primary {
-  background: var(--ink);
-  color: var(--paper);
-  border-color: var(--ink);
-}
-.form-btn:disabled {
-  opacity: 0.55;
-  cursor: default;
 }
 .form-actions {
   display: flex;
   gap: 8px;
-  margin-top: 8px;
-}
-.hint {
-  margin: 0;
-  font-size: 11px;
-  color: var(--ink-muted);
-  line-height: 1.5;
-}
-.form-error {
-  margin: 0;
-  font-size: 11px;
-  color: var(--err);
+  margin-top: 4px;
 }
 </style>

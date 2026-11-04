@@ -4,7 +4,8 @@
 > 深水区（类型边界 / 安全档案 / 安装卸载 / native 插件）按什么分期推进。
 >
 > 相关：[架构](architecture.md) · [Sidecar](sidecar.md) · [开发](development.md) ·
-> [分发](distribution.md) · harness 侧 [plugins.md](../harness/docs/plugins.md) ·
+> [分发](distribution.md) · [插件 UI 运行时（Vue slot）设计](plugin-ui-runtime.md) ·
+> harness 侧 [plugins.md](../harness/docs/plugins.md) ·
 > **[对照 deepseek-harness / harness-desktop](plugins-upstream-comparison.md)**
 > （含 §12b：native-bridge × dsh-tauri*）·
 > **[通信通道收敛](channels.md)**（backend 事件面 vs `/rpc`）

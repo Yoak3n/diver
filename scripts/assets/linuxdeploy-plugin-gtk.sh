@@ -281,7 +281,21 @@ case "$DEPLOY_GTK_VERSION" in
         cat >> "$HOOKFILE" <<EOF
 export GTK_EXE_PREFIX="\$APPDIR/$gtk3_exec_prefix"
 export GTK_PATH="\$APPDIR/${gtk3_path/$LD_GTK_LIBRARY_PATH//usr/lib}"
-export GTK_IM_MODULE_FILE="\$APPDIR/${gtk3_immodules_cache_file/$LD_GTK_LIBRARY_PATH//usr/lib}"
+# local patch: prefer system IM modules (fcitx/ibus) so IME works in the AppImage
+_system_immodules_cache=""
+for _c in /usr/lib/gtk-3.0/3.0.0/immodules.cache /usr/lib/x86_64-linux-gnu/gtk-3.0/3.0.0/immodules.cache /usr/lib/aarch64-linux-gnu/gtk-3.0/3.0.0/immodules.cache; do
+    if [ -f "\$_c" ]; then _system_immodules_cache="\$_c"; break; fi
+done
+if [ -n "\$_system_immodules_cache" ]; then
+    export GTK_IM_MODULE_FILE="\$_system_immodules_cache"
+else
+    export GTK_IM_MODULE_FILE="\$APPDIR/${gtk3_immodules_cache_file/$LD_GTK_LIBRARY_PATH//usr/lib}"
+fi
+# Sessions that only set XIM-style vars (XMODIFIERS=@im=fcitx) still need a GTK
+# IM module; derive one instead of leaving GTK with the "simple" context.
+if [ -z "\$GTK_IM_MODULE" ] && [ -n "\$XMODIFIERS" ]; then
+    export GTK_IM_MODULE="\${XMODIFIERS#*@im=}"
+fi
 EOF
 
         if [ -x "$gtk3_immodules_query" ]; then

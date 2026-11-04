@@ -11,6 +11,9 @@
 import { nativeRpc } from '@diver/native-bridge/rpc'
 
 import type {
+  CuriosityCounts,
+  CuriosityRow,
+  CuriosityStatus,
   EntityGraph,
   EntityRelationSpec,
   EntityRow,
@@ -134,6 +137,12 @@ export class MemoryStore {
     await this.refresh()
   }
 
+  /** 追加摘要（探索结果落地）：保留旧状态，按字符截断尾部。 */
+  async appendTopicSummary(id: string, text: string, maxChars?: number): Promise<void> {
+    await rpc('append_topic_summary', { id, text, maxChars })
+    await this.refresh()
+  }
+
   async deleteTopic(id: string): Promise<void> {
     await rpc('delete_topic', { id })
     await this.refresh()
@@ -185,6 +194,56 @@ export class MemoryStore {
 
   async recentSelfActions(kind?: string, limit = 5): Promise<SelfAction[]> {
     return rpc<SelfAction[]>('recent_self_actions', { kind, limit })
+  }
+
+  // ───────────────────────── 好奇心清单（RPC） ─────────────────────────
+  // 队列是探索的持久 feedstock：写入方（群聊/笔记/实体/订阅）只管入队，
+  // 读方（pickTerms）按评分取前 N 条；探索 job 负责 claim → complete/release。
+
+  async curiosityUpsert(input: {
+    term: string
+    dedupeKey?: string
+    source: string
+    reason?: string
+    priority?: number
+    note?: string
+    payload?: string
+  }): Promise<string> {
+    return rpc<string>('curiosity_upsert', input)
+  }
+
+  async curiosityGet(id: string): Promise<CuriosityRow | undefined> {
+    const row = await rpc<CuriosityRow | null>('curiosity_get', { id })
+    return row ?? undefined
+  }
+
+  async curiosityPick(limit = 5): Promise<CuriosityRow[]> {
+    return rpc<CuriosityRow[]>('curiosity_pick', { limit })
+  }
+
+  async curiosityList(status?: CuriosityStatus, limit = 50): Promise<CuriosityRow[]> {
+    return rpc<CuriosityRow[]>('curiosity_list', { status, limit })
+  }
+
+  async curiosityClaim(id: string): Promise<boolean> {
+    return rpc<boolean>('curiosity_claim', { id })
+  }
+
+  /** 释放条目；resetAttempts = 用户打断（不消耗重试次数）。 */
+  async curiosityRelease(id: string, resetAttempts = false): Promise<boolean> {
+    return rpc<boolean>('curiosity_release', { id, resetAttempts })
+  }
+
+  async curiosityComplete(id: string, input: { topicId?: string; note?: string } = {}): Promise<boolean> {
+    return rpc<boolean>('curiosity_complete', { id, ...input })
+  }
+
+  async curiosityDoneSince(since: number, limit = 10): Promise<CuriosityRow[]> {
+    return rpc<CuriosityRow[]>('curiosity_done_since', { since, limit })
+  }
+
+  async curiosityCounts(): Promise<CuriosityCounts> {
+    return rpc<CuriosityCounts>('curiosity_counts')
   }
 
   // ───────────────────────── 实体图谱（RPC） ─────────────────────────

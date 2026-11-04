@@ -9,6 +9,7 @@
 //! 私有 + 共享双库门面见 `dual::DualDb`（共享层第一版只放 events）。
 
 mod card;
+mod curiosity;
 mod dual;
 mod entities;
 mod events;
@@ -23,6 +24,8 @@ mod util;
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_curiosity;
 
 pub use dual::DualDb;
 pub use store::MemoryDb;

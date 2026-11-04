@@ -54,6 +54,8 @@ pub struct ExplorePolicy {
     pending_term: Option<String>,
     active_job_id: Option<String>,
     visits: Vec<TermVisit>,
+    /// 候选池为空后的退避截止时刻（避免 45s 白轮询）。
+    empty_until: u64,
     cfg: ExploreConfig,
 }
 
@@ -73,6 +75,7 @@ impl ExplorePolicy {
             pending_term: None,
             active_job_id: None,
             visits: Vec::new(),
+            empty_until: 0,
             cfg,
         }
     }
@@ -97,9 +100,17 @@ impl ExplorePolicy {
         }
     }
 
+    /// 候选池为空：5 分钟内不再尝试（取词源可能正在补货）。
+    pub fn note_empty(&mut self, now: u64) {
+        self.empty_until = now.saturating_add(5 * 60_000);
+    }
+
     /// 是否到了该好奇的时刻（长闲；Sleep 更积极）。
+    /// 当日预算用尽 / 空池退避中直接 false，避免壳端白轮询。
     pub fn should_wake(&self, now: u64, idle_ms: u64, sleep: bool) -> bool {
-        if self.active {
+        let budget_used = Self::day_stamp(now) == self.daily_day
+            && self.daily_used >= self.cfg.max_per_day;
+        if self.active || now < self.empty_until || budget_used {
             return false;
         }
         let need = if sleep {
@@ -235,5 +246,25 @@ mod tests {
         assert!(!e.should_wake(0, 500, false));
         assert!(e.should_wake(0, 1_500, false));
         assert!(e.should_wake(0, 600, true));
+    }
+
+    #[test]
+    fn daily_budget_stops_waking_until_next_day() {
+        let mut e = p();
+        assert!(e.claim("a", 20_000).is_ok());
+        e.release();
+        assert!(e.claim("b", 30_000).is_ok());
+        e.release();
+        assert!(!e.should_wake(40_000, 2_000, false), "当日预算用尽不再唤醒");
+        assert!(e.should_wake(86_400_000 + 40_000, 2_000, false), "跨日恢复");
+    }
+
+    #[test]
+    fn empty_pool_backs_off_five_minutes() {
+        let mut e = p();
+        e.note_empty(10_000);
+        assert!(!e.should_wake(10_001, 2_000, false));
+        assert!(!e.should_wake(309_999, 2_000, false));
+        assert!(e.should_wake(310_000, 2_000, false));
     }
 }

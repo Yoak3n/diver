@@ -55,10 +55,11 @@ impl CompanionPresence {
                 term,
                 reason,
                 from_memory_id,
+                from_curiosity_id,
             } => {
                 // 统一走 request_web_explore（注入载荷不适用，返回 None）。
                 let (result, _job) =
-                    self.request_web_explore(&term, reason, from_memory_id, now);
+                    self.request_web_explore(&term, reason, from_memory_id, from_curiosity_id, now);
                 (result, None)
             }
             Intent::MemoryDream { reason, hint } => {
@@ -86,6 +87,7 @@ impl CompanionPresence {
         term: &str,
         reason: WebExploreReason,
         from_memory_id: Option<String>,
+        from_curiosity_id: Option<String>,
         now: u64,
     ) -> (RequestResult, Option<ExploreRequest>) {
         self.evaluate(now);
@@ -118,6 +120,7 @@ impl CompanionPresence {
                 term: term.trim().to_string(),
                 reason,
                 from_memory_id,
+                from_curiosity_id,
                 hint: None,
             }),
         )

@@ -84,6 +84,46 @@ impl MemoryDb {
         Ok(true)
     }
 
+    /// 追加状态摘要（探索结果落地）：保留旧摘要，追加新段落，按尾部长截断。
+    /// 同一段内容重复追加是幂等的（job 重试不重复膨胀）。
+    pub fn append_topic_summary(
+        &self,
+        id: &str,
+        addition: &str,
+        max_chars: Option<usize>,
+    ) -> rusqlite::Result<bool> {
+        let addition = addition.trim();
+        if addition.is_empty() {
+            return Ok(false);
+        }
+        let Some(mut row) = self.get_topic(id)? else {
+            return Ok(false);
+        };
+        if row.state_summary.contains(addition) {
+            return Ok(true);
+        }
+        let max = max_chars.unwrap_or(800).clamp(120, 4000);
+        let mut next = if row.state_summary.trim().is_empty() {
+            addition.to_string()
+        } else {
+            format!("{}\n\n{}", row.state_summary.trim(), addition)
+        };
+        if next.chars().count() > max {
+            next = tail_chars(&next, max);
+        }
+        row.state_summary = next;
+        row.last_discussed_at = now_ms();
+        row.n_times += 1;
+        row.uncertain = false;
+        row.weight = row.weight.max(0.6);
+        self.conn.execute(
+            "UPDATE topics SET state_summary = ?1, last_discussed_at = ?2, n_times = ?3, \
+             uncertain = ?4, weight = ?5 WHERE id = ?6",
+            params![row.state_summary, row.last_discussed_at, row.n_times, row.uncertain, row.weight, id],
+        )?;
+        Ok(true)
+    }
+
     pub fn delete_topic(&self, id: &str) -> rusqlite::Result<()> {
         // 遗忘/主动删除主题时，连带清理该主题的 events，避免孤儿事件无限增长。
         self.conn
@@ -194,6 +234,15 @@ impl MemoryDb {
         let rows = stmt.query_map(params![limit as i64], topic_from_row)?;
         rows.collect()
     }
+}
+
+/// 按字符（非字节）保留末尾 `max` 个字符，避免截断中文。
+fn tail_chars(text: &str, max: usize) -> String {
+    let count = text.chars().count();
+    if count <= max {
+        return text.to_string();
+    }
+    text.chars().skip(count - max).collect()
 }
 
 fn normalize_scope(scope: Option<&str>) -> &str {

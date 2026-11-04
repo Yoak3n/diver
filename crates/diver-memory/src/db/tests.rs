@@ -169,6 +169,41 @@ fn legacy_topics_table_migrates_scope_to_owner() {
 }
 
 #[test]
+fn append_topic_summary_keeps_old_is_idempotent_and_caps() {
+    let db = mem_db();
+    let id = db
+        .create_topic("MXene", "旧状态：二维材料候选", Some("episodic"), Some(false), None)
+        .unwrap();
+    db.conn
+        .execute("UPDATE topics SET weight = 0.1 WHERE id = ?1", [&id])
+        .unwrap();
+
+    assert!(db
+        .append_topic_summary(&id, "【查到】MXene 是一种二维过渡金属碳化物。", Some(200))
+        .unwrap());
+    let row = db.get_topic(&id).unwrap().unwrap();
+    assert!(row.state_summary.contains("旧状态"));
+    assert!(row.state_summary.contains("【查到】"));
+    assert_eq!(row.n_times, 2);
+    assert!(!row.uncertain);
+    assert!(row.weight >= 0.6);
+
+    // 重试幂等：同一段不重复追加、不重复计数。
+    assert!(db
+        .append_topic_summary(&id, "【查到】MXene 是一种二维过渡金属碳化物。", Some(200))
+        .unwrap());
+    let row = db.get_topic(&id).unwrap().unwrap();
+    assert_eq!(row.n_times, 2);
+
+    // 超长按字符尾部截断。
+    assert!(db
+        .append_topic_summary(&id, &"长".repeat(500), Some(120))
+        .unwrap());
+    let row = db.get_topic(&id).unwrap().unwrap();
+    assert!(row.state_summary.chars().count() <= 120);
+}
+
+#[test]
 fn card_name_is_scalar_and_overwrite() {
     let db = mem_db();
     // 初始未命名

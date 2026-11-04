@@ -145,14 +145,14 @@ fn web_explore_claim_and_user_chat_releases() {
         },
     );
     c.evaluate(3_100);
-    let (r, job) = c.request_web_explore("MXene", WebExploreReason::LongIdle, None, 3_100);
+    let (r, job) = c.request_web_explore("MXene", WebExploreReason::LongIdle, None, None, 3_100);
     assert!(r.is_ok(), "{r:?}");
     let job = job.expect("explore job");
     assert_eq!(job.term, "MXene");
     assert!(c.explore_policy().is_active());
 
     // 二次同刻 claim → already_active
-    let (r2, _) = c.request_web_explore("graphene", WebExploreReason::LongIdle, None, 3_200);
+    let (r2, _) = c.request_web_explore("graphene", WebExploreReason::LongIdle, None, None, 3_200);
     assert!(!r2.is_ok());
 
     // T13 USER_CHAT 打断

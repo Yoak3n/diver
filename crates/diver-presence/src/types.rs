@@ -133,6 +133,7 @@ pub enum Intent {
         term: String,
         reason: WebExploreReason,
         from_memory_id: Option<String>,
+        from_curiosity_id: Option<String>,
     },
 }
 
@@ -185,6 +186,9 @@ pub struct ExploreRequest {
     pub reason: WebExploreReason,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub from_memory_id: Option<String>,
+    /// 好奇心队列条目 id（sidecar 消费后标记 done/release）。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub from_curiosity_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub hint: Option<String>,
 }

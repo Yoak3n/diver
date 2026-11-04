@@ -103,6 +103,47 @@ pub struct Snapshot {
     pub events: Vec<MemoryEvent>,
 }
 
+// ───────────────────────── 好奇心清单 ─────────────────────────
+
+/// 一条待探索条目。`score` 只在 `curiosity_pick` 里计算，其他读面为 0。
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CuriosityRow {
+    pub id: String,
+    pub term: String,
+    pub dedupe_key: String,
+    /// chat:group:<id> / note:<scope> / entity / subscription:<id> / topic / manual
+    pub source: String,
+    /// chat_mention / note_pending / entity / release / watch / topic_* / fallback
+    pub reason: String,
+    pub priority: f64,
+    /// open / claimed / done / skipped / expired
+    pub status: String,
+    pub occurrences: i64,
+    pub attempts: i64,
+    pub created_at: i64,
+    pub updated_at: i64,
+    pub last_seen_at: i64,
+    pub last_attempt_at: Option<i64>,
+    pub done_at: Option<i64>,
+    pub topic_id: Option<String>,
+    /// 完成时写入的一句话结论（汇报素材）。
+    pub note: String,
+    /// 订阅预先抓到、可直接消费的原文。
+    pub payload: String,
+    pub score: f64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CuriosityCounts {
+    pub open: i64,
+    pub claimed: i64,
+    pub done: i64,
+    pub skipped: i64,
+    pub expired: i64,
+}
+
 // ───────────────────────── 实体图谱类型 ─────────────────────────
 
 #[derive(Debug, Clone, Serialize)]

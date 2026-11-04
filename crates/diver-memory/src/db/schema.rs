@@ -53,6 +53,31 @@ CREATE TABLE IF NOT EXISTS self_history (
     ts INTEGER NOT NULL
 );
 
+-- 好奇心清单：从群聊 / 笔记 / 实体 / 订阅里长出来的待探索条目。
+-- dedupe_key 唯一：普通词=归一化 term，release/watch 用稳定外部 id，
+-- 保证同一词只入队一次、同一 release 不会因重复轮询反复入队。
+CREATE TABLE IF NOT EXISTS curiosity_items (
+    id TEXT PRIMARY KEY,
+    term TEXT NOT NULL,
+    dedupe_key TEXT NOT NULL,
+    source TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    priority REAL NOT NULL,
+    status TEXT NOT NULL,
+    occurrences INTEGER NOT NULL,
+    attempts INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    last_seen_at INTEGER NOT NULL,
+    last_attempt_at INTEGER,
+    done_at INTEGER,
+    topic_id TEXT,
+    note TEXT NOT NULL DEFAULT '',
+    payload TEXT NOT NULL DEFAULT ''
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_curiosity_dedupe ON curiosity_items(dedupe_key);
+CREATE INDEX IF NOT EXISTS idx_curiosity_status ON curiosity_items(status, last_seen_at);
+
 CREATE TABLE IF NOT EXISTS entities (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,

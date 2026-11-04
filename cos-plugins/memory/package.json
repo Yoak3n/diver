@@ -10,11 +10,14 @@
     "./store-rpc": "./src/store-rpc.ts",
     "./digest": "./src/digest.ts",
     "./session": "./src/session.ts",
-    "./explore": "./src/explore.ts"
+    "./explore": "./src/explore.ts",
+    "./curiosity-extract": "./src/curiosity-extract.ts",
+    "./curiosity-sources": "./src/curiosity-sources.ts",
+    "./curiosity-state": "./src/curiosity-state.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "node --import tsx --test src/turn-scope.test.ts"
+    "test": "node --import tsx --test src/*.test.ts"
   },
   "dependencies": {
     "@cos/plugin-api": "workspace:*",

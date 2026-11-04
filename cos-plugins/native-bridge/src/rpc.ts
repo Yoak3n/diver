@@ -87,6 +87,12 @@ export const NATIVE_RPC_METHODS = [
     probeSafe: false as boolean,
   },
   {
+    method: 'presence::inject',
+    service: 'presence',
+    description: '裁决并异步下发主动注入（好奇心小结用）',
+    probeSafe: false as boolean,
+  },
+  {
     method: 'tts::synthesize',
     service: 'tts',
     description: '在线 TTS 合成（QQ 语音出话；返回 base64 + mime，按服务商计费）',

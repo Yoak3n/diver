@@ -1,48 +1,90 @@
-// @diver/memory — Explore 执行面（设计 §7.4）。
+// @diver/memory — Explore 取词面（设计 §7.4）。
 //
-// 控制面在壳（ExplorePolicy 裁决时机与词）；本模块只做：
-// - pickTerms()：从长期记忆只读挑候选词
-// - explore(term)：联网检索+摘要（@diver/web-tools）→ 写回记忆卡片
-// - job 管理：单飞 + cancel（USER_CHAT 打断经壳调 cancel）
+// 控制面在壳（ExplorePolicy 裁决时机与词）；本模块只做候选合并：
+// - 好奇心队列优先（群聊/笔记/实体/订阅攒出来的条目）
+// - 不足时补记忆 topics（高频 / 近期 / 未确定）
+// - 队列为空时按需触发一次取词扫描，避免壳端反复「无候选」空转
 //
-// 不在此决定「何时 explore」——那是壳策略的事。
+// job 生命周期（单飞 / cancel / 落库）在 ./explore-job.ts。
 
-import { randomUUID } from 'node:crypto'
-import type { MemoryStore, TopicRow } from './store-rpc.ts'
-import {
-  DEFAULT_POLICY,
-  resolvePolicy,
-  type PolicyOverrides,
-} from '@diver/web-tools/policy'
-import { exploreTerm, type ExploreResult } from '@diver/web-tools/explore'
+import type { MemoryStore } from './store-rpc.ts'
+import type { ExploreCandidate } from './explore-types.ts'
 
-export interface ExploreCandidate {
-  id: string
-  term: string
-  score: number
-  nTimes: number
-  stateSummary: string
-  reason: 'high_frequency' | 'recent' | 'uncertain'
+/**
+ * 队列为空时的按需取词钩子：由插件 apply 时注入（群聊/笔记/实体扫描）。
+ * 放在模块级而不是直接 import runtime，避免 explore ↔ runtime 循环依赖。
+ */
+let refreshCuriosity: (() => Promise<void>) | null = null
+
+export function setCuriosityRefresh(fn: (() => Promise<void>) | null): void {
+  refreshCuriosity = fn
 }
 
-export interface ExploreJobStatus {
-  jobId: string
-  term: string
-  state: 'running' | 'done' | 'error' | 'cancelled'
-  startedAt: number
-  endedAt?: number
-  error?: string
-  result?: ExploreResult
-  memoryId?: string
-}
-
-/** 从记忆挑探索候选：高频 / 近期 / 未确定概念。 */
+/**
+ * 挑探索候选：好奇心队列优先，不足时补记忆 topics。
+ */
 export async function pickTerms(store: MemoryStore, limit = 5): Promise<ExploreCandidate[]> {
+  const out: ExploreCandidate[] = []
+  const seen = new Set<string>()
+  let queue = await pickCuriosity(store, limit)
+  if (queue.length === 0 && refreshCuriosity !== null) {
+    try {
+      await refreshCuriosity()
+    } catch (err) {
+      console.warn(`[explore] 取词扫描失败: ${(err as Error)?.message ?? err}`)
+    }
+    queue = await pickCuriosity(store, limit)
+  }
+  for (const item of queue) {
+    const key = item.term.trim().toLowerCase()
+    if (key === '' || seen.has(key)) continue
+    seen.add(key)
+    out.push(item)
+  }
+  if (out.length < limit) {
+    for (const item of await pickTopicTerms(store, limit - out.length)) {
+      const key = item.term.trim().toLowerCase()
+      if (seen.has(key)) continue
+      seen.add(key)
+      out.push(item)
+    }
+  }
+  return out.slice(0, limit)
+}
+
+/** 队列候选：RPC 失败时返回空（旧壳/旧库不阻塞 topic 兜底）。 */
+async function pickCuriosity(store: MemoryStore, limit: number): Promise<ExploreCandidate[]> {
+  try {
+    const rows = await store.curiosityPick(limit)
+    return rows.map((row) => ({
+      id: row.topicId ?? '',
+      term: row.term,
+      score: row.score,
+      nTimes: row.occurrences,
+      stateSummary: (row.note ?? '').slice(0, 120),
+      reason:
+        row.source.startsWith('subscription:') || row.reason === 'release' || row.reason === 'watch'
+          ? 'subscription'
+          : 'curiosity',
+      curiosityId: row.id,
+      source: row.source,
+    }))
+  } catch (err) {
+    console.warn(`[explore] 读取好奇心队列失败: ${(err as Error)?.message ?? err}`)
+    return []
+  }
+}
+
+/** topics 兜底候选（原逻辑）。 */
+async function pickTopicTerms(store: MemoryStore, limit: number): Promise<ExploreCandidate[]> {
+  if (limit <= 0) return []
   const rows = await store.listTopics()
   const now = Date.now()
   const scored: ExploreCandidate[] = []
   for (const row of rows) {
     if (row.demotedAt) continue
+    // topics 兜底只取主人/全局作用域：群聊/陌生人私聊的 topic 不复制进 owner。
+    if (row.scope !== 'owner' && row.scope !== 'global') continue
     const term = (row.canonicalName ?? '').trim()
     if (term.length < 2 || term.length > 40) continue
     // 过滤纯寒暄/元话题
@@ -72,141 +114,7 @@ export async function pickTerms(store: MemoryStore, limit = 5): Promise<ExploreC
   return scored.slice(0, limit)
 }
 
-export class ExploreJobManager {
-  private jobs = new Map<string, ExploreJobStatus>()
-  private controllers = new Map<string, AbortController>()
-  private running: string | null = null
-
-  get activeJobId(): string | null {
-    return this.running
-  }
-
-  status(jobId: string): ExploreJobStatus | undefined {
-    return this.jobs.get(jobId)
-  }
-
-  list(): ExploreJobStatus[] {
-    return [...this.jobs.values()].slice(-10)
-  }
-
-  /** 取消进行中任务（壳 USER_CHAT / 用户打断）。 */
-  cancel(jobId?: string): boolean {
-    const id = jobId ?? this.running
-    if (!id) return false
-    const ctrl = this.controllers.get(id)
-    if (ctrl) ctrl.abort()
-    const job = this.jobs.get(id)
-    if (job && job.state === 'running') {
-      job.state = 'cancelled'
-      job.endedAt = Date.now()
-    }
-    if (this.running === id) this.running = null
-    console.warn(`[explore] cancel → job ${id}`)
-    return true
-  }
-
-  /** 启动探索 job；同时只允许一个（Solitary 叶语义）。 */
-  start(
-    store: MemoryStore,
-    input: {
-      term: string
-      reason?: string
-      fromMemoryId?: string
-      hint?: string
-      policy?: PolicyOverrides
-    },
-  ): ExploreJobStatus {
-    if (this.running) {
-      throw new Error(`EXPLORE_BUSY: job ${this.running} already running`)
-    }
-    const jobId = randomUUID()
-    const controller = new AbortController()
-    const job: ExploreJobStatus = {
-      jobId,
-      term: input.term,
-      state: 'running',
-      startedAt: Date.now(),
-    }
-    this.jobs.set(jobId, job)
-    this.controllers.set(jobId, controller)
-    this.running = jobId
-
-    void this.run(store, job, controller.signal, input).finally(() => {
-      this.controllers.delete(jobId)
-      if (this.running === jobId) this.running = null
-    })
-    return job
-  }
-
-  private async run(
-    store: MemoryStore,
-    job: ExploreJobStatus,
-    signal: AbortSignal,
-    input: {
-      term: string
-      reason?: string
-      fromMemoryId?: string
-      hint?: string
-      policy?: PolicyOverrides
-    },
-  ): Promise<void> {
-    const started = Date.now()
-    console.log(
-      `[explore] job ${job.jobId} 开始 term=${input.term} reason=${input.reason ?? '-'}` +
-        (input.fromMemoryId ? ` from=${input.fromMemoryId}` : ''),
-    )
-    try {
-      const policy = resolvePolicy(DEFAULT_POLICY, input.policy)
-      const result = await exploreTerm(input.term, policy, {
-        ...input.policy,
-        ...(input.hint ? { hint: input.hint } : {}),
-        ...(input.fromMemoryId ? {} : {}),
-        signal,
-      })
-      if (signal.aborted) {
-        job.state = 'cancelled'
-        job.endedAt = Date.now()
-        console.warn(`[explore] job ${job.jobId} 已取消（${Date.now() - started}ms）`)
-        return
-      }
-      job.result = result
-      console.log(
-        `[explore] job ${job.jobId} 检索完成 hits=${result.hits.length} pages=${result.pages.length}` +
-          ` chars=${result.totalChars}${result.budgetExhausted ? ' 预算耗尽' : ''}（${Date.now() - started}ms）`,
-      )
-      // L3 写回：外部视角卡片 + 链到原记忆（设计：探索路径不写，结束时由 memory 写）
-      const note = [
-        `【外部探索】${result.term}`,
-        input.reason ? `触发：${input.reason}` : '',
-        input.fromMemoryId ? `关联记忆：${input.fromMemoryId}` : '',
-        '',
-        result.summary.slice(0, 1500),
-      ]
-        .filter((s) => s !== '')
-        .join('\n')
-      const memoryId = await store.remember({
-        content: note,
-        topic: `探索:${result.term}`.slice(0, 40),
-      })
-      job.memoryId = memoryId
-      job.state = 'done'
-      job.endedAt = Date.now()
-      console.log(`[explore] job ${job.jobId} 写回记忆 ${memoryId} → done（总耗时 ${Date.now() - started}ms）`)
-    } catch (error) {
-      if (signal.aborted) {
-        job.state = 'cancelled'
-        console.warn(`[explore] job ${job.jobId} 已取消（${Date.now() - started}ms）`)
-      } else {
-        job.state = 'error'
-        job.error = (error as Error)?.message ?? String(error)
-        console.error(`[explore] job ${job.jobId} 失败: ${job.error}（${Date.now() - started}ms）`)
-      }
-      job.endedAt = Date.now()
-    }
-  }
-}
-
-/** 进程内单例 job 管理器（backend / 壳 RPC 共用）。 */
-export const exploreJobs = new ExploreJobManager()
-
-export type { TopicRow, ExploreResult }
+export { ExploreJobManager, exploreJobs } from './explore-job.ts'
+export type { ExploreCandidate, ExploreJobStatus, ExploreInput } from './explore-types.ts'
+export type { ExploreResult } from './explore-types.ts'
+export type { TopicRow } from './store-rpc.ts'

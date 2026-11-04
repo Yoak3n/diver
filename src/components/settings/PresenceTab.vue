@@ -6,6 +6,7 @@ import { tauriAvailable } from "../../tauri";
 import { listInstances, type InstanceMeta } from "../../ipc/instances";
 import type { PresencePhase } from "../../ipc/presence";
 import PresenceHsmGraph from "./children/PresenceHsmGraph.vue";
+import CuriosityPanel from "./children/CuriosityPanel.vue";
 import { PHASE_HINTS, capsOf, fmtAgo } from "./children/presenceDisplay";
 
 /** 空串 = 看 active 实例；其余值 = 定点查看该实例的 FSM。 */
@@ -112,6 +113,9 @@ const instanceLabel = computed(() => {
     </section>
 
     <p v-else-if="!tauriAvailable()" class="hint">非 Tauri 环境无法读取状态机。</p>
+
+    <CuriosityPanel />
+
     <p class="hint">
       完整迁移表与设计见 <code>docs/companion-presence-fsm.md</code>
     </p>

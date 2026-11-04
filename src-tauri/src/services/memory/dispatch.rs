@@ -19,6 +19,8 @@ pub fn dispatch(
     let i64_opt = |key: &str| params.get(key).and_then(|v| v.as_i64());
     let usize_opt = |key: &str| params.get(key).and_then(|v| v.as_u64()).map(|n| n as usize);
     let bool_opt = |key: &str| params.get(key).and_then(|v| v.as_bool());
+    let f64_opt = |key: &str| params.get(key).and_then(|v| v.as_f64());
+    let now = || i64_opt("now").unwrap_or_else(current_ms);
     let str_list = |key: &str| {
         params.get(key).and_then(|v| v.as_array()).map(|items| {
             items
@@ -49,6 +51,15 @@ pub fn dispatch(
                 str_opt("stateSummary").as_deref(),
                 str_opt("alias").as_deref(),
                 str_opt("action").as_deref(),
+            )
+            .map_err(err)?;
+            Value::Null
+        }
+        "append_topic_summary" => {
+            db.append_topic_summary(
+                &req_str(params, "id")?,
+                &req_str(params, "text")?,
+                usize_opt("maxChars"),
             )
             .map_err(err)?;
             Value::Null
@@ -208,12 +219,76 @@ pub fn dispatch(
             db.search_entities(&req_str(params, "text")?, usize_opt("limit"))
                 .map_err(err)?,
         ),
+        // ── 好奇心清单（待探索队列） ──
+        "curiosity_upsert" => {
+            let source = req_str(params, "source")?;
+            let reason = str_opt("reason").unwrap_or_else(|| "manual".to_string());
+            let priority = f64_opt("priority").unwrap_or(1.0);
+            let id = db
+                .curiosity_upsert(
+                    &req_str(params, "term")?,
+                    str_opt("dedupeKey").as_deref(),
+                    &source,
+                    &reason,
+                    priority,
+                    str_opt("note").as_deref(),
+                    str_opt("payload").as_deref(),
+                )
+                .map_err(err)?;
+            json!(id)
+        }
+        "curiosity_get" => to_value(db.curiosity_get(&req_str(params, "id")?).map_err(err)?),
+        "curiosity_pick" => to_value(db.curiosity_pick(usize_opt("limit"), now()).map_err(err)?),
+        "curiosity_list" => to_value(
+            db.curiosity_list(str_opt("status").as_deref(), usize_opt("limit"))
+                .map_err(err)?,
+        ),
+        "curiosity_claim" => {
+            let ok = db
+                .curiosity_claim(&req_str(params, "id")?, now())
+                .map_err(err)?;
+            json!(ok)
+        }
+        "curiosity_release" => {
+            let ok = db
+                .curiosity_release(
+                    &req_str(params, "id")?,
+                    now(),
+                    bool_opt("resetAttempts").unwrap_or(false),
+                )
+                .map_err(err)?;
+            json!(ok)
+        }
+        "curiosity_complete" => {
+            let ok = db
+                .curiosity_complete(
+                    &req_str(params, "id")?,
+                    str_opt("topicId").as_deref(),
+                    str_opt("note").as_deref(),
+                    now(),
+                )
+                .map_err(err)?;
+            json!(ok)
+        }
+        "curiosity_done_since" => {
+            let since = i64_opt("since").ok_or_else(|| "missing param: since".to_string())?;
+            to_value(db.curiosity_done_since(since, usize_opt("limit")).map_err(err)?)
+        }
+        "curiosity_counts" => to_value(db.curiosity_counts().map_err(err)?),
         "stats" => to_value(db.stats().map_err(err)?),
         "snapshot" => to_value(db.snapshot(usize_opt("limit")).map_err(err)?),
         other => return Err(format!("unknown method: {other}")),
     };
 
     Ok(result)
+}
+
+/// 当前毫秒时间戳（RPC 未显式带 `now` 时使用，便于测试注入固定时间）。
+fn current_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
 }
 
 #[cfg(test)]
@@ -256,6 +331,63 @@ mod tests {
             tts_synthesize: tts,
             groups_dir: std::env::temp_dir(),
         }
+    }
+
+    /// 好奇心队列 + 追加摘要的 RPC 往返（参数名/序列化/生命周期）。
+    #[test]
+    fn curiosity_and_append_summary_rpc_roundtrip() {
+        let state = state_with(Arc::new(Mutex::new(Vec::new())));
+        let id = dispatch(
+            &state,
+            None,
+            "curiosity_upsert",
+            &serde_json::json!({
+                "term": "MXene",
+                "source": "chat:group:1",
+                "reason": "chat_mention",
+                "priority": 1.2,
+            }),
+        )
+        .unwrap();
+        let id = id.as_str().unwrap().to_string();
+
+        let picked = dispatch(&state, None, "curiosity_pick", &serde_json::json!({ "limit": 5 })).unwrap();
+        assert_eq!(picked[0]["term"], "MXene");
+        assert_eq!(picked[0]["id"], id);
+
+        assert!(dispatch(&state, None, "curiosity_claim", &serde_json::json!({ "id": id }))
+            .unwrap()
+            .as_bool()
+            .unwrap());
+        assert!(dispatch(
+            &state,
+            None,
+            "curiosity_complete",
+            &serde_json::json!({ "id": id, "note": "二维材料" }),
+        )
+        .unwrap()
+        .as_bool()
+        .unwrap());
+        let counts = dispatch(&state, None, "curiosity_counts", &serde_json::json!({})).unwrap();
+        assert_eq!(counts["done"], 1);
+
+        let topic = dispatch(
+            &state,
+            None,
+            "create_topic",
+            &serde_json::json!({ "canonicalName": "MXene", "stateSummary": "旧状态" }),
+        )
+        .unwrap();
+        dispatch(
+            &state,
+            None,
+            "append_topic_summary",
+            &serde_json::json!({ "id": topic, "text": "【查到】二维材料" }),
+        )
+        .unwrap();
+        let row = dispatch(&state, None, "get_topic", &serde_json::json!({ "id": topic })).unwrap();
+        assert!(row["stateSummary"].as_str().unwrap().contains("旧状态"));
+        assert!(row["stateSummary"].as_str().unwrap().contains("【查到】"));
     }
 
     /// BUG 回归（实例名串写）：update_card 的名字写回必须路由到卡片实际归属的实例，

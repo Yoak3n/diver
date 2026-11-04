@@ -111,6 +111,40 @@ pub fn dispatch_rpc(instance: Option<&str>, method: &str, params: &Value) -> Res
             }
             Ok(body)
         }
+        // 裁决 + 异步下发：给 sidecar 插件（好奇心小结）用。request_inject 只裁决
+        // 不发送；这里复用同一条 L3 路径，但把 HTTP 调用丢到 async runtime，
+        // 避免阻塞 /rpc 线程。
+        "presence::inject" => {
+            let source = params
+                .get("source")
+                .and_then(|v| v.as_str())
+                .unwrap_or("proactive")
+                .to_string();
+            let text = params
+                .get("text")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            if text.is_empty() {
+                return Err("text 必填".into());
+            }
+            let (result, payload) = handle.request_proactive_inject(&source, &text);
+            let mut body = serde_json::to_value(&result).unwrap_or(Value::Null);
+            if body.is_null() {
+                body = json!({ "ok": false, "reason": "serialize_failed" });
+            }
+            if let Some(p) = payload {
+                let base = crate::core::sidecar::SidecarManager::global().api_base_url();
+                tauri::async_runtime::spawn(async move {
+                    if let Err(e) = dispatch_inject(&base, &p).await {
+                        log::warn!("[presence] L3 inject 失败: {e}");
+                    }
+                });
+                body["dispatch"] = json!("queued");
+            }
+            Ok(body)
+        }
         _ => Err(format!("未知 presence 方法: {method}")),
     }
 }

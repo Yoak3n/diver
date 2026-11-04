@@ -39,7 +39,10 @@ async fn try_start_explore() {
         return;
     };
     if terms.is_empty() {
-        log::info!("[explore] 无候选词，本次跳过");
+        // 队列/主题都空：退避 5 分钟再试，避免 45s 白轮询刷日志。
+        // 取词源（群聊/笔记/实体）由 sidecar 侧按需补货，下一次 tick 前通常已有条目。
+        PresenceHandle::active().with(|p| p.explore_policy().note_empty(now));
+        log::info!("[explore] 无候选词，退避 5 分钟后重试");
         return;
     }
     log::info!("[explore] 候选 {}: {}", terms.len(), log_fmt::candidates_line(terms));
@@ -53,17 +56,31 @@ async fn try_start_explore() {
         let from_memory_id = item
             .get("id")
             .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string());
+        let from_curiosity_id = item
+            .get("curiosityId")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
             .map(|s| s.to_string());
         let now = diver_presence::types::now_ms();
         let sleep = PresenceHandle::active().with(|p| p.snapshot(now).regime == "sleep");
-        let reason = if sleep {
+        let reason = if from_curiosity_id.is_some() {
+            WebExploreReason::Curiosity
+        } else if sleep {
             WebExploreReason::Sleep
         } else {
             WebExploreReason::LongIdle
         };
 
         let (result, job) = PresenceHandle::active().with(|p| {
-            p.request_web_explore(term, reason, from_memory_id.clone(), now)
+            p.request_web_explore(
+                term,
+                reason,
+                from_memory_id.clone(),
+                from_curiosity_id.clone(),
+                now,
+            )
         });
         if !result.is_ok() {
             log::info!("[explore] 跳过「{term}」: {result:?}");
@@ -78,6 +95,7 @@ async fn try_start_explore() {
             "term": job.term,
             "reason": job.reason.as_str(),
             "fromMemoryId": job.from_memory_id,
+            "fromCuriosityId": job.from_curiosity_id,
             "hint": job.hint,
         });
         match http_json("POST", &format!("{base}/api/memory/explore"), Some(body)).await {
@@ -145,7 +163,7 @@ pub async fn trigger_manual(term: &str, reason: &str) -> Result<Value, String> {
     };
     log::info!("[explore] 手动触发「{term}」 reason={}", reason.as_str());
     let (result, job) = PresenceHandle::active().with(|p| {
-        p.request_web_explore(term, reason, None, now)
+        p.request_web_explore(term, reason, None, None, now)
     });
     let mut body = serde_json::to_value(&result).map_err(|e| e.to_string())?;
     if !matches!(result, RequestResult::Ok { .. }) {

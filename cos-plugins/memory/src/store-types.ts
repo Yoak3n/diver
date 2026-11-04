@@ -114,6 +114,43 @@ export interface EntityRelationSpec {
   toType?: string
 }
 
+// ───────────────────────── 好奇心清单 ─────────────────────────
+
+export type CuriosityStatus = 'open' | 'claimed' | 'done' | 'skipped' | 'expired'
+
+/** 一条待探索条目（与 Rust `CuriosityRow` camelCase 同形）。 */
+export interface CuriosityRow {
+  id: string
+  term: string
+  dedupeKey: string
+  /** chat:group:<id> / note:<scope> / entity / subscription:<id> / topic / manual */
+  source: string
+  reason: string
+  priority: number
+  status: CuriosityStatus
+  occurrences: number
+  attempts: number
+  createdAt: number
+  updatedAt: number
+  lastSeenAt: number
+  lastAttemptAt: number | null
+  doneAt: number | null
+  topicId: string | null
+  /** 完成时的一句话结论（汇报素材）。 */
+  note: string
+  /** 订阅预先抓到的原文。 */
+  payload: string
+  score: number
+}
+
+export interface CuriosityCounts {
+  open: number
+  claimed: number
+  done: number
+  skipped: number
+  expired: number
+}
+
 /** blocking_candidates 的作用域过滤（都是可选收窄条件）。 */
 export interface ScopeFilter {
   /** 只保留这些作用域。 */

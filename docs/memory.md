@@ -49,6 +49,10 @@ self_history    -- 行为史：kind/content/topic_id/ts（如建议去重）
 entities        -- 实体节点：name 唯一/entity_type/mention_count
 entity_attrs    -- 时序属性：同 key 旧值封存 valid_until，source_topic_id 溯源
 entity_relations-- 有向关系：from→to/relation，同三元组幂等
+
+-- 好奇心清单（探索 feedstock，见 docs/curiosity.md）
+curiosity_items -- 待探索条目：term/dedupe_key/source/reason/priority/status/
+                --   occurrences/attempts/topic_id/note/payload/时间戳
 ```
 
 ## 实体图谱（知识图谱层）
@@ -63,6 +67,13 @@ entity_relations-- 有向关系：from→to/relation，同三元组幂等
 | 读取 | `recall` / `inventory` 附带 `entities`：命中实体 + 一跳属性与关系 |
 | 与 topics 关系 | 并列存储；`source_topic_id` 可选溯源，不替换双层记忆模型 |
 | 不做 | 逐轮规则抽取、共现 `related_to` 自动建边、agent 亲手删图（只写入/加强） |
+
+## 好奇心驱动
+
+探索候选不再只从 topics 取词：群聊/笔记/实体会先进入 `curiosity_items` 队列，
+固定源（MiMo/DeepSeek 更新页 + GitHub release）也会入队；壳端空闲时按条消费，
+结果用 `append_topic_summary` 写回 topics。完整设计、配置与调试见
+[docs/curiosity.md](curiosity.md)。
 
 ## JSON-RPC 协议
 

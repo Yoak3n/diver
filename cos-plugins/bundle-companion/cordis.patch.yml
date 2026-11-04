@@ -11,6 +11,16 @@
       name: '@diver/memory'
       config:
         digestIntervalMs: 600000
+        # 好奇心清单：群聊/笔记/实体取词 + 订阅 + 每两天一次主动小结
+        curiosityEnabled: true
+        chatScan: true
+        notesScan: true
+        subscriptions: true
+        scanLimit: 20
+        llmSummary: true
+        reportEnabled: true
+        reportEveryDays: 2
+        reportMinItems: 2
 
     # 互实例消息：send_to_peer 工具（壳消息路由 → 对端 /api/inbox 注入，P2-2）
     - id: peer

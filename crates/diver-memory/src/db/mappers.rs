@@ -3,7 +3,8 @@
 use rusqlite::Row;
 
 use super::types::{
-    EntityAttrRow, EntityRow, MemoryEvent, PromiseRow, RelationCard, SelfAction, TopicRow,
+    CuriosityRow, EntityAttrRow, EntityRow, MemoryEvent, PromiseRow, RelationCard, SelfAction,
+    TopicRow,
 };
 
 pub(super) fn topic_from_row(row: &Row) -> rusqlite::Result<TopicRow> {
@@ -65,6 +66,29 @@ pub(super) fn action_from_row(row: &Row) -> rusqlite::Result<SelfAction> {
         content: row.get("content")?,
         topic_id: row.get("topic_id")?,
         ts: row.get("ts")?,
+    })
+}
+
+pub(super) fn curiosity_from_row(row: &Row) -> rusqlite::Result<CuriosityRow> {
+    Ok(CuriosityRow {
+        id: row.get("id")?,
+        term: row.get("term")?,
+        dedupe_key: row.get("dedupe_key")?,
+        source: row.get("source")?,
+        reason: row.get("reason")?,
+        priority: row.get("priority")?,
+        status: row.get("status")?,
+        occurrences: row.get("occurrences")?,
+        attempts: row.get("attempts")?,
+        created_at: row.get("created_at")?,
+        updated_at: row.get("updated_at")?,
+        last_seen_at: row.get("last_seen_at")?,
+        last_attempt_at: row.get("last_attempt_at")?,
+        done_at: row.get("done_at")?,
+        topic_id: row.get("topic_id")?,
+        note: row.get("note")?,
+        payload: row.get("payload")?,
+        score: 0.0,
     })
 }
 

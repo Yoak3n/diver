@@ -1,6 +1,7 @@
 // @diver/memory — 订阅源配置与仓库识别（纯函数 + 只读 IO）。
 //
-// 内置 MiMo/DeepSeek 更新页；GitHub 仓库来自三处：
+// 默认只跟 GitHub release；页面源在 sources.json 里按需自配。
+// GitHub 仓库来自三处：
 // 1. $COS_HOME/curiosity/sources.json 手写覆盖/追加
 // 2. 插件配置 extraRepos（逗号/换行）
 // 3. topics / 实体 / owner 笔记里自动识别（显式 github.com URL 或重复出现的 owner/repo）
@@ -26,28 +27,17 @@ export interface SubscriptionSource {
 }
 
 const THREE_HOURS = 3 * 3600_000
-const SIX_HOURS = 6 * 3600_000
 const GITHUB_MAX_SOURCES = 8
 
 /** 自动识别仓库的重算间隔（refreshSubscriptions 用）。 */
 export const REPO_SCAN_MS = 6 * 3600_000
 
-export const DEFAULT_SOURCES: SubscriptionSource[] = [
-  {
-    id: 'deepseek-news',
-    kind: 'page',
-    title: 'DeepSeek 更新',
-    url: 'https://api-docs.deepseek.com/news',
-    intervalMs: SIX_HOURS,
-  },
-  {
-    id: 'mimo-docs',
-    kind: 'page',
-    title: 'MiMo 更新',
-    url: 'https://mimo.mi.com/docs',
-    intervalMs: SIX_HOURS,
-  },
-]
+/**
+ * 默认不轮询任何官网/新闻页：只跟自动识别的 GitHub release。
+ * 需要盯某个 changelog 时，在 `$COS_HOME/curiosity/sources.json` 自己加
+ * `kind: "page"` 的源（id / title / url / intervalMs）。
+ */
+export const DEFAULT_SOURCES: SubscriptionSource[] = []
 
 /** 读 sources.json（可覆盖内置源）+ extraRepos + 自动识别仓库。 */
 export function readSubscriptionSources(

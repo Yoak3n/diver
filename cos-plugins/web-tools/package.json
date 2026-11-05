@@ -10,6 +10,7 @@
     "./extract": "./src/extract.ts",
     "./search": "./src/search.ts",
     "./fetch": "./src/fetch.ts",
+    "./fetch-json": "./src/fetch-json.ts",
     "./explore": "./src/explore.ts",
     "./policy": "./src/policy.ts",
     "./browser": "./src/browser.ts"

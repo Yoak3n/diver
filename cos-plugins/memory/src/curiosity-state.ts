@@ -25,6 +25,19 @@ export interface CuriosityState {
   /** 自动识别的 GitHub 仓库（6h 重算一次）。 */
   repos?: string[]
   repoScanAt?: number
+  /** 平台观察位点：B站等源的 due/backoff/最近看过。 */
+  platforms?: Record<
+    string,
+    {
+      lastCheckedAt?: number
+      lastAttemptAt?: number
+      lastIds?: string[]
+      lastError?: string
+      backoffUntil?: number
+    }
+  >
+  /** 平台每日配额（本地日期，跨日重置）。 */
+  platformDaily?: { day: string; enqueued: Record<string, number> }
 }
 
 const STATE_VERSION = 1

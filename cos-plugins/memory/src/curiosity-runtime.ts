@@ -11,11 +11,13 @@ import type {} from '@cos/plugin-api'
 import { setCuriosityRefresh } from './explore.ts'
 import { refreshCuriositySources, type CuriositySourceConfig } from './curiosity-sources.ts'
 import { refreshSubscriptions } from './curiosity-subscriptions.ts'
+import { refreshPlatformFeeds } from './curiosity-platform.ts'
+import type { PlatformRuntimeConfig } from './curiosity-platform-config.ts'
 import { maybeReport } from './curiosity-report.ts'
 import type { MemoryStore } from './store-rpc.ts'
 
-export interface CuriosityRuntimeConfig extends CuriositySourceConfig {
-  /** 固定源订阅（MiMo/DeepSeek 页面 + GitHub releases）。 */
+export interface CuriosityRuntimeConfig extends CuriositySourceConfig, PlatformRuntimeConfig {
+  /** 固定源订阅（GitHub releases；页面源可在 sources.json 自配）。 */
   subscriptions?: boolean
   extraRepos?: string
   /** 每两天主动汇报一次小发现。 */
@@ -46,9 +48,10 @@ export function startCuriosity(ctx: Context, store: MemoryStore, config: Curiosi
     void (async () => {
       await scan(false)
       await refreshSubscriptions(store, config)
+      await refreshPlatformFeeds(store, config)
       await maybeReport(store, config)
     })().catch((err: unknown) => {
-      console.warn(`[curiosity] 取词/订阅失败: ${(err as Error)?.message ?? String(err)}`)
+      console.warn(`[curiosity] 取词/订阅/平台失败: ${(err as Error)?.message ?? String(err)}`)
     })
   }
   const first = setTimeout(run, FIRST_SCAN_DELAY_MS)

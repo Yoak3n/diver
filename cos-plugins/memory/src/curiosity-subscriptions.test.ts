@@ -44,7 +44,17 @@ test('parseRepos 去重并过滤非仓库串', () => {
   assert.deepEqual(parseRepos('alpha/beta, alpha/beta; c/d\nfoo, 不是仓库, https://github.com/x/y.git'), ['alpha/beta', 'c/d', 'x/y'])
 })
 
-test('readSubscriptionSources 合并内置/手填/自动并限制 GitHub 上限', () => {
+test('默认不轮询任何页面源', () => {
+  const home = mkdtempSync(join(tmpdir(), 'diver-subscriptions-default-'))
+  try {
+    const sources = readSubscriptionSources(home, '', [])
+    assert.equal(sources.filter((s) => s.kind === 'page').length, 0)
+  } finally {
+    rmSync(home, { recursive: true, force: true })
+  }
+})
+
+test('readSubscriptionSources 合并手填/自动并限制 GitHub 上限', () => {
   const home = mkdtempSync(join(tmpdir(), 'diver-subscriptions-'))
   try {
     mkdirSync(join(home, 'curiosity'), { recursive: true })

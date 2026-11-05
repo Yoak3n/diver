@@ -28,10 +28,12 @@
     "@diver/native-bridge": "file:../native-bridge",
     "@diver/web-tools": "file:../web-tools",
     "cordis": "4.0.0-rc.12",
+    "qrcode": "1.5.4",
     "yaml": "2.4.0"
   },
   "devDependencies": {
     "@types/node": "^26.2.0",
+    "@types/qrcode": "^1.5.6",
     "typescript": "~5.6.2"
   }
 }

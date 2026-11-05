@@ -234,7 +234,10 @@ export class MemoryStore {
     return rpc<boolean>('curiosity_release', { id, resetAttempts })
   }
 
-  async curiosityComplete(id: string, input: { topicId?: string; note?: string } = {}): Promise<boolean> {
+  async curiosityComplete(
+    id: string,
+    input: { topicId?: string; note?: string; clearPayload?: boolean } = {},
+  ): Promise<boolean> {
     return rpc<boolean>('curiosity_complete', { id, ...input })
   }
 

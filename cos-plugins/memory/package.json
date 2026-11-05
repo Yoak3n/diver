@@ -13,7 +13,8 @@
     "./explore": "./src/explore.ts",
     "./curiosity-extract": "./src/curiosity-extract.ts",
     "./curiosity-sources": "./src/curiosity-sources.ts",
-    "./curiosity-state": "./src/curiosity-state.ts"
+    "./curiosity-state": "./src/curiosity-state.ts",
+    "./curiosity-bilibili-auth": "./src/curiosity-bilibili-auth.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

@@ -268,15 +268,17 @@ impl MemoryDb {
         id: &str,
         topic_id: Option<&str>,
         note: Option<&str>,
+        clear_payload: bool,
         now: i64,
     ) -> rusqlite::Result<bool> {
         let note = note.unwrap_or("").trim();
         let changed = self.conn.execute(
             "UPDATE curiosity_items SET status = 'done', done_at = ?1, updated_at = ?1, \
              topic_id = COALESCE(?2, topic_id), \
-             note = CASE WHEN ?3 <> '' THEN ?3 ELSE note END \
-             WHERE id = ?4 AND status IN ('open','claimed')",
-            params![now, topic_id, note, id],
+             note = CASE WHEN ?3 <> '' THEN ?3 ELSE note END, \
+             payload = CASE WHEN ?4 THEN '' ELSE payload END \
+             WHERE id = ?5 AND status IN ('open','claimed')",
+            params![now, topic_id, note, clear_payload, id],
         )?;
         Ok(changed > 0)
     }

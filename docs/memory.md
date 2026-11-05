@@ -71,7 +71,7 @@ curiosity_items -- 待探索条目：term/dedupe_key/source/reason/priority/stat
 ## 好奇心驱动
 
 探索候选不再只从 topics 取词：群聊/笔记/实体会先进入 `curiosity_items` 队列，
-固定源（MiMo/DeepSeek 更新页 + GitHub release）也会入队；壳端空闲时按条消费，
+固定源（默认 GitHub release；页面源可自配）也会入队；壳端空闲时按条消费，
 结果用 `append_topic_summary` 写回 topics。完整设计、配置与调试见
 [docs/curiosity.md](curiosity.md)。
 

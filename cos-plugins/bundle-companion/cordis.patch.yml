@@ -21,6 +21,20 @@
         reportEnabled: true
         reportEveryDays: 2
         reportMinItems: 2
+        # 平台观察：闲置时匿名看 B 站（只读，不评论/不登录）
+        platformFeeds: true
+        platformBilibili: true
+        platformSearch: true
+        platformComments: true
+        platformDanmaku: true
+        platformLogin: true
+        platformSubtitles: true
+        platformPerSession: 2
+        platformDailyCap: 2
+        platformIntervalMin: 240
+        platformIdleMinutes: 20
+        platformSerendipity: 30
+        platformPresenceGate: true
 
     # 互实例消息：send_to_peer 工具（壳消息路由 → 对端 /api/inbox 注入，P2-2）
     - id: peer

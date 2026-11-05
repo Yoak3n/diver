@@ -17,6 +17,7 @@ export type CuriosityReason =
   | 'watch'
   | 'topic'
   | 'manual'
+  | 'platform_trend'
 
 export interface ExtractedTerm {
   /** 展示词（保留原文大小写）。 */

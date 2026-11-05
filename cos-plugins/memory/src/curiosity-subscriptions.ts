@@ -1,8 +1,8 @@
 // @diver/memory — 固定源订阅执行：检查到期源、发现变化并入队。
 //
 // 订阅本身只负责「发现变化」，不联网查证：
-// - 页面：抓正文 → 指纹 → 行级 diff → 新增行作为 payload
 // - GitHub：GET /releases?per_page=1，带 ETag；新 release 的 body 作为 payload
+// - 页面（可选，默认不启用）：抓正文 → 指纹 → 行级 diff → 新增行作为 payload
 // 入队后由壳端 ExplorePolicy 在空闲时消费；job 见到 payload 会跳过二次搜索。
 // 源配置与仓库识别在 ./curiosity-subscription-sources.ts。
 

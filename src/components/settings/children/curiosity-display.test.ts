@@ -8,6 +8,7 @@ describe("curiosity-display", () => {
     expect(sourceLabel("note:owner")).toBe("笔记");
     expect(sourceLabel("subscription:github:Yoak3n/cos")).toBe("订阅");
     expect(sourceLabel("entity")).toBe("实体");
+    expect(sourceLabel("platform:bilibili")).toBe("B站");
     expect(sourceLabel("weird")).toBe("weird");
   });
 
@@ -16,6 +17,7 @@ describe("curiosity-display", () => {
     expect(reasonLabel("release")).toBe("release");
     expect(reasonLabel("watch")).toBe("更新");
     expect(reasonLabel("chat_mention")).toBe("群聊");
+    expect(reasonLabel("platform_trend")).toBe("B站");
   });
 
   it("时间用分钟/小时/天分档", () => {

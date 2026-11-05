@@ -104,6 +104,7 @@ export type WebErrorCode =
   | 'UNSUPPORTED_SCHEME'
   | 'TIMEOUT'
   | 'HTTP_ERROR'
+  | 'INVALID_JSON'
   | 'TOO_LARGE'
   | 'SEARCH_FAILED'
   | 'EXTRACT_FAILED'

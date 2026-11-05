@@ -4,6 +4,7 @@
 import { onMounted, ref } from "vue";
 
 import { getCuriosityApi, type CuriosityCounts, type CuriosityItem, type CuriosityReport } from "../../../api/curiosity";
+import BilibiliLoginCard from "./BilibiliLoginCard.vue";
 import { fmtAgo, reasonLabel, sourceLabel } from "./curiosity-display";
 
 const items = ref<CuriosityItem[]>([]);
@@ -66,6 +67,8 @@ onMounted(() => {
     <p class="hint">
       开关与订阅配置在「插件 → 记忆」；空闲时按条消化，查到的结论会写回话题。
     </p>
+
+    <BilibiliLoginCard />
   </section>
 </template>
 

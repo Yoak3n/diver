@@ -59,6 +59,37 @@ test('extractiveDistill 能消费订阅 payload（无 pages/hits）', () => {
   assert.ok(d.points.some((p) => p.includes('重启续聊')))
 })
 
+test('parseDistilled 平台格式：主题/结论/要点/人群视角', () => {
+  const distilled = parseDistilled(
+    [
+      '主题：AI 与生活',
+      '一句话结论：大家在讨论 AI 能否替代日常决策',
+      '- 有人担心隐私',
+      '- 有人觉得效率提升',
+      '人群视角：整体乐观，但对隐私分歧明显',
+    ].join('\n'),
+  )
+  assert.equal(distilled?.subject, 'AI 与生活')
+  assert.equal(distilled?.oneLine, '大家在讨论 AI 能否替代日常决策')
+  assert.deepEqual(distilled?.points, ['有人担心隐私', '有人觉得效率提升'])
+  assert.equal(distilled?.perspective, '整体乐观，但对隐私分歧明显')
+})
+
+test('buildSummary 平台标题/人群视角/从 payload 提取来源', () => {
+  const summary = buildSummary(
+    { oneLine: '结论', points: ['要点'], perspective: '分歧明显' },
+    result({
+      pages: [],
+      hits: [],
+      summary: '【平台见闻·B站】x\n链接：https://www.bilibili.com/video/BV1',
+    }),
+    'platform:bilibili',
+  )
+  assert.ok(summary.startsWith('【平台见闻·B站】结论'))
+  assert.ok(summary.includes('人群视角：分歧明显'))
+  assert.ok(summary.includes('来源：https://www.bilibili.com/video/BV1'))
+})
+
 test('buildSummary 带要点与来源并截断', () => {
   const summary = buildSummary({ oneLine: '结论', points: ['要点一', '要点二'] }, result())
   assert.ok(summary.startsWith('【查到】结论'))
@@ -91,6 +122,30 @@ test('landExploration 命中已有 topic 时追加而不是覆盖', async () => 
   assert.equal(landed.topicId, 't1')
   assert.equal(landed.oneLine, '结论')
   assert.deepEqual(calls, ['append:t1:【查到】'])
+})
+
+test('landExploration 平台主题名优先用 subject', async () => {
+  const created: unknown[] = []
+  const store = {
+    getTopic: async () => undefined,
+    listTopics: async () => [],
+    blockingCandidates: async () => [],
+    appendTopicSummary: async () => {},
+    createTopic: async (input: unknown) => {
+      created.push(input)
+      return 't-platform'
+    },
+    appendEvent: async () => {},
+  } as unknown as MemoryStore
+
+  const landed = await landExploration(store, {
+    term: '一个很长的视频标题',
+    result: result(),
+    distilled: { oneLine: '结论', points: [], subject: 'AI 与生活' },
+    source: 'platform:bilibili',
+  })
+  assert.equal(landed.topicId, 't-platform')
+  assert.equal((created[0] as { canonicalName: string }).canonicalName, 'AI 与生活')
 })
 
 test('landExploration 无匹配时新建 episodic topic', async () => {

@@ -6,6 +6,7 @@ export function sourceLabel(source: string): string {
   if (source.startsWith("chat:private:")) return `私聊 ${source.slice("chat:private:".length)}`;
   if (source.startsWith("note:")) return "笔记";
   if (source.startsWith("subscription:")) return "订阅";
+  if (source.startsWith("platform:")) return "B站";
   if (source === "entity") return "实体";
   if (source === "topic") return "话题";
   if (source === "manual") return "手动";
@@ -27,6 +28,8 @@ export function reasonLabel(reason: string): string {
       return "release";
     case "watch":
       return "更新";
+    case "platform_trend":
+      return "B站";
     case "topic_uncertain":
     case "topic_frequent":
     case "topic":

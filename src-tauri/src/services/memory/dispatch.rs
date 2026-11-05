@@ -265,6 +265,7 @@ pub fn dispatch(
                     &req_str(params, "id")?,
                     str_opt("topicId").as_deref(),
                     str_opt("note").as_deref(),
+                    bool_opt("clearPayload").unwrap_or(false),
                     now(),
                 )
                 .map_err(err)?;

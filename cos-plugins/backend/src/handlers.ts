@@ -7,6 +7,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 
 import { applyCors, corsOriginAllowed, hostAllowed, tokenOk } from './auth.ts'
 import { sendJson, serveStatic } from './http.ts'
+import { handleBilibili } from './routes/bilibili.ts'
 import { handleChat } from './routes/chat.ts'
 import { handleHistory } from './routes/history.ts'
 import { handleMemory } from './routes/memory.ts'
@@ -56,6 +57,7 @@ export async function handleRequest(
     if (await handleSystem(req, res, pathname, deps)) return
     if (await handleChat(req, res, pathname, deps)) return
     if (await handleMemory(req, res, pathname, deps)) return
+    if (await handleBilibili(req, res, pathname, deps)) return
     if (await handleHistory(req, res, pathname, deps)) return
     if (await handlePlugins(req, res, pathname, deps)) return
     if (await handleOnebotStatus(req, res, pathname, deps)) return

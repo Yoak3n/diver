@@ -55,7 +55,7 @@ fn done_items_are_not_reopened() {
         .unwrap();
     assert!(db.curiosity_claim(&id, now_ms()).unwrap());
     assert!(db
-        .curiosity_complete(&id, Some("t1"), Some("一门语言"), now_ms())
+        .curiosity_complete(&id, Some("t1"), Some("一门语言"), false, now_ms())
         .unwrap());
     db.curiosity_upsert("Rust", None, "entity", "entity", 1.5, None, None)
         .unwrap();
@@ -148,7 +148,7 @@ fn complete_records_topic_note_and_done_since() {
         .unwrap();
     assert!(db.curiosity_claim(&id, now).unwrap());
     assert!(db
-        .curiosity_complete(&id, Some("t-9"), Some("一句话结论"), now + 1)
+        .curiosity_complete(&id, Some("t-9"), Some("一句话结论"), false, now + 1)
         .unwrap());
     let done = db.curiosity_done_since(now, Some(10)).unwrap();
     assert_eq!(done.len(), 1);
@@ -158,6 +158,30 @@ fn complete_records_topic_note_and_done_since() {
     let counts = db.curiosity_counts().unwrap();
     assert_eq!(counts.done, 1);
     assert_eq!(counts.open, 0);
+}
+
+#[test]
+fn complete_can_clear_raw_payload() {
+    let db = mem_db();
+    let now = now_ms();
+    let id = db
+        .curiosity_upsert(
+            "平台见闻",
+            None,
+            "platform:bilibili",
+            "platform_trend",
+            1.8,
+            None,
+            Some("原始评论/弹幕正文"),
+        )
+        .unwrap();
+    assert!(db.curiosity_claim(&id, now).unwrap());
+    assert!(db
+        .curiosity_complete(&id, Some("t1"), Some("结论"), true, now + 1)
+        .unwrap());
+    let row = db.curiosity_get(&id).unwrap().unwrap();
+    assert_eq!(row.payload, "", "完成后原始 payload 应清空");
+    assert_eq!(row.note, "结论");
 }
 
 #[test]

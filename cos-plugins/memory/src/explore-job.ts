@@ -42,10 +42,10 @@ export class ExploreJobManager {
     this.summarizer = fn
   }
 
-  private async distill(term: string, result: ExploreResult): Promise<Distilled> {
+  private async distill(term: string, result: ExploreResult, source?: string): Promise<Distilled> {
     if (this.summarizer !== null) {
       try {
-        const distilled = await this.summarizer({ term, result })
+        const distilled = await this.summarizer({ term, result, ...(source ? { source } : {}) })
         if (distilled !== null) return distilled
       } catch (err) {
         console.warn(`[explore] 提炼失败，退回摘录: ${(err as Error)?.message ?? err}`)
@@ -126,11 +126,14 @@ export class ExploreJobManager {
       }
     }
     try {
-      // 订阅条目自带已抓取正文：按 id 取回 payload，直接消费，不再二次搜索/读页。
+      // 订阅/平台条目自带已抓取正文：按 id 取回 payload 与 source，直接消费。
       let payload = input.payload
-      if ((payload === undefined || payload === '') && input.fromCuriosityId) {
+      let curiositySource: string | undefined
+      if (input.fromCuriosityId) {
         try {
-          payload = (await store.curiosityGet(input.fromCuriosityId))?.payload || undefined
+          const row = await store.curiosityGet(input.fromCuriosityId)
+          curiositySource = row?.source
+          if (payload === undefined || payload === '') payload = row?.payload || undefined
         } catch (err) {
           console.warn(`[explore] 读取条目 payload 失败: ${(err as Error)?.message ?? err}`)
         }
@@ -156,11 +159,12 @@ export class ExploreJobManager {
           ` chars=${result.totalChars}${result.budgetExhausted ? ' 预算耗尽' : ''}（${Date.now() - started}ms）`,
       )
       // L3 落地：LLM 提炼（失败退摘录）→ 追加/新建 topic → 标记队列条目完成。
-      const distilled = await this.distill(result.term, result)
+      const distilled = await this.distill(result.term, result, curiositySource)
       const landed = await landExploration(store, {
         term: result.term,
         result,
         ...(input.fromMemoryId ? { fromMemoryId: input.fromMemoryId } : {}),
+        ...(curiositySource ? { source: curiositySource } : {}),
         distilled,
       })
       job.memoryId = landed.topicId
@@ -169,6 +173,7 @@ export class ExploreJobManager {
           await store.curiosityComplete(input.fromCuriosityId, {
             topicId: landed.topicId,
             note: landed.oneLine,
+            clearPayload: true,
           })
         } catch (err) {
           console.warn(`[explore] complete 好奇心条目失败: ${(err as Error)?.message ?? err}`)

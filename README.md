@@ -75,6 +75,8 @@ pnpm tauri dev     # 自动拉起 sidecar + Vite(1420) + 窗口
 
 ## 最近版本
 
+v0.2.15（2026-11-05）：探索驱动升级——默认只跟 GitHub release（不再轮询模型官网），新增 B 站只读观察者：闲置时匿名看热榜/搜索、视频、弹幕和评论区，按主题写回记忆；可选扫码登录只读小号，换取更完整的评论与字幕，并支持 cookie 自动续期。设置页好奇心清单内嵌登录卡片。完整变更见 [Releases](https://github.com/Yoak3n/diver/releases)。
+
 v0.2.14（2026-11-04）：探索驱动重做——群聊/笔记/实体里长出的词先攒成持久「好奇心清单」，空闲时逐条联网消化，结果经 LLM 提炼写回 topics；支持 MiMo/DeepSeek 更新页与 GitHub release 订阅，并每两天最多主动汇报一次小发现。设置页同步上线 provider 卡片与 Vue 插件 UI 运行时（OneBot 设置迁入插件 slot）。完整变更见 [Releases](https://github.com/Yoak3n/diver/releases)。
 
 v0.2.13（2026-10-30）：新增小米 MiMo 原生模型提供商 `mimo`——OpenAI 兼容端点，缺省 `mimo-v2.6-pro`（可选 `mimo-v2.6-flash`）；模型目录实时拉取并过滤同命名空间的 TTS/ASR 型号；输出预算走 `max_completion_tokens` 并钳到 128K，不再受经 opencode-go 转发时的 400 影响。完整变更见 [Releases](https://github.com/Yoak3n/diver/releases)。

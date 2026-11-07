@@ -75,6 +75,8 @@ pnpm tauri dev     # 自动拉起 sidecar + Vite(1420) + 窗口
 
 ## 最近版本
 
+v0.2.16（2026-11-07）：QQ 群聊支持按群分档——`chatty` / `quiet` / `mute` 等档位乘在全局概率与冷却上，被 @/提及/引用不受影响，设置页按监听群逐行下拉编辑；设置页首屏不再等待模型目录（先回快照，`/api/models` 渲染后补拉，单家失败保留旧目录）；修复 Linux NVIDIA + Wayland 下启动即闪退（GDK/EGL 固定到 X11，可用 `DIVER_NVIDIA_X11=0` 关闭）。完整变更见 [Releases](https://github.com/Yoak3n/diver/releases)。
+
 v0.2.15（2026-11-05）：探索驱动升级——默认只跟 GitHub release（不再轮询模型官网），新增 B 站只读观察者：闲置时匿名看热榜/搜索、视频、弹幕和评论区，按主题写回记忆；可选扫码登录只读小号，换取更完整的评论与字幕，并支持 cookie 自动续期。设置页好奇心清单内嵌登录卡片。完整变更见 [Releases](https://github.com/Yoak3n/diver/releases)。
 
 v0.2.14（2026-11-04）：探索驱动重做——群聊/笔记/实体里长出的词先攒成持久「好奇心清单」，空闲时逐条联网消化，结果经 LLM 提炼写回 topics；支持 MiMo/DeepSeek 更新页与 GitHub release 订阅，并每两天最多主动汇报一次小发现。设置页同步上线 provider 卡片与 Vue 插件 UI 运行时（OneBot 设置迁入插件 slot）。完整变更见 [Releases](https://github.com/Yoak3n/diver/releases)。

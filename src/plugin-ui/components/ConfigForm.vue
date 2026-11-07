@@ -48,6 +48,16 @@ function textValue(key: string): string {
 function setValue(key: string, value: string | number | boolean | null): void {
   props.draft[key] = typeof value === "number" ? String(value) : value;
 }
+
+/**
+ * 字段控件插槽的 setter：`#field-<key>` 自定义控件通过它写回草稿。
+ * 只在插件声明了对应插槽时生效，通用表单本身不认任何插件 id。
+ */
+function fieldSetter(
+  key: string,
+): (value: string | number | boolean | null) => void {
+  return (value) => setValue(key, value);
+}
 </script>
 
 <template>
@@ -62,30 +72,37 @@ function setValue(key: string, value: string | number | boolean | null): void {
           :description="field.description"
           layout="horizontal"
         >
-          <Checkbox
-            v-if="field.type === 'boolean'"
-            :model-value="boolValue(field.key)"
-            @update:model-value="setValue(field.key, $event)"
-          />
-          <Select
-            v-else-if="field.type === 'select'"
-            :model-value="textValue(field.key)"
-            :options="field.options || []"
-            @update:model-value="setValue(field.key, $event)"
-          />
-          <Input
-            v-else
-            :model-value="textValue(field.key)"
-            :type="
-              field.type === 'password' || field.secret
-                ? 'password'
-                : field.type === 'number'
-                  ? 'number'
-                  : 'text'
-            "
-            :placeholder="field.default != null ? String(field.default) : ''"
-            @update:model-value="setValue(field.key, $event)"
-          />
+          <slot
+            :name="`field-${field.key}`"
+            :field="field"
+            :value="textValue(field.key)"
+            :set-value="fieldSetter(field.key)"
+          >
+            <Checkbox
+              v-if="field.type === 'boolean'"
+              :model-value="boolValue(field.key)"
+              @update:model-value="setValue(field.key, $event)"
+            />
+            <Select
+              v-else-if="field.type === 'select'"
+              :model-value="textValue(field.key)"
+              :options="field.options || []"
+              @update:model-value="setValue(field.key, $event)"
+            />
+            <Input
+              v-else
+              :model-value="textValue(field.key)"
+              :type="
+                field.type === 'password' || field.secret
+                  ? 'password'
+                  : field.type === 'number'
+                    ? 'number'
+                    : 'text'
+              "
+              :placeholder="field.default != null ? String(field.default) : ''"
+              @update:model-value="setValue(field.key, $event)"
+            />
+          </slot>
           <div v-if="field.secret && field.configured" class="config-secret">
             <span v-if="draft[field.key] === null">保存后清除已存值</span>
             <span v-else-if="draft[field.key] === ''">已保存，留空保持不变</span>

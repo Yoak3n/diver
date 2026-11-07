@@ -12,6 +12,7 @@ import {
   StatusDot,
 } from "@diver/plugin-ui";
 import type { OnebotPanelState } from "./use-onebot-panel";
+import GroupTiersEditor from "./GroupTiersEditor.vue";
 
 const props = defineProps<{
   panel: OnebotPanelState;
@@ -111,7 +112,15 @@ const dotTone = computed(() =>
       :draft="panel.draft"
       :busy="panel.busy"
       @save="panel.save()"
-    />
+    >
+      <template #field-groupTiers="{ value, setValue }">
+        <GroupTiersEditor
+          :groups-text="String(panel.draft.groups ?? '')"
+          :model-value="String(value ?? '')"
+          @update:model-value="setValue($event)"
+        />
+      </template>
+    </ConfigForm>
     <p v-if="panel.config === null && panel.cfgError === ''" class="hint">
       正在读取配置…
     </p>

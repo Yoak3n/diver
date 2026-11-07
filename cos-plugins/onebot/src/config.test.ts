@@ -57,6 +57,14 @@ test('非数值输入回退默认', () => {
   assert.equal(cfg.rate.mention, 0.9)
 })
 
+test('群聊档位：群号=档位解析，未知档位与非群号忽略', () => {
+  const cfg = resolveConfig({ groupTiers: '123=chatty, 456 = quiet ,abc=chatty,789=loud,012=mute' })
+  assert.deepEqual(cfg.groupTiers, { '123': 'chatty', '456': 'quiet', '012': 'mute' })
+  assert.deepEqual(resolveConfig().groupTiers, {})
+  // 同一群重复配置：后者覆盖前者
+  assert.deepEqual(resolveConfig({ groupTiers: '1=quiet,1=mute' }).groupTiers, { '1': 'mute' })
+})
+
 test('列表字段按分隔符拆分并去空', () => {
   const cfg = resolveConfig({
     ownerIds: ' 10001, 10002 ,',

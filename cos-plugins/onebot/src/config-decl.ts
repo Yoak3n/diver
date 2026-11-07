@@ -1,0 +1,116 @@
+// @diver/onebot — 设置页字段声明（与 config.ts 的 Config 一一对应）。
+//
+// 纯 UI 元数据：不参与解析、不进回合。拆出来是为了让 config.ts 只留
+// 「形状 + 归一化」两件事（AGENTS.md 的一文件一职责）。
+
+import type { PluginConfigDecl } from '@cos/plugin-api'
+
+export const configDecl: PluginConfigDecl = {
+  title: 'OneBot 11（QQ）',
+  fields: [
+    {
+      key: 'wsUrl',
+      label: '正向 WebSocket 地址',
+      type: 'text',
+      section: '连接',
+      description: '如 ws://127.0.0.1:3001；留空 = 插件休眠',
+    },
+    {
+      key: 'token',
+      label: 'access token',
+      type: 'password',
+      secret: true,
+      section: '连接',
+      description: 'OneBot 实现的 access_token，可留空',
+    },
+    { key: 'sendIntervalMs', label: '发送间隔（毫秒）', type: 'number', section: '连接', default: 1500, description: '实现侧风控节流' },
+    {
+      key: 'ownerIds',
+      label: '主人 QQ 号',
+      type: 'text',
+      section: '身份与监听',
+      description: '逗号分隔；用于提示词、记忆作用域、触发档位与文件权限层级（主人私聊全权限，群内仍走基线）',
+    },
+    { key: 'groups', label: '监听的群', type: 'text', section: '身份与监听', description: '逗号分隔群号；空 = 不监听任何群' },
+    {
+      key: 'groupTiers',
+      label: '群聊档位',
+      type: 'text',
+      section: '身份与监听',
+      description: '按群设置回话频率档位；未设置的群按 normal。只调主动插话的概率与冷却，被 @/提及/引用不受影响',
+    },
+    { key: 'aliases', label: '昵称/别名', type: 'text', section: '身份与监听', description: '逗号分隔；群消息提到即高概率回应' },
+    { key: 'maxMessages', label: '上下文条数上限', type: 'number', section: '回合上下文', default: 40 },
+    { key: 'maxAgeMinutes', label: '上下文时间窗（分钟）', type: 'number', section: '回合上下文', default: 30 },
+    { key: 'maxChars', label: '上下文字符上限', type: 'number', section: '回合上下文', default: 4000 },
+    { key: 'rateMention', label: '提及回应概率', type: 'number', section: '触发与节流', default: 0.9 },
+    { key: 'rateQuoted', label: '被引用回应概率', type: 'number', section: '触发与节流', default: 0.8 },
+    {
+      key: 'ratePlain',
+      label: '主动插话概率',
+      type: 'number',
+      section: '触发与节流',
+      default: 0.05,
+      description: '普通群消息经冷却/退避门控后的抽样概率',
+    },
+    {
+      key: 'rateOwnerPlain',
+      label: '主人发言回应概率',
+      type: 'number',
+      section: '触发与节流',
+      default: 0.3,
+      description: '主人在群里未 @/提及/引用你时的抽样概率；独立于普通群消息，另有独立冷却',
+    },
+    { key: 'cooldownMinutes', label: '插话冷却（分钟）', type: 'number', section: '触发与节流', default: 15 },
+    {
+      key: 'ownerCooldownMinutes',
+      label: '主人发言冷却（分钟）',
+      type: 'number',
+      section: '触发与节流',
+      default: 5,
+      description: '主人普通档两次评估的最小间隔；与普通档冷却分开计，不会被群聊冷却压住',
+    },
+    {
+      key: 'privateMaxPerHour',
+      label: '私聊唤醒上限（次/小时）',
+      type: 'number',
+      section: '触发与节流',
+      default: 30,
+      description: '每用户每小时最多唤醒的私聊回合；超出只记入缓冲不回应（防刷）。0 = 不限制',
+    },
+    {
+      key: 'allowedTools',
+      label: 'OneBot 回合额外放行工具',
+      type: 'text',
+      section: '工具与文件',
+      description: '逗号分隔工具名；基座（出话/联网/记忆/只读文件/笔记追加）之外的白名单。写入/编辑、shell、截图、委派、MCP、web_read 等硬禁名称会被忽略',
+    },
+    {
+      key: 'fsExtraRoots',
+      label: '文件囚笼额外根',
+      type: 'text',
+      section: '工具与文件',
+      description: '逗号分隔绝对路径；在 COS_HOME 之外追加可读目录（如开发期的插件源码 repo）。留空 = 仅 COS_HOME',
+    },
+    { key: 'maskTerms', label: '出站遮蔽词条', type: 'text', section: '出站遮蔽', description: '逗号分隔字面量（如真名/住址），发出前替换为 [已遮蔽]' },
+    { key: 'extraPatterns', label: '出站遮蔽正则', type: 'text', section: '出站遮蔽', description: '分号分隔 RegExp source' },
+    {
+      key: 'voiceMode',
+      label: '语音出话',
+      type: 'select',
+      section: '语音',
+      options: [
+        { value: 'off', label: '关闭（默认，配了才开）' },
+        { value: 'ask', label: '仅在模型要求时' },
+        { value: 'auto', label: '按概率自动' },
+      ],
+      default: 'off',
+      description: '需先在「语音」设置里启用在线 TTS；任何合成失败都会降级发文本',
+    },
+    { key: 'voiceName', label: '语音声线覆盖', type: 'text', section: '语音', description: '留空 = 跟随全局 TTS 音色' },
+    { key: 'voiceMaxChars', label: '语音最大字数', type: 'number', section: '语音', default: 100, description: '超出改发文本（QQ 语音上限 60 秒）' },
+    { key: 'voiceRate', label: '自动语音概率', type: 'number', section: '语音', default: 0.15, description: '仅 auto 模式生效' },
+    { key: 'voiceCooldownMinutes', label: '语音冷却（分钟）', type: 'number', section: '语音', default: 10, description: '同一群/私聊两次语音的最小间隔' },
+    { key: 'voiceTimeoutMs', label: '语音合成超时（毫秒）', type: 'number', section: '语音', default: 20000 },
+  ],
+}

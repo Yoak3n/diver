@@ -4,7 +4,7 @@
 // 发言按独立概率 + 独立短冷却；普通群消息概率最低且过「冷却 + 沉默退避」
 // 门控。门控状态按群隔离。
 
-import type { ResolvedConfig } from './config.ts'
+import type { GroupTierName, ResolvedConfig } from './config.ts'
 import { BACKOFF_BASE_MS, BACKOFF_BYPASS_COUNT, BACKOFF_CAP_MS, BACKOFF_START_STREAK } from './config.ts'
 
 export type TriggerKind = 'at' | 'mention' | 'quoted' | 'owner' | 'plain' | 'private'
@@ -153,6 +153,57 @@ export function plainRateForHour(rate: number, date: Date): number {
  */
 export function opportunityRate(kind: 'plain' | 'owner', cfg: ResolvedConfig, now: Date): number {
   return kind === 'owner' ? cfg.rate.ownerPlain : plainRateForHour(cfg.rate.plain, now)
+}
+
+// ---- 群聊档位（分档） ----
+
+/**
+ * 档位乘数：乘在全局基数上，改全局 rate/cooldown 仍对所有档同比生效。
+ * mute 用 ×0 表达「只听不主动」，不需要特判；被 @/提及/引用不经过这里。
+ */
+export interface GroupTierFactor {
+  plainRate: number
+  ownerRate: number
+  cooldown: number
+  ownerCooldown: number
+}
+
+export const GROUP_TIER_FACTORS: Record<GroupTierName, GroupTierFactor> = {
+  chatty: { plainRate: 1.8, ownerRate: 1.5, cooldown: 0.6, ownerCooldown: 0.6 },
+  normal: { plainRate: 1, ownerRate: 1, cooldown: 1, ownerCooldown: 1 },
+  quiet: { plainRate: 0.4, ownerRate: 1, cooldown: 2, ownerCooldown: 1.2 },
+  mute: { plainRate: 0, ownerRate: 0.3, cooldown: 1, ownerCooldown: 1 },
+}
+
+export interface GroupOpportunityPolicy {
+  /** 命中的档位（日志用）。 */
+  tier: GroupTierName
+  /** 抽样概率（已乘档位系数并夹到 [0,1]）。 */
+  rate: number
+  /** 冷却分钟数（已乘档位系数）。 */
+  cooldownMinutes: number
+}
+
+/**
+ * 机会档的最终参数：全局基数 × 群档位乘数。每群一份门控状态（router 持有），
+ * 这里只回答「这个群这次该用什么概率和冷却」。
+ */
+export function resolveOpportunityPolicy(
+  kind: 'plain' | 'owner',
+  cfg: ResolvedConfig,
+  groupId: string,
+  now: Date,
+): GroupOpportunityPolicy {
+  const tier = cfg.groupTiers[groupId] ?? 'normal'
+  const factor = GROUP_TIER_FACTORS[tier]
+  const owner = kind === 'owner'
+  const rawRate = opportunityRate(kind, cfg, now) * (owner ? factor.ownerRate : factor.plainRate)
+  const baseCooldown = owner ? cfg.ownerCooldownMinutes : cfg.cooldownMinutes
+  return {
+    tier,
+    rate: Math.min(1, Math.max(0, rawRate)),
+    cooldownMinutes: baseCooldown * (owner ? factor.ownerCooldown : factor.cooldown),
+  }
 }
 
 // ---- 私聊唤醒限频（每用户一份） ----

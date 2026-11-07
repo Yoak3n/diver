@@ -14,6 +14,7 @@ import {
   opportunityRate,
   plainRateForHour,
   recordTurnOutcome,
+  resolveOpportunityPolicy,
   shouldRetryTurn,
 } from './trigger.ts'
 
@@ -106,6 +107,48 @@ test('退避等待期：未攒够 6 条继续拒，攒够提前重估', () => {
 test('深夜降档：9 点前概率 ×0.8，白天原样', () => {
   assert.equal(plainRateForHour(0.5, new Date(2026, 0, 1, 3, 0)), 0.4)
   assert.equal(plainRateForHour(0.5, new Date(2026, 0, 1, 12, 0)), 0.5)
+})
+
+test('群档位：只缩放机会档概率与冷却，mute 主动归零，全局基数仍生效', () => {
+  const day = new Date(2026, 0, 1, 12, 0)
+  const night = new Date(2026, 0, 1, 3, 0)
+  const tiered = resolveConfig({
+    ratePlain: 0.1,
+    rateOwnerPlain: 0.3,
+    cooldownMinutes: 10,
+    ownerCooldownMinutes: 5,
+    groupTiers: '1=chatty,2=quiet,3=mute',
+  })
+  assert.deepEqual(resolveOpportunityPolicy('plain', tiered, '1', day), {
+    tier: 'chatty',
+    rate: 0.1 * 1.8,
+    cooldownMinutes: 6,
+  })
+  assert.deepEqual(resolveOpportunityPolicy('plain', tiered, '2', day), {
+    tier: 'quiet',
+    rate: 0.1 * 0.4,
+    cooldownMinutes: 20,
+  })
+  assert.deepEqual(resolveOpportunityPolicy('plain', tiered, '3', day), {
+    tier: 'mute',
+    rate: 0,
+    cooldownMinutes: 10,
+  })
+  // 未列出的群按 normal；主人档走 owner 乘数（mute 仍留 0.3 倍关注）
+  assert.deepEqual(resolveOpportunityPolicy('plain', tiered, '9', day), {
+    tier: 'normal',
+    rate: 0.1,
+    cooldownMinutes: 10,
+  })
+  assert.deepEqual(resolveOpportunityPolicy('owner', tiered, '3', day), {
+    tier: 'mute',
+    rate: 0.3 * 0.3,
+    cooldownMinutes: 5,
+  })
+  // 深夜降档与档位叠加；乘积超过 1 时夹紧
+  assert.equal(resolveOpportunityPolicy('plain', tiered, '1', night).rate, 0.1 * 0.8 * 1.8)
+  const capped = resolveConfig({ ratePlain: 1, groupTiers: '1=chatty' })
+  assert.equal(resolveOpportunityPolicy('plain', capped, '1', day).rate, 1)
 })
 
 test('私聊限频：窗口内超额静默，窗口滚动恢复，0 不限制', () => {

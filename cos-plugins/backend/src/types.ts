@@ -5,6 +5,7 @@ import type { Context } from 'cordis'
 import type { ServerResponse } from 'node:http'
 import type { AdapterConfigField, Agent, ProviderConfigDecl } from '@cos/plugin-api'
 
+import type { ModelCatalog } from './model-catalog.ts'
 import type { WebState } from './state.ts'
 
 export type { WebState } from './state.ts'
@@ -26,7 +27,8 @@ export interface WebHandlerDeps {
   isModelConfigured: () => Promise<boolean>
   ensureAgent: () => Promise<Agent>
   applyModelChange: (provider?: string, model?: string) => Promise<void>
-  catalogModels: () => Promise<Array<{ provider: string; id: string }>>
+  /** 模型目录快照 + 后台刷新（首屏零网络，见 ./model-catalog.ts）。 */
+  catalog: ModelCatalog
   providerDecls: () => Promise<ProviderDeclView[]>
   applyProviderConfigs: (providerConfigs: Record<string, Record<string, string>>) => Promise<void>
   port: number

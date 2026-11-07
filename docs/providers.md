@@ -35,6 +35,17 @@ cwd=安装目录只读，companion-boot 因此以绝对路径覆盖为 `$COS_HOM
 若持久化的 provider 已不在 harness 注册表（如改用了别的 overlay），后端自动钳制到
 当前注册表的第一个适配器。
 
+## 模型目录加载（首屏不等上游）
+
+`ctx.llm.listModels()` 可能实时访问各家 `/models`（单家超时 5s），因此目录不放在
+`GET /api/settings` 的关键路径上：
+
+- 后端 `model-catalog.ts` 维护内存快照；`GET /api/settings` 直接返回快照，并在
+  响应后后台刷新（并发去重 + 30s 最短间隔）。
+- 设置面板渲染完成后（提供商卡片已出现）再调 `GET /api/models` 强制刷新并回填
+  模型下拉；期间下拉显示「正在获取模型目录…」。
+- 某家失败只影响它自己的条目（保留旧快照），不会让整页等待或抹掉其它家的目录。
+
 **自定义 base URL**：`store: 'settings'` 的字段（如 `baseUrl`）由设置面板写入
 `diver-settings.json`（`<provider>.baseUrl`），适配器在**调用时**经
 `LlmAdapter.settingsValue(provider, key)`（`@cos/llm`）动态读取——保存即生效，

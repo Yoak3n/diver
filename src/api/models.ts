@@ -2,6 +2,12 @@
 // 走通用 provider 配置通道（active 实例），per-instance 模型配置随实例设置页另行设计。
 
 import { json } from "./base";
+import type { ModelEntry } from "../types";
+
+/** 模型目录（会等待上游 /models，设置面板首屏渲染后再拉，避免拖住提供商卡片）。 */
+export function getModelCatalog(): Promise<{ models: ModelEntry[] }> {
+  return json("/models");
+}
 
 /** 自定义提供商身份（配置值走通用 provider 配置通道）。 */
 export interface CustomProviderIdentity {

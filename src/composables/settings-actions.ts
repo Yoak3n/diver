@@ -14,6 +14,7 @@ import {
 } from "../tauri";
 import type { SidecarStatus } from "../types";
 import { getChat } from "./chat";
+import { refreshModelCatalog } from "./settings-catalog";
 import {
   applySettings,
   healthInfo,
@@ -50,6 +51,8 @@ export async function openSettings() {
   } catch {
     /* ignore */
   }
+  // 卡片已可渲染：目录（可能访问上游）放到页面上屏之后再补。
+  void refreshModelCatalog();
   try {
     healthInfo.value = await health();
     const chat = getChat();
@@ -178,6 +181,8 @@ export async function save() {
         for (const k of Object.keys(fields)) fields[k] = "";
       }
     }
+    // 端点 / 模型列表可能刚被改过：后台补一次目录（不阻塞保存反馈）。
+    void refreshModelCatalog(true);
     const chat = getChat();
     if (chat?.healthInfo.value) {
       chat.healthInfo.value = {

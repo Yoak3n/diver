@@ -45,8 +45,8 @@ export const name = 'llm-opencode'
 /** 本插件需要的框架服务：@cos/llm 注册表 + @cos/credentials 凭据层。 */
 export const inject = ['llm', 'credentials']
 
-/** 目录拉取超时与缓存时长（目录 advisory，无需更勤）。 */
-const CATALOG_TIMEOUT_MS = 10_000
+/** 目录拉取超时与缓存时长（目录 advisory，无需更勤；5s 已远高于实测 ~2s）。 */
+const CATALOG_TIMEOUT_MS = 5_000
 const CATALOG_TTL_MS = 60_000
 
 class OpencodeGoLlmAdapter extends LlmAdapter {
@@ -125,7 +125,7 @@ class OpencodeGoLlmAdapter extends LlmAdapter {
 
   /**
    * 模型目录（advisory）：实时拉取 /v1/models 并缓存 60s；失败或空目录静默
-   * 退回静态兜底（设置面板打开/模型下拉即触发一次，超时 10s 不阻塞交互）。
+   * 退回静态兜底（设置面板由 /api/models 在首屏后异步触发，超时 5s 不阻塞交互）。
    */
   async listModels(provider: string): Promise<readonly string[]> {
     if (provider !== PROVIDER) return []

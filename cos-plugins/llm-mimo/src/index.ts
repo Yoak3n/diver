@@ -71,7 +71,7 @@ class MimoLlmAdapter extends LlmAdapter {
     this.staticModels = config.models ?? []
     this.apiKeyRef = config.apiKeyKey ?? API_KEY_REF
     this.apiKeyEnv = config.apiKeyEnv ?? API_KEY_ENV
-    this.catalogTimeoutMs = config.catalogTimeoutMs ?? 10_000
+    this.catalogTimeoutMs = config.catalogTimeoutMs ?? 5_000
     this.fetchModels = config.fetchModels ?? true
     // 惰性解析 key：boot 不失败；真正调用时若未配置，带诊断显式报错。
   }

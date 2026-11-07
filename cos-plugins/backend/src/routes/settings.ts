@@ -37,12 +37,15 @@ export async function handleSettings(
   if (pathname !== '/api/settings') return false
   if (req.method === 'GET') {
     const h = await deps.healthInfo()
+    // 首屏只带目录快照：上游 /models 的实时拉取放到后台（/api/models 由设置页
+    // 在渲染完成后显式等待），否则单家数秒超时会把提供商卡片一起拖住。
+    void deps.catalog.refresh()
     sendJson(res, 200, {
       modelConfigured: h.modelConfigured,
       // provider/model 来自持久化选择；model 未设置时才回退目录第一个
       provider: h.provider,
       model: h.model,
-      models: await deps.catalogModels(),
+      models: deps.catalog.snapshot(),
       providers: await deps.providerDecls(),
       // 设置面板的提供商卡片（UI 可见性状态；默认名单由 UI 决定）
       providerCards: await ensureProviderCards(deps),

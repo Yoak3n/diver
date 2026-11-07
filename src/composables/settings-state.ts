@@ -3,6 +3,7 @@
 import { computed, reactive, ref } from "vue";
 import { getSettings, health } from "../api";
 import type { WindowStartupConfig } from "../tauri";
+import type { ModelEntry } from "../types";
 import { getChat } from "./chat";
 
 export interface SettingsState {
@@ -45,6 +46,8 @@ export const state = reactive<SettingsState>({
 /** 设置页自身持有的 settingsInfo（与 chat.settingsInfo 同步）。 */
 export const settingsInfo = ref<Awaited<ReturnType<typeof getSettings>> | null>(null);
 export const healthInfo = ref<Awaited<ReturnType<typeof health>> | null>(null);
+/** 模型目录异步补拉中（首屏不等它，设置页用它做空下拉的占位提示）。 */
+export const catalogLoading = ref(false);
 
 // ---------- 派生 ----------
 export const providerDecls = computed(() => settingsInfo.value?.providers ?? []);
@@ -57,9 +60,13 @@ export const currentProviderModels = computed(() =>
 
 /** 应用一份 settingsInfo：同步 chat 共享 + 回填 provider 配置输入。 */
 export function applySettings(s: NonNullable<typeof settingsInfo.value>) {
-  settingsInfo.value = s;
+  // /api/settings 只带目录快照；异步补拉可能先返回，别让旧快照把新目录冲掉。
+  const incoming = s.models ?? [];
+  const models = incoming.length > 0 ? incoming : (settingsInfo.value?.models ?? []);
+  const next = models === incoming ? s : { ...s, models };
+  settingsInfo.value = next;
   const chat = getChat();
-  if (chat) chat.settingsInfo.value = s;
+  if (chat) chat.settingsInfo.value = next;
   state.provider = s.provider;
   state.model = s.model;
   state.providerCards = [...(s.providerCards ?? [])];
@@ -70,5 +77,25 @@ export function applySettings(s: NonNullable<typeof settingsInfo.value>) {
       state.configInputs[p.provider][f.key] =
         f.secret || f.store === "credentials" ? "" : (f.value ?? "");
     }
+  }
+}
+
+/**
+ * 只替换模型目录（异步补拉用）：provider 卡片等字段不受影响。
+ * `/api/models` 会等上游，故意放在首屏渲染之后。
+ */
+export function applyModelCatalog(models: ModelEntry[]) {
+  if (settingsInfo.value) {
+    settingsInfo.value = { ...settingsInfo.value, models };
+  }
+  const chat = getChat();
+  if (chat?.settingsInfo.value) {
+    chat.settingsInfo.value = { ...chat.settingsInfo.value, models };
+  }
+  // 目录晚到且此前没有持久化模型（新装/清空）：用它补一个默认选择，
+  // 等价于旧版 health 的 firstModelOf 兜底，避免下拉与保存都空着。
+  if (state.model === "") {
+    const first = models.find((model) => model.provider === state.provider);
+    if (first) state.model = first.id;
   }
 }

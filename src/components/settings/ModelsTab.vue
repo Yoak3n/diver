@@ -23,7 +23,7 @@ const props = defineProps<{
   currentProviderModels: { provider: string; id: string }[];
 }>();
 
-const { openSettings, settingsInfo } = useSettings();
+const { openSettings, settingsInfo, catalogLoading, refreshModelCatalog } = useSettings();
 
 const modelOptions = computed(() =>
   props.currentProviderModels.map((model) => ({
@@ -137,6 +137,8 @@ async function onSaved(identity: CustomProviderIdentity) {
     const decl = props.providerDecls.find((p) => p.provider === identity.id);
     return decl !== undefined && decl.name === identity.name;
   });
+  // 新身份热注册后目录才包含它；先补目录再切 provider，模型下拉才不会空。
+  await refreshModelCatalog(true);
   selectProvider(identity.id);
 }
 
@@ -153,6 +155,7 @@ async function onDelete(p: ProviderConfigDecl) {
     if (fallback !== undefined) selectProvider(fallback.provider);
   }
   await refreshUntil(() => !props.providerDecls.some((x) => x.provider === p.provider));
+  await refreshModelCatalog(true);
 }
 </script>
 
@@ -190,6 +193,9 @@ async function onDelete(p: ProviderConfigDecl) {
 
   <SectionTitle title="模型" />
   <Select v-model="state.model" :options="modelOptions" />
+  <p v-if="catalogLoading && modelOptions.length === 0" class="hint">
+    正在获取模型目录…
+  </p>
 
   <template v-if="currentProviderDecl">
     <SectionTitle :title="`${currentProviderDecl.name} 配置`" />
@@ -246,5 +252,10 @@ async function onDelete(p: ProviderConfigDecl) {
   display: flex;
   gap: 8px;
   margin-bottom: 10px;
+}
+.hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--ink-muted);
 }
 </style>

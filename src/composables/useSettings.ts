@@ -4,9 +4,11 @@
 // 路由切换不丢已填表单。openSettings 只负责拉取/回填，页面切换走 router。
 //
 // 分层：settings-tabs.ts tab 定义 | settings-state.ts 状态单例与派生
-// | settings-actions.ts 拉取/保存/重启动作；本文件只做公共 re-export 与组合出口。
+// | settings-catalog.ts 模型目录异步补拉 | settings-actions.ts 拉取/保存/重启动作；
+// 本文件只做公共 re-export 与组合出口。
 
 import {
+  catalogLoading,
   currentProviderDecl,
   currentProviderModels,
   healthInfo,
@@ -14,9 +16,11 @@ import {
   settingsInfo,
   state,
 } from "./settings-state";
+import { refreshModelCatalog } from "./settings-catalog";
 import { changePetSize, doRestartSidecar, openSettings, save, toggleWindowStartup } from "./settings-actions";
 
 export * from "./settings-actions";
+export * from "./settings-catalog";
 export * from "./settings-state";
 export * from "./settings-tabs";
 
@@ -28,7 +32,9 @@ export function useSettings() {
     providerDecls,
     currentProviderDecl,
     currentProviderModels,
+    catalogLoading,
     openSettings,
+    refreshModelCatalog,
     save,
     doRestartSidecar,
     toggleWindowStartup,

@@ -35,7 +35,8 @@ import type {} from '@cos/plugin-api'
 import { applyModelChange, ensureAgent } from './agent.ts'
 import { mountCompanionService } from './companion.ts'
 import { healthInfo } from './health.ts'
-import { applyProviderConfigs, catalogModels, isConfigured, persistedProvider, providerDecls } from './providers.ts'
+import { createModelCatalog } from './model-catalog.ts'
+import { applyProviderConfigs, isConfigured, persistedProvider, providerDecls } from './providers.ts'
 import { mountServer } from './server.ts'
 import { migrateDottedSettings, migrateLegacyModelIds } from './session-helpers.ts'
 import { attachEventListeners, createBroadcast, sseWrite } from './sse.ts'
@@ -61,16 +62,19 @@ export function apply(ctx: Context, config: { uiDist?: string }) {
   // ctx.companion：产品内其它插件（onebot 等）注入驱动同一陪伴会话的入口。
   mountCompanionService(ctx, state)
 
+  // 目录走快照：GET /api/settings 不等上游，设置页渲染后再经 /api/models 补拉。
+  const catalog = createModelCatalog(ctx.llm)
+
   const deps: WebHandlerDeps = {
     ctx,
     state,
     sseWrite,
-    healthInfo: () => healthInfo(ctx, state),
+    healthInfo: () => healthInfo(ctx, state, catalog),
     // 聊天守卫按"持久化/选择的 provider"判定（未注册或无 key → 拒绝）。
     isModelConfigured: () => isConfigured(ctx, persistedProvider(ctx)),
     ensureAgent: () => ensureAgent(ctx, state),
     applyModelChange: (provider, model) => applyModelChange(ctx, state, provider, model),
-    catalogModels: () => catalogModels(ctx),
+    catalog,
     providerDecls: () => providerDecls(ctx),
     applyProviderConfigs: (providerConfigs) => applyProviderConfigs(ctx, providerConfigs),
     port,

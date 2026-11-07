@@ -3,7 +3,8 @@
 // 这层不再硬编码任何 provider 知识（deepseek-official / opencode-go / 具体模型
 // 列表均已移除），一切从 harness 的适配器注册表与凭据层推导：
 //   - provider 目录与显示名 ← ctx.llm.listProviders()（适配器注册的路由）
-//   - 模型目录             ← ctx.llm.listModels(provider)（适配器自行声明，advisory）
+//   - 模型目录             ← ctx.llm.listModels(provider)（适配器自行声明，advisory；
+//                            快照与刷新策略见 ./model-catalog.ts）
 //   - 配置 schema          ← ctx.llm.listProviderConfigs() / adapterConfig()
 //                            （各 provider 适配器插件声明自己的配置字段）
 //   - 凭据判定             ← ctx.credentials.get(field.credentialRef)（适配器已 provide）
@@ -89,17 +90,6 @@ function settingsFieldValue(provider: string, key: string): string {
   // provider 配置通道读 cos 框架契约文件；diver-settings 旧键仅作迁移前兜底。
   const value = readCosSettings()[`${provider}.${key}`] ?? readDiverSettings()[`${provider}.${key}`]
   return typeof value === 'string' ? value : ''
-}
-
-/** 模型目录（各 provider 适配器自行声明，advisory）。 */
-export async function catalogModels(ctx: Context): Promise<Array<{ provider: string; id: string }>> {
-  const models: Array<{ provider: string; id: string }> = []
-  for (const { id } of ctx.llm.listProviders()) {
-    try {
-      for (const model of await ctx.llm.listModels(id)) models.push({ provider: id, id: model })
-    } catch { /* 单提供商目录失败静默 */ }
-  }
-  return models
 }
 
 /**

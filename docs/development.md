@@ -192,4 +192,5 @@ web-tools 另有需外网的 `live-probe.ts`。
 | 端口被占 | 缺省随机预选（`DIVER_PORT` 0/缺省 → 壳取空闲端口），一般不会撞；需固定端口时显式 `DIVER_PORT=<port>`。显式端口若被上一会话残留的 sidecar 占用，`tauri dev` 启动前会自动回收（命令行匹配 `companion.ts` / `companion-bundle.ts`）；被其他进程占用则中止并提示释放。Vite 1420 为 strictPort |
 | 退出后有残留 sidecar 进程 | 正常退出走三级清理（`/api/shutdown` 优雅退出 → `kill()` → Job Object 兜底），不应残留；若强杀应用后仍有残留，下次启动会自动回收。手动清理：`Stop-Process -Name node -Force`（先确认没有别的 node 任务） |
 | 改了 bundle 不生效 | 确认重启了 sidecar（不是只刷新窗口）；bundle 是符号链接，直接生效 |
+| Linux NVIDIA + Wayland 启动即闪退 | WebKitGTK 初始化 EGL 时命中 `libnvidia-egl-wayland2` 段错误。启动器会在 NVIDIA + Wayland 会话自动注入 `GDK_BACKEND=x11 EGL_PLATFORM=x11`；手动启动等价。`DIVER_NVIDIA_X11=0` 可关闭该兼容 |
 | 桌宠不显示 | 检查启动配置 `auto_open_pet`（设置面板可改）；`pnpm tauri dev` 下默认全开 |

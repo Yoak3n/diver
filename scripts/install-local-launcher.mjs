@@ -29,17 +29,31 @@ const stableApp = join(appsDir, 'diver.AppImage')
 const launcher = join(appsDir, 'diver-launch')
 writeFileSync(launcher, `#!/bin/sh
 # 由 scripts/install-local-launcher.mjs 生成：优先稳定副本，其次最新构建，最后本地 release 二进制
+
+# NVIDIA + Wayland：WebKitGTK 初始化 EGL 时会走 libnvidia-egl-wayland2 并段错误
+# （0.2.14/0.2.15 均复现）。强制 GTK/EGL 走 Xwayland 可绕开。
+# DIVER_NVIDIA_X11=0 可关闭此兼容。
+launch() {
+  if [ "\${DIVER_NVIDIA_X11:-1}" != "0" ] &&
+     [ -e /proc/driver/nvidia/version ] &&
+     [ -n "\${WAYLAND_DISPLAY:-}" ] &&
+     [ -n "\${DISPLAY:-}" ]; then
+    exec env GDK_BACKEND=x11 EGL_PLATFORM=x11 "$@"
+  fi
+  exec "$@"
+}
+
 stable="$HOME/Applications/diver.AppImage"
 if [ -x "$stable" ]; then
-  exec "$stable" "$@"
+  launch "$stable" "$@"
 fi
 img=$(ls -t ${bundleDir}/Diver_*_amd64.AppImage 2>/dev/null | head -n1)
 if [ -n "$img" ]; then
-  exec "$img" "$@"
+  launch "$img" "$@"
 fi
 local_bin=${join(ROOT, 'target', 'release', 'diver')}
 if [ -x "$local_bin" ]; then
-  exec "$local_bin" "$@"
+  launch "$local_bin" "$@"
 fi
 echo "未找到 Diver AppImage：把官方 AppImage 放到 ~/Applications/diver.AppImage，或先在仓库跑 pnpm tauri build" >&2
 exit 1

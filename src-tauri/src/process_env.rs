@@ -11,8 +11,39 @@
 //!
 //! 壳自身已加载的库不受影响；这里只给**外部工具**的子进程去掉这两个变量。
 //! 仅在 AppImage 环境（`APPDIR` / `APPIMAGE`）内生效，普通安装与开发态行为不变。
+//!
+//! 另负责 Linux NVIDIA + Wayland 的 WebKitGTK EGL 兼容：必须在 GTK 初始化前
+//! 写入 `GDK_BACKEND` / `EGL_PLATFORM`，不能等窗口创建后再补。
 
 use std::process::Command;
+
+/// Linux NVIDIA + Wayland：WebKitGTK 初始化 EGL 时会走
+/// `libnvidia-egl-wayland2`，在 `pthread_mutex_lock` 处 SIGSEGV
+/// （NVIDIA 615 / Diver 0.2.14-0.2.15 可复现）。在 GTK/WebKit 启动前把
+/// GDK 与 EGL 固定到 Xwayland；X11 会话或非 NVIDIA 环境不动。
+/// `DIVER_NVIDIA_X11=0` 可显式关闭。
+pub(crate) fn apply_linux_nvidia_workaround() {
+    #[cfg(target_os = "linux")]
+    if linux_nvidia_workaround_needed(
+        std::path::Path::new("/proc/driver/nvidia/version").exists(),
+        std::env::var_os("WAYLAND_DISPLAY").is_some(),
+        std::env::var_os("DISPLAY").is_some(),
+        std::env::var_os("DIVER_NVIDIA_X11").is_some_and(|value| value == "0"),
+    ) {
+        // 必须在 Tauri/GTK 创建线程之前调用。
+        std::env::set_var("GDK_BACKEND", "x11");
+        std::env::set_var("EGL_PLATFORM", "x11");
+    }
+}
+
+fn linux_nvidia_workaround_needed(
+    nvidia: bool,
+    wayland: bool,
+    display: bool,
+    disabled: bool,
+) -> bool {
+    nvidia && wayland && display && !disabled
+}
 
 /// 剥离 AppImage 注入的动态库搜索路径（Linux AppImage 环境；其它情况原样返回）。
 pub(crate) fn strip_appimage_libs(cmd: &mut Command) -> &mut Command {
@@ -55,5 +86,14 @@ mod tests {
         let mut cmd = Command::new("true");
         strip_appimage_libs_with(&mut cmd, false);
         assert_eq!(cmd.get_envs().count(), 0);
+    }
+
+    #[test]
+    fn nvidia_wayland_workaround_matrix() {
+        assert!(linux_nvidia_workaround_needed(true, true, true, false));
+        assert!(!linux_nvidia_workaround_needed(false, true, true, false));
+        assert!(!linux_nvidia_workaround_needed(true, false, true, false));
+        assert!(!linux_nvidia_workaround_needed(true, true, false, false));
+        assert!(!linux_nvidia_workaround_needed(true, true, true, true));
     }
 }

@@ -12,6 +12,7 @@ pub use crate::shell::window::manager::Manager as WM;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    process_env::apply_linux_nvidia_workaround();
     app::setup::configure(tauri::Builder::default())
         // 单例保护（常驻，2026-09-26 拍板：壳层 = 服务层，注册中心 / 消息路由 /
         // 多窗口管理必须单点）：第二个实例启动时经命名管道通知已有实例（回调在
